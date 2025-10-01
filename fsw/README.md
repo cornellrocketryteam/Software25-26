@@ -16,7 +16,7 @@ See Project Updates [here](https://github.com/orgs/cornellrocketryteam/projects/
 
 ## Building and Running  
 * To build in release mode, run: `cargo build --release` 
-* To flash the code onto the Pico 2, run: `cargo run`  
+* To flash the code onto the Pico 2, run: `cargo run --release`  
 
 
 
