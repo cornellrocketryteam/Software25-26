@@ -2,6 +2,7 @@
 
 Written by Benjamin Zou (bwz5)
 
+See Project Updates [here](https://github.com/orgs/cornellrocketryteam/projects/4/views/1)
 
 ## Necessary Dependencies 
 * Install rustup and Cargo
