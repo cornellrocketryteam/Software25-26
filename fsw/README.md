@@ -1,9 +1,22 @@
-FSW 2025-2026
+# FSW 2025-2026
 
 Written by Benjamin Zou (bwz5)
 
-* Install rustup 
-* Install cargo
-* Install picotool 
+
+## Necessary Dependencies 
+* Install rustup and Cargo
+`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`  
+
+* Install picotool (to flash code onto the Pico 2)  
+`brew install picotool`  
+
+* Install the correct toolchain 
+`rustup target add thumbv7em-none-eabihf`
+
+## Building and Running  
+* To build in release mode, run: `cargo build --release` 
+* To flash the code onto the Pico 2, run: `cargo run`  
+
+
 
 
