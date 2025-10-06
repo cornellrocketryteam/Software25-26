@@ -33,9 +33,11 @@ project(RadioPico C CXX ASM)
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
-# Add executable. Default name is the project name, version 0.1
-
-add_executable(RadioPico RadioPico.cpp )
+# Add executable - RadioPico.cpp is main, packet_parser provides parsing functionality
+add_executable(RadioPico 
+    RadioPico.cpp
+    packet_parser.cpp
+)
 
 pico_set_program_name(RadioPico "RadioPico")
 pico_set_program_version(RadioPico "0.1")
@@ -46,12 +48,12 @@ pico_enable_stdio_usb(RadioPico 1)
 
 # Add the standard library to the build
 target_link_libraries(RadioPico
-        pico_stdlib)
+    pico_stdlib
+)
 
 # Add the standard include files to the build
 target_include_directories(RadioPico PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}
+    ${CMAKE_CURRENT_LIST_DIR}
 )
 
 pico_add_extra_outputs(RadioPico)
-
