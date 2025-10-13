@@ -12,7 +12,7 @@ if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 # ====================================================================================
-# RadioPico CMakeLists.txt
+# StepperPico CMakeLists.txt
 
 cmake_minimum_required(VERSION 3.13)
 
@@ -36,42 +36,37 @@ endif()
 
 set(PICO_BOARD pico2 CACHE STRING "Board type")
 
-# Pull in Raspberry Pi Pico SDK (must be before project)
-include(pico_sdk_import.cmake)
+# Pull in Raspberry Pi Pico SDK (use parent directory's import)
+include(${CMAKE_CURRENT_LIST_DIR}/pico_sdk_import.cmake)
 
-project(RadioPico C CXX ASM)
+project(StepperPico C CXX ASM)
 
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
-# Add executable with all source files
-add_executable(RadioPico 
-    RadioPico.cpp
-    rfd900x_uart.cpp
-    ../Common/packet_parser.cpp
-    ../Tests/packet_simulator.cpp
+# Add executable
+add_executable(StepperPico 
+    StepperPico.cpp
 )
 
-pico_set_program_name(RadioPico "RadioPico")
-pico_set_program_version(RadioPico "0.1")
+pico_set_program_name(StepperPico "StepperPico")
+pico_set_program_version(StepperPico "0.1")
 
-# Enable USB output, disable UART output
-pico_enable_stdio_uart(RadioPico 0)
-pico_enable_stdio_usb(RadioPico 1)
+# Enable USB output, disable UART output (UART0 used for Radio Pico comms)
+pico_enable_stdio_uart(StepperPico 0)
+pico_enable_stdio_usb(StepperPico 1)
 
 # Add libraries
-target_link_libraries(RadioPico
+target_link_libraries(StepperPico
     pico_stdlib
     hardware_uart
-    hardware_irq
     pico_multicore
 )
 
 # Include directories
-target_include_directories(RadioPico PRIVATE
+target_include_directories(StepperPico PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}
     ${CMAKE_CURRENT_LIST_DIR}/../Common
-    ${CMAKE_CURRENT_LIST_DIR}/../Tests
 )
 
-pico_add_extra_outputs(RadioPico)
+pico_add_extra_outputs(StepperPico)
