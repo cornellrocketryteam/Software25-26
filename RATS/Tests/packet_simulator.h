@@ -1,7 +1,7 @@
 #ifndef PACKET_SIMULATOR_H
 #define PACKET_SIMULATOR_H
 
-#include "./Common/packet_types.h"
+#include "../Common/packet_types.h"
 #include <stdint.h>
 #include <stddef.h>
 
