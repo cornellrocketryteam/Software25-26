@@ -6,7 +6,7 @@
 // Shared constants for both RadioPico and StepperPico
 // ============================================================================
 
-// Packet sync word - "CRT!" (Cornell Rocket Team)
+// Packet sync word - "CRT!"
 #define SYNC_WORD 0x3E5D5967
 
 // Telemetry rates
@@ -17,7 +17,7 @@
 #define LINK_LOST_TIMEOUT_MS 500  // Consider link lost after 500ms no packets
 
 // Ground station location (update with actual coordinates)
-// TODO: Set these to your actual launch site coordinates
+// TODO: Set these to actual launch site coordinates
 #define GROUND_STATION_LAT_DEG 42.356000  // Cornell area default
 #define GROUND_STATION_LON_DEG -76.497000
 #define GROUND_STATION_ALT_M 100.0        // meters above sea level
