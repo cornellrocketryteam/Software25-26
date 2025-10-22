@@ -43,7 +43,7 @@ void core1_entry() {
 
 int main() {
     stdio_init_all();
-    sleep_ms(2000);
+    sleep_ms(6000);
     
     printf("\n=== RadioPico Ground Station (Dual-Core) ===\n");
     printf("Core 0: Real-time I/O\n");
