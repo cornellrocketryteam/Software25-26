@@ -45,7 +45,7 @@ int main() {
     stdio_init_all();
     sleep_ms(6000);
     
-    printf("\n=== RadioPico Ground Station (Dual-Core) ===\n");
+    printf("\n=== RadioPico ===\n");
     printf("Core 0: Real-time I/O\n");
     printf("Core 1: Processing & Logging\n\n");
     
@@ -58,7 +58,7 @@ int main() {
     printf("Connect RFD900x:\n");
     printf("  RFD Pin 1,2 (GND) -> Pico GND\n");
     printf("  RFD Pin 4 (Vcc) -> External 5V supply\n");
-    printf("  RFD Pin 7 (RX) -> Pico GP4 (TX)\n");
+    printf("  RFD Pin 7 (RX) -> Pico GP4 (TX)\n");  // Only if sending needed
     printf("  RFD Pin 9 (TX) -> Pico GP5 (RX)\n\n");
 #endif
     
