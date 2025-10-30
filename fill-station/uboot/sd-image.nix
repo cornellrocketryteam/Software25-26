@@ -49,7 +49,6 @@ stdenv.mkDerivation (finalAttrs: {
     EOF
 
     # Create a FAT32 firmware partition
-    eval $(partx $img -o START,SECTORS --nr 1 --pairs)
     START=$((gap * 1024 * 1024 / 512))
     SECTORS=$firmwareSizeBlocks
     truncate -s $((SECTORS * 512)) firmware_part.img
