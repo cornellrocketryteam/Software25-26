@@ -4,7 +4,6 @@
 
   stdenv,
   dosfstools,
-  e2fsprogs,
   mtools,
   libfaketime,
   util-linux,
@@ -24,7 +23,6 @@ stdenv.mkDerivation (finalAttrs: {
 
   nativeBuildInputs = [
     dosfstools
-    e2fsprogs
     libfaketime
     mtools
     util-linux
@@ -52,6 +50,8 @@ stdenv.mkDerivation (finalAttrs: {
 
     # Create a FAT32 firmware partition
     eval $(partx $img -o START,SECTORS --nr 1 --pairs)
+    START=$((gap * 1024 * 1024 / 512))
+    SECTORS=$firmwareSizeBlocks
     truncate -s $((SECTORS * 512)) firmware_part.img
     mkfs.vfat --invariant -i ${label-id} -n FIRMWARE firmware_part.img
 
