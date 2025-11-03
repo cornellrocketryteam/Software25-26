@@ -7,12 +7,12 @@
 }:
 stdenv.mkDerivation (finalAttrs: {
   pname = "optee";
-  version = finalAttrs.src.rev;
+  version = "4.8.0";
 
   src = fetchFromGitHub {
     owner = "OP-TEE";
     repo = "optee_os";
-    rev = "4.8.0";
+    rev = finalAttrs.version;
     hash = "sha256-eefwfjSkDMFubKk+tIzTqe7h+v3VYxV6gzpzFxuJsyU=";
   };
 
