@@ -9,7 +9,7 @@
   util-linux,
 }:
 let
-  gapMiB = 8;
+  gapMiB = 2;
   firmwareSizeMiB = 30;
   label-id = "0x2178694e";
   populateFirmwareCommands = ''
@@ -45,7 +45,7 @@ stdenv.mkDerivation (finalAttrs: {
         label: dos
         label-id: ${label-id}
 
-        start=${toString gapMiB}M, size=${toString firmwareSizeMiB}M, type=b
+        start=${toString gapMiB}M, size=${toString firmwareSizeMiB}M, type=c,bootable
     EOF
 
     # Create a FAT32 firmware partition
