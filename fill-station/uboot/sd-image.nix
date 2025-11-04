@@ -11,6 +11,12 @@
 let
   gapMiB = 2;
   firmwareSizeMiB = 30;
+  # Controls for the second partition
+  secondPartitionSizeMiB = 100;
+  # Partition type codes for sfdisk: 'c' = W95 FAT32 (LBA), '83' = Linux
+  secondPartitionType = "c";
+  # Name of the second partition
+  secondPartitionLabel = "DATA";
   label-id = "0x2178694e";
   populateFirmwareCommands = ''
     cp ${uboot-r5}/tiboot3-am64x_sr2-hs-fs-evm.bin firmware/tiboot3.bin
@@ -35,31 +41,43 @@ stdenv.mkDerivation (finalAttrs: {
     # Gap in front of the first partition, in MiB
     gap=${toString gapMiB}
 
-    # Create the image file sized to fit firmware
-    firmwareSizeBlocks=$((${toString firmwareSizeMiB} * 1024 * 1024 / 512))
-    imageSize=$((firmwareSizeBlocks * 512 + gap * 1024 * 1024))
-    truncate -s $imageSize $img
+  # Create the image file sized to fit two partitions (first + second)
+  gap=${toString gapMiB}
+  firmwareSize=${toString firmwareSizeMiB}
+  secondSize=${toString secondPartitionSizeMiB}
 
-    # type=b is 'W95 FAT32'
-    sfdisk --no-reread --no-tell-kernel $img <<EOF
-        label: dos
-        label-id: ${label-id}
+  firmwareSizeBlocks=$((firmwareSize * 1024 * 1024 / 512))
+  secondSizeBlocks=$((secondSize * 1024 * 1024 / 512))
+  imageSize=$((firmwareSizeBlocks * 512 + secondSizeBlocks * 512 + gap * 1024 * 1024))
+  truncate -s $imageSize $img
 
-        start=${toString gapMiB}M, size=${toString firmwareSizeMiB}M, type=c,bootable
-    EOF
+  # Create partition table with two partitions (type set by globals)
+  sfdisk --no-reread --no-tell-kernel $img <<EOF
+    label: dos
+    label-id: ${label-id}
 
-    # Create a FAT32 firmware partition
-    START=$((gap * 1024 * 1024 / 512))
-    SECTORS=$firmwareSizeBlocks
-    truncate -s $((SECTORS * 512)) firmware_part.img
-    mkfs.vfat --invariant -i ${label-id} -n FIRMWARE firmware_part.img
+    start=${toString gapMiB}M, size=${toString firmwareSizeMiB}M, type=c,bootable
+    start=${toString (gapMiB + firmwareSizeMiB)}M, size=${toString secondPartitionSizeMiB}M, type=${toString secondPartitionType}
+EOF
 
-    # Populate firmware files
-    mkdir firmware
+  # compute sector offsets for dd
+  START1=$((gap * 1024 * 1024 / 512))
+  SECTORS1=$firmwareSizeBlocks
+  START2=$((START1 + SECTORS1))
+  SECTORS2=$secondSizeBlocks
+
+  # create partition filesystem images
+  truncate -s $((SECTORS1 * 512)) firmware_part.img
+  truncate -s $((SECTORS2 * 512)) second_part.img
+
+  mkfs.vfat --invariant -i ${label-id} -n FIRMWARE firmware_part.img
+  mkfs.vfat --invariant -n ${toString secondPartitionLabel} second_part.img
+
+    # Populate firmware files into first partition image
+    mkdir -p firmware
     ${populateFirmwareCommands}
     find firmware -exec touch --date=2000-01-01 {} +
 
-    # Copy files to FAT partition
     cd firmware
     # Force a fixed order in mcopy for better determinism, and avoid file globbing
     for d in $(find . -type d -mindepth 1 | sort); do
@@ -70,8 +88,26 @@ stdenv.mkDerivation (finalAttrs: {
     done
     cd ..
 
-    # Verify the FAT partition before copying it.
+    # Populate second partition image with a small test file
+    mkdir -p data
+    echo "Test partition 2" > data/README.txt
+    find data -exec touch --date=2000-01-01 {} +
+
+    cd data
+    for d in $(find . -type d -mindepth 1 | sort); do
+      faketime "2000-01-01 00:00:00" mmd -i ../second_part.img "::/$d"
+    done
+    for f in $(find . -type f | sort); do
+      mcopy -pvm -i ../second_part.img "$f" "::/$f"
+    done
+    cd ..
+
+    # Verify the FAT partitions before copying them into the disk image.
     fsck.vfat -vn firmware_part.img
-    dd conv=notrunc if=firmware_part.img of=$img seek=$START count=$SECTORS
+    fsck.vfat -vn second_part.img
+
+    # Write partition images into the full disk image at the correct offsets
+    dd conv=notrunc if=firmware_part.img of=$img seek=$START1 count=$SECTORS1
+    dd conv=notrunc if=second_part.img of=$img seek=$START2 count=$SECTORS2
   '';
 })
