@@ -2,8 +2,9 @@
 # https://software-dl.ti.com/processor-sdk-linux/esd/AM64X/08_06_00_42/exports/docs/linux/Foundational_Components/U-Boot/UG-General-Info.html#build-u-boot-label
 
 {
-  description = "NixOS + U-Boot for TI SK-AM64B Evaluation Board";
+  description = "Fill Station";
 
+  # Pin to 25.11 when it comes out
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
 
   outputs =
