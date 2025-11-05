@@ -15,7 +15,15 @@ defmt-rtt = "1.0.0"
 
 panic-probe = { version = "1.0.0", features = ["print-defmt"] }
 cortex-m-rt = "0.7.0"
-bno055 = "0.4.0"
+icm426xx = { version = "0.4.0", features = ["async", "defmt"] }
+bmp390 = { version = "0.4.1", features = ["embassy-time"] }
+ublox = { version = "0.7.0", default-features = false, features = ["alloc", "ubx_proto27"] }
+embedded-hal-async = "1.0.0"
+heapless = "0.8"
+libm = "0.2.15"
+embedded-alloc = "0.6.0"
+
+# sensors
 
 [package.metadata.embassy]
 build = [
