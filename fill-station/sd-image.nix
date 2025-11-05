@@ -1,6 +1,5 @@
 {
-  uboot-r5,
-  uboot-a53,
+  uboot,
 
   stdenv,
   dosfstools,
@@ -19,9 +18,9 @@ let
   secondPartitionLabel = "DATA";
   label-id = "0x2178694e";
   populateFirmwareCommands = ''
-    cp ${uboot-r5}/tiboot3-am64x_sr2-hs-fs-evm.bin firmware/tiboot3.bin
-    cp ${uboot-a53}/tispl.bin firmware/tispl.bin
-    cp ${uboot-a53}/u-boot.img firmware/u-boot.img
+    cp ${uboot.r5}/tiboot3-am64x_sr2-hs-fs-evm.bin firmware/tiboot3.bin
+    cp ${uboot.a53}/tispl.bin firmware/tispl.bin
+    cp ${uboot.a53}/u-boot.img firmware/u-boot.img
   '';
 in
 stdenv.mkDerivation (finalAttrs: {
@@ -41,37 +40,37 @@ stdenv.mkDerivation (finalAttrs: {
     # Gap in front of the first partition, in MiB
     gap=${toString gapMiB}
 
-  # Create the image file sized to fit two partitions (first + second)
-  gap=${toString gapMiB}
-  firmwareSize=${toString firmwareSizeMiB}
-  secondSize=${toString secondPartitionSizeMiB}
+    # Create the image file sized to fit two partitions (first + second)
+    gap=${toString gapMiB}
+    firmwareSize=${toString firmwareSizeMiB}
+    secondSize=${toString secondPartitionSizeMiB}
 
-  firmwareSizeBlocks=$((firmwareSize * 1024 * 1024 / 512))
-  secondSizeBlocks=$((secondSize * 1024 * 1024 / 512))
-  imageSize=$((firmwareSizeBlocks * 512 + secondSizeBlocks * 512 + gap * 1024 * 1024))
-  truncate -s $imageSize $img
+    firmwareSizeBlocks=$((firmwareSize * 1024 * 1024 / 512))
+    secondSizeBlocks=$((secondSize * 1024 * 1024 / 512))
+    imageSize=$((firmwareSizeBlocks * 512 + secondSizeBlocks * 512 + gap * 1024 * 1024))
+    truncate -s $imageSize $img
 
-  # Create partition table with two partitions (type set by globals)
-  sfdisk --no-reread --no-tell-kernel $img <<EOF
-    label: dos
-    label-id: ${label-id}
+    # Create partition table with two partitions (type set by globals)
+    sfdisk --no-reread --no-tell-kernel $img <<EOF
+      label: dos
+      label-id: ${label-id}
 
-    start=${toString gapMiB}M, size=${toString firmwareSizeMiB}M, type=c,bootable
-    start=${toString (gapMiB + firmwareSizeMiB)}M, size=${toString secondPartitionSizeMiB}M, type=${toString secondPartitionType}
-EOF
+      start=${toString gapMiB}M, size=${toString firmwareSizeMiB}M, type=c,bootable
+      start=${toString (gapMiB + firmwareSizeMiB)}M, size=${toString secondPartitionSizeMiB}M, type=${toString secondPartitionType}
+    EOF
 
-  # compute sector offsets for dd
-  START1=$((gap * 1024 * 1024 / 512))
-  SECTORS1=$firmwareSizeBlocks
-  START2=$((START1 + SECTORS1))
-  SECTORS2=$secondSizeBlocks
+    # compute sector offsets for dd
+    START1=$((gap * 1024 * 1024 / 512))
+    SECTORS1=$firmwareSizeBlocks
+    START2=$((START1 + SECTORS1))
+    SECTORS2=$secondSizeBlocks
 
-  # create partition filesystem images
-  truncate -s $((SECTORS1 * 512)) firmware_part.img
-  truncate -s $((SECTORS2 * 512)) second_part.img
+    # create partition filesystem images
+    truncate -s $((SECTORS1 * 512)) firmware_part.img
+    truncate -s $((SECTORS2 * 512)) second_part.img
 
-  mkfs.vfat --invariant -i ${label-id} -n FIRMWARE firmware_part.img
-  mkfs.vfat --invariant -n ${toString secondPartitionLabel} second_part.img
+    mkfs.vfat --invariant -i ${label-id} -n FIRMWARE firmware_part.img
+    mkfs.vfat --invariant -n ${toString secondPartitionLabel} second_part.img
 
     # Populate firmware files into first partition image
     mkdir -p firmware
