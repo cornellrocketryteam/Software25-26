@@ -8,7 +8,7 @@ buildArmTrustedFirmware {
   extraMeta.platforms = [ "aarch64-linux" ];
   extraMakeFlags = [
     "TARGET_BOARD=${targetBoard}"
-    # "SPD=opteed"
+    "SPD=opteed"
   ];
   filesToInstall = [
     "build/${platform}/${targetBoard}/release/bl31.bin"
