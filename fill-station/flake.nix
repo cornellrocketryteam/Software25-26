@@ -4,11 +4,18 @@
 {
   description = "Fill Station";
 
-  # TODO: Pin nixpkgs to 25.11 when it comes out
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+  inputs = {
+    # TODO: Pin nixpkgs to 25.11 when it comes out
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+
+    mixos = {
+      url = "github:jmbaur/mixos";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
 
   outputs =
-    { nixpkgs, ... }:
+    inputs:
     let
       supportedSystems = [
         "x86_64-linux"
@@ -19,10 +26,10 @@
 
       forEachSupportedSystem =
         f:
-        nixpkgs.lib.genAttrs supportedSystems (
+        inputs.nixpkgs.lib.genAttrs supportedSystems (
           system:
           f {
-            pkgs = import nixpkgs { inherit system; };
+            pkgs = import inputs.nixpkgs { inherit system; };
           }
         );
     in
@@ -30,10 +37,10 @@
       packages = forEachSupportedSystem (
         { pkgs }:
         let
-          uboot = pkgs.callPackage ./uboot { };
-
-          sd-image = pkgs.callPackage ./sd-image.nix {
-            inherit uboot;
+          uboot = import ./uboot { inherit pkgs; };
+          sd-image = import ./sd-image.nix { 
+            inherit pkgs uboot;
+            fill-station = inputs.self.mixosConfigurations.fill-station;
           };
         in
         {
@@ -44,5 +51,7 @@
           default = sd-image;
         }
       );
+
+      mixosConfigurations.fill-station = import ./linux inputs;
     };
 }
