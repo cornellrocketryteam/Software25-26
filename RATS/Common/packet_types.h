@@ -68,9 +68,9 @@ struct Events {
 // Main radio packet structure (107 bytes)
 struct RadioPacket {
     uint32_t sync_word;
-    Metadata metadata;
     uint32_t ms_since_boot;
-    Events events;
+    uint16_t raw_metadata;
+    uint32_t raw_events;
     
     // Altimeter
     float altitude;
@@ -107,18 +107,6 @@ struct RadioPacket {
     
     // BLiMS
     float motor_state;
-};
-
-// Umbilical packet structure (30 bytes)
-struct UmbilicalPacket {
-    Metadata metadata;
-    uint32_t ms_since_boot;
-    Events events;
-    float battery_voltage;
-    float pt3_pressure;
-    float pt4_pressure;
-    float rtd_temperature;
-    float altitude;
 };
 
 #endif // PACKET_TYPES_H

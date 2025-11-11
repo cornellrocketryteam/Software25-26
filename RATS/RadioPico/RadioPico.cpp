@@ -62,8 +62,8 @@ int main() {
     printf("  RFD Pin 9 (TX) -> Pico GP5 (RX)\n\n");
 #endif
     
-    // Initialize inter-core queue (holds up to 8 packets)
-    queue_init(&packet_queue, sizeof(RadioPacket), 8);
+    // Initialize inter-core queue (holds up to 64 packets)
+    queue_init(&packet_queue, sizeof(RadioPacket), 64);
     
     // Launch Core 1
     multicore_launch_core1(core1_entry);
