@@ -41,6 +41,7 @@ include(pico_sdk_import.cmake)
 
 project(RadioPico C CXX ASM)
 
+
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
@@ -67,7 +68,7 @@ target_link_libraries(RadioPico
     hardware_irq
     pico_multicore
     pico_cyw43_arch_lwip_poll
-    pico_mqtt_lwip
+    pico_lwip_mqtt
 )
 
 # Include directories

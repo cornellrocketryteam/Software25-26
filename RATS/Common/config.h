@@ -7,8 +7,8 @@
 // ============================================================================
 
 // --- Wi-Fi & MQTT Configuration ---
-#define WIFI_SSID "RocketryWifiSSID" // <-- SET THIS
-#define WIFI_PASS "WifiPassword"     // <-- SET THIS
+#define WIFI_SSID "CornellRocketry-2.4G" // <-- SET THIS
+#define WIFI_PASS "Rocketry2526"     // <-- SET THIS
 
 // RATS Unit ID (for MQTT topic)
 // 0 = Umbilical, 1 = Primary RATS, 2 = Secondary RATS, etc.

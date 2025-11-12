@@ -20,7 +20,7 @@ queue_t packet_queue;
 void core1_entry() {
     printf("[Core 1] Started - Processing & Logging\n");
     
-    char json_buffer[1024];
+    char json_buffer[2048];
     RadioPacket packet;
     
     while (true) {

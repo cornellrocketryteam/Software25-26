@@ -59,13 +59,6 @@ bool PacketParser::parseRadioPacket(const uint8_t* buffer, size_t length, RadioP
 }
 
 void PacketParser::radioPacketToJSON(const RadioPacket& packet, char* json_buffer, size_t buffer_size) {
-    // --- Format Time ---
-    // Format unix_time as ISO 8601 string (e.g., "2025-11-10T12:00:00Z")
-    time_t t = packet.unix_time;
-    struct tm *tm_info = gmtime(&t);
-    char time_buf[32];
-    strftime(time_buf, 32, "%Y-%m-%dT%H:%M:%SZ", tm_info);
-
     // --- Format Events Array ---
     char events_buf[128] = "[";
     bool first_event = true;
@@ -90,8 +83,8 @@ void PacketParser::radioPacketToJSON(const RadioPacket& packet, char* json_buffe
     offset += snprintf(json_buffer + offset, buffer_size - offset, "{");
     
     // Main time field
-    offset += snprintf(json_buffer + offset, buffer_size - offset, "\"time\":\"%s\",", time_buf);
-
+    offset += snprintf(json_buffer + offset, buffer_size - offset, "\"time\":%u,", packet.unix_time);
+    
     // Other non-struct fields
     offset += snprintf(json_buffer + offset, buffer_size - offset,
         "\"sync_word\":%u,"
