@@ -125,12 +125,18 @@ void mqtt_client_poll() {
 
     // Reconnect if needed
     if (mqtt_state && !mqtt_state->connected && mqtt_state->remote_ip.addr != 0) {
-         // Simple retry logic
+         // Retry logic
          static absolute_time_t last_retry = 0;
-         if (absolute_time_min(last_retry) > 5000) {
+         absolute_time_t now = get_absolute_time();
+
+         // Get the time difference since the last retry in microseconds
+         int64_t diff_ms = absolute_time_diff_us(last_retry, now);
+
+         // Check if 5 seconds have passed
+         if (diff_ms > 5000000) {
              printf("[MQTT] Retrying connection...\n");
              mqtt_connect_to_broker(mqtt_state);
-             last_retry = get_absolute_time();
+             last_retry = now; // Update the last retry time
          }
     }
 }
