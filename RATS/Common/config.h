@@ -47,7 +47,7 @@
 #define GROUND_STATION_ALT_M 100.0        // meters above sea level
 
 // UART configuration for RFD900x (RadioPico)
-#define RFD900X_BAUD_RATE 57600
+#define RFD900X_BAUD_RATE 115200  // Match RFD900x serial speed setting
 #define RFD900X_DATA_BITS 8
 #define RFD900X_STOP_BITS 1
 #define RFD900X_PARITY 0  // No parity
