@@ -1,9 +1,4 @@
 # Rotational Antenna Tracking System (RATS)
-## System Design Document v1.0
-
-**Project:** Cornell Rocket Team Launch Vehicle Tracking System  
-**Date:** January 2025  
-**Status:** Hardware Design Phase
 
 ---
 
