@@ -1,13 +1,9 @@
-{
-  pkgsCross,
-  fetchgit,
-  symlinkJoin,
-}:
+{ pkgs }:
 let
-  pkgsCross32 = pkgsCross.armv7l-hf-multiplatform;
-  pkgsCross64 = pkgsCross.aarch64-multiplatform;
+  pkgsCross32 = pkgs.pkgsCross.armv7l-hf-multiplatform;
+  pkgsCross64 = pkgs.pkgsCross.aarch64-multiplatform;
 
-  ti-linux-firmware = fetchgit {
+  ti-linux-firmware = pkgs.fetchgit {
     url = "https://git.ti.com/git/processor-firmware/ti-linux-firmware.git";
     branchName = "ti-linux-firmware";
     rev = "11.02.02";
@@ -28,7 +24,7 @@ let
     inherit tfa optee ti-linux-firmware;
   };
 
-  uboot-all = symlinkJoin {
+  uboot-all = pkgs.symlinkJoin {
     name = "uboot";
     paths = [
       uboot-r5

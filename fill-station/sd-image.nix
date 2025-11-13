@@ -1,12 +1,4 @@
-{
-  uboot,
-
-  stdenv,
-  dosfstools,
-  mtools,
-  libfaketime,
-  util-linux,
-}:
+{ pkgs, uboot, fill-station }:
 let
   gapMiB = 2;
   firmwareSizeMiB = 30;
@@ -21,12 +13,13 @@ let
     cp ${uboot.r5}/tiboot3-am64x_sr2-hs-fs-evm.bin firmware/tiboot3.bin
     cp ${uboot.a53}/tispl.bin firmware/tispl.bin
     cp ${uboot.a53}/u-boot.img firmware/u-boot.img
+    cp ${fill-station.config.system.build.fitImage}/kernel.itb kernel.itb
   '';
 in
-stdenv.mkDerivation (finalAttrs: {
+pkgs.stdenv.mkDerivation (finalAttrs: {
   name = "fill-station.img";
 
-  nativeBuildInputs = [
+  nativeBuildInputs = with pkgs; [
     dosfstools
     libfaketime
     mtools
@@ -56,7 +49,9 @@ stdenv.mkDerivation (finalAttrs: {
       label-id: ${label-id}
 
       start=${toString gapMiB}M, size=${toString firmwareSizeMiB}M, type=c,bootable
-      start=${toString (gapMiB + firmwareSizeMiB)}M, size=${toString secondPartitionSizeMiB}M, type=${toString secondPartitionType}
+      start=${
+        toString (gapMiB + firmwareSizeMiB)
+      }M, size=${toString secondPartitionSizeMiB}M, type=${toString secondPartitionType}
     EOF
 
     # compute sector offsets for dd

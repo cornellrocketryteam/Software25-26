@@ -1,0 +1,61 @@
+/dts-v1/;
+
+/ {
+        description = "FIT image with kernel, initrd and DTB";
+        #address-cells = <1>;
+
+        images {
+                kernel {
+                        description = "kernel";
+                        data = /incbin/("./kernel.lzma");
+                        type = "kernel";
+                        arch = "arm64";
+                        os = "linux";
+                        compression = "lzma";
+                        load = <@loadAddress@>;
+                        entry = <@loadAddress@>;
+                        hash {
+                                algo = "crc32";
+                        };
+                };
+
+                fdt-0 {
+                        description = "dtb";
+                        data = /incbin/("./dtb");
+                        type = "flat_dt";
+                        arch = "arm64";
+                        compression = "none";
+                        hash {
+                                algo = "crc32";
+                        };
+                };
+
+                initrd {
+                        description = "initrd";
+                        data = /incbin/("initrd");
+                        type = "ramdisk";
+                        arch = "arm64";
+                        os = "linux";
+                        compression = "none";
+                        hash {
+                                algo = "crc32";
+                        };
+                };
+        };
+
+        configurations {
+                default = "board-0";
+
+                board-0 {
+                        description = "board_0";
+                        kernel = "kernel";
+                        fdt = "fdt-0";
+                        ramdisk = "initrd";
+                        signature {
+                                algo = "crc32";
+                                key-name-hint = "dev";
+                                sign-images = "fdt-0", "kernel", "ramdisk";
+                        };
+                };
+        };
+};
