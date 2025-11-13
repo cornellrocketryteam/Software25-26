@@ -1,9 +1,30 @@
 # Rotational Antenna Tracking System (RATS)
 ## System Design Document v1.0
 
-**Project:** Cornell Rocket Team Launch Vehicle Tracking System  
-**Date:** January 2025  
-**Status:** Hardware Design Phase
+**Project:** Cornell Rocket Team Launch Vehicle Tracking System
+**Date:** November 2025
+**Status:** Development & Testing Phase
+
+---
+
+## Implementation Status
+
+**COMPLETED (Radio Pico):**
+- RFD900x UART Reception: Full packet reception at 115200 baud (UART0, GP0/GP1)
+- Packet Parsing: 107-byte telemetry packets with sync word detection
+- SD Card Logging: CSV logging to microSD card via SPI1 (GP10-13, GP22)
+- Dual-Core Architecture: Core 0 for real-time I/O, Core 1 for logging
+- Test Mode: Packet simulator for testing without rocket
+
+**IN PROGRESS:**
+- MQTT/WiFi: Framework exists, integration TBD
+- Inter-Pico UART: Protocol defined, implementation TBD
+
+**TODO:**
+- Motor Control (Stepper Pico): Motor control functionality
+- Angle Calculation: GPS coordinate to azimuth/elevation conversion
+- Trajectory Prediction: Link loss handling with ballistic prediction
+- Ground Station Integration: MQTT topic structure and command handling
 
 ---
 
@@ -52,14 +73,14 @@ The RATS system tracks a launch vehicle during flight by continuously aiming a d
 - 1x MicroSD card socket (integrated on PCB)
 
 **Mechanical:**
-- 2x NEMA 23 stepper motors (3.0 Nm holding torque, 4.2A)
-- 2x DM556T stepper drivers (1.8-5.6A, 20-50VDC, external power)
-- Directional Yagi antenna (900MHz, RP-SMA connections)
+- 2x Stepperonline E Series NEMA 23 stepper motors (3.0 Nm holding torque, 4.2A)
+- 2x Stepperonline DM556T stepper drivers (1.8-5.6A, 20-50VDC)
+- Farnell YAGI-868/914A directional antenna (900MHz, RP-SMA)
 - Turret assembly (azimuth/elevation gimbal)
 
 **Power:**
 - PCB: 5V @ 1A (USB-C input)
-- Motors: 36VDC @ 10A (external supply, not on PCB)
+- Motors: 48VDC @ 10A power supply (external)
 
 ---
 
@@ -111,10 +132,8 @@ The RATS system tracks a launch vehicle during flight by continuously aiming a d
 
 | GPIO | Function | Connection | Notes |
 |------|----------|------------|-------|
-| GP0 | UART0 TX | RFD900x RX | Radio telemetry |
+| GP0 | UART0 TX | RFD900x RX | Not used (RX only) |
 | GP1 | UART0 RX | RFD900x TX | Radio telemetry |
-| GP2 | UART0 CTS | RFD900x RTS | Flow control |
-| GP3 | UART0 RTS | RFD900x CTS | Flow control |
 | GP4 | UART1 TX | Pico #2 GP5 (RX) | Inter-Pico commands |
 | GP5 | UART1 RX | Pico #2 GP4 (TX) | Inter-Pico status |
 | GP10 | SPI1 SCK | MicroSD CLK | SD card |
@@ -125,9 +144,9 @@ The RATS system tracks a launch vehicle during flight by continuously aiming a d
 | GP26 | GPIO Output | Status LED (Green) | Activity indicator |
 
 **UART0 Configuration (RFD900x):**
-- Baud Rate: 57600 bps
+- Baud Rate: 115200 bps
 - Data Format: 8N1
-- Flow Control: RTS/CTS enabled
+- Flow Control: None
 - Buffer Size: 512 bytes RX
 
 **UART1 Configuration (Inter-Pico):**
@@ -145,42 +164,46 @@ The RATS system tracks a launch vehicle during flight by continuously aiming a d
 
 ### 3.2 Raspberry Pi Pico 2 W #2 (Motor Control Pico)
 
+**STATUS: Implementation TBD**
+
 **Primary Functions:**
-- Stepper motor control (PIO)
-- GPS module communication (UART0)
-- Angle calculations
+- Stepper motor control (DM556T drivers)
+- GPS module communication (UART0) - optional
+- Angle calculations (azimuth/elevation from GPS coordinates)
 - Inter-Pico communication (UART1)
 
 | GPIO | Function | Connection | Notes |
 |------|----------|------------|-------|
-| GP0 | UART0 TX | GPS RX | Optional commands |
-| GP1 | UART0 RX | GPS TX | NMEA sentences |
+| GP0 | UART0 TX | GPS RX (optional) | Optional GPS commands |
+| GP1 | UART0 RX | GPS TX (optional) | NMEA sentences |
 | GP4 | UART1 TX | Pico #1 GP5 (RX) | Inter-Pico status |
 | GP5 | UART1 RX | Pico #1 GP4 (TX) | Inter-Pico commands |
-| GP6 | GPIO Output | Azimuth STEP | Via 220Ω to DM556T |
-| GP7 | GPIO Output | Azimuth DIR | Via 220Ω to DM556T |
-| GP8 | GPIO Output | Azimuth ENA | Via 220Ω to DM556T |
-| GP9 | GPIO Output | Elevation STEP | Via 220Ω to DM556T |
-| GP10 | GPIO Output | Elevation DIR | Via 220Ω to DM556T |
-| GP11 | GPIO Output | Elevation ENA | Via 220Ω to DM556T |
+| GP6 | GPIO Output | Azimuth STEP | DM556T PUL- |
+| GP7 | GPIO Output | Azimuth DIR | DM556T DIR- |
+| GP8 | GPIO Output | Azimuth ENA | DM556T ENA- |
+| GP9 | GPIO Output | Elevation STEP | DM556T PUL- |
+| GP10 | GPIO Output | Elevation DIR | DM556T DIR- |
+| GP11 | GPIO Output | Elevation ENA | DM556T ENA- |
 | GP28 | GPIO Output | Status LED (Red) | Motor activity |
 
-**UART0 Configuration (GPS):**
+**UART0 Configuration (GPS - Optional):**
 - Baud Rate: 9600 bps
 - Data Format: 8N1
 - Protocol: NMEA 0183
-- Update Rate: 1 Hz (standard), 5 Hz preferred
+- Update Rate: 1 Hz typical
+- Note: GPS provides turret location for angle calculation
 
 **UART1 Configuration (Inter-Pico):**
 - Baud Rate: 115200 bps
 - Data Format: 8N1
 - Flow Control: None
 
-**Stepper Control:**
-- Step Resolution: 1.8° per full step (200 steps/rev)
-- Microstepping: 1/16 (3200 steps/rev)
-- Effective Resolution: 0.1125° per microstep
-- Maximum Step Rate: 20 kHz practical
+**Stepper Control (Stepperonline E Series NEMA 23):**
+- Motor: 3.0 Nm, 4.2A, 1.8° per step (200 steps/rev)
+- Driver: DM556T
+- Microstepping: Configurable via DIP switches (1/2 to 1/256)
+- Control Method: PIO or GPIO
+- Maximum Step Rate: TBD (test with hardware)
 
 ---
 
@@ -189,56 +212,56 @@ The RATS system tracks a launch vehicle during flight by continuously aiming a d
 | Pin | Signal | PCB Connection | Notes |
 |-----|--------|----------------|-------|
 | 1-2 | GND | Common Ground | Heavy ground |
-| 3 | CTS | Pico #1 GP3 (RTS) | Flow control |
 | 4 | Vcc | 5V Rail | 60mA typical |
-| 7 | RX | Pico #1 GP0 (TX) | UART data |
 | 9 | TX | Pico #1 GP1 (RX) | UART data |
-| 11 | RTS | Pico #1 GP2 (CTS) | Flow control |
 | 16 | GND | Common Ground | Redundant |
 
-**Antenna Connections:**
-- ANT1: RP-SMA connector (primary)
-- ANT2: RP-SMA connector (diversity)
-- Impedance: 50Ω controlled traces
+**Antenna Connection:**
+- ANT1: RP-SMA connector to Farnell YAGI-868/914A antenna
+- ANT2: Not used
 
 **RFD900x Configuration:**
-- Air Data Rate: 64 kbps
-- TX Power: 30 dBm (1W)
-- Serial Speed: 57600 bps
-- Network ID: 217 (match rocket)
+- Air Data Rate: 64 kbps (or 128 kbps)
+- TX Power: 20 dBm (100mW)
+- Serial Speed: 115200 bps
+- Network ID: 217 (must match rocket)
+- Mode: Receive only
 
 ---
 
-### 3.4 DM556T Stepper Driver Connections
+### 3.4 Stepper Driver Connections (Stepperonline DM556T)
 
-**Azimuth Driver Connector (J1):**
+**STATUS: Implementation TBD**
 
-| Pin | Signal | Connection | Notes |
-|-----|--------|------------|-------|
-| 1 | VCC | From driver | Not used |
-| 2 | PUL- | GP6 via 220Ω | Step pulse |
-| 3 | DIR- | GP7 via 220Ω | Direction |
-| 4 | ENA- | GP8 via 220Ω | Enable (active low) |
-| 5 | GND | Common Ground | Signal ground |
+**Azimuth Driver (DM556T #1):**
 
-**Elevation Driver Connector (J2):**
+| Pico Pin | Signal | Driver Pin | Notes |
+|----------|--------|------------|-------|
+| GP6 | STEP | PUL- | Step pulse |
+| GP7 | DIR | DIR- | Direction |
+| GP8 | ENA | ENA- | Enable (active low) |
+| GND | GND | Signal GND | Common ground |
 
-| Pin | Signal | Connection | Notes |
-|-----|--------|------------|-------|
-| 1 | VCC | From driver | Not used |
-| 2 | PUL- | GP9 via 220Ω | Step pulse |
-| 3 | DIR- | GP10 via 220Ω | Direction |
-| 4 | ENA- | GP11 via 220Ω | Enable (active low) |
-| 5 | GND | Common Ground | Signal ground |
+**Elevation Driver (DM556T #2):**
 
-**External Power (NOT on PCB):**
-- VMOT: 36VDC @ 5-10A per driver
-- Motor: 4-wire NEMA 23, 18 AWG minimum
+| Pico Pin | Signal | Driver Pin | Notes |
+|----------|--------|------------|-------|
+| GP9 | STEP | PUL- | Step pulse |
+| GP10 | DIR | DIR- | Direction |
+| GP11 | ENA | ENA- | Enable (active low) |
+| GND | GND | Signal GND | Common ground |
 
-**DM556T Settings:**
-- Pulse width: 10 µs minimum
-- Step rate: 20 kHz maximum
-- Acceleration: 1000 steps/s²
+**Motor Power (Both Drivers):**
+- VMOT: 48VDC from external PSU (Generic 48V 10A AC-DC)
+- Motor: Stepperonline E Series NEMA 23 (4-wire, bipolar)
+- Current: 4.2A per phase
+
+**DM556T Configuration:**
+- Pulse width: 2.5 µs minimum
+- Signal level: 3.3V compatible (3-5V)
+- Microstepping: Set via DIP switches (SW5-SW8)
+- Current: Set via DIP switches (SW1-SW3)
+- Enable: Active low (pull low to enable)
 
 ---
 
@@ -282,10 +305,10 @@ The RATS system tracks a launch vehicle during flight by continuously aiming a d
 ### 4.1 RFD900x to Radio Pico (UART0)
 
 **Physical Layer:**
-- Baud Rate: 57600 bps
+- Baud Rate: 115200 bps
 - Data Format: 8N1
-- Flow Control: RTS/CTS hardware
-- Direction: RFD900x TX → Pico RX (receive only)
+- Flow Control: None
+- Direction: RFD900x TX → Pico GP1 RX (receive only)
 
 **Packet Structure (107 bytes):**
 
@@ -322,76 +345,94 @@ The RATS system tracks a launch vehicle during flight by continuously aiming a d
 
 ### 4.2 Radio Pico to Motor Pico (UART1)
 
+**STATUS: Implementation TBD**
+
 **Physical Layer:**
 - Baud Rate: 115200 bps
 - Data Format: 8N1
 - Flow Control: None
-- Update Rate: 10 Hz
+- Pins: Radio Pico GP4/GP5 ↔ Motor Pico GP5/GP4
+- Update Rate: 10 Hz target
 
-**Command Packet Structure (Radio → Motor, 35 bytes):**
+**Proposed Command Packet Structure (Radio → Motor):**
 
-```
-struct CommandPacket {
-    uint8_t header;           // 0xAA
-    uint8_t cmd_type;         // 0x01=Normal, 0x02=Predicted, 0x03=Home
-    int32_t target_lat_udeg;  // Target latitude (microdegrees)
-    int32_t target_lon_udeg;  // Target longitude (microdegrees)
-    float target_alt_m;       // Target altitude (meters)
-    float velocity_x_ms;      // Velocity X (m/s)
-    float velocity_y_ms;      // Velocity Y (m/s)
-    float velocity_z_ms;      // Velocity Z (m/s)
-    uint16_t checksum;        // CRC16-CCITT
-};
-```
-
-**Status Packet Structure (Motor → Radio, 31 bytes):**
-
-```
-struct StatusPacket {
-    uint8_t header;           // 0xBB
-    uint8_t status_flags;     // Motor status bitfield
-    float current_az_deg;     // Current azimuth (degrees)
-    float current_el_deg;     // Current elevation (degrees)
-    float turret_lat_udeg;    // Turret GPS latitude
-    float turret_lon_udeg;    // Turret GPS longitude
-    float turret_alt_m;       // Turret GPS altitude
-    uint16_t checksum;        // CRC16-CCITT
-};
+```cpp
+// TODO: Define exact packet format
+// Minimum required data:
+// - Target GPS coordinates (lat, lon, alt)
+// - Command type (track, home, emergency stop)
+// - Checksum/CRC
+//
+// Example:
+// struct CommandPacket {
+//     uint8_t header;           // 0xAA
+//     uint8_t cmd_type;         // 0x01=Track, 0x02=Home, 0x03=Stop
+//     int32_t target_lat_udeg;  // Target latitude (microdegrees)
+//     int32_t target_lon_udeg;  // Target longitude (microdegrees)
+//     float target_alt_m;       // Target altitude (meters)
+//     uint16_t checksum;        // CRC16-CCITT
+// };
 ```
 
-**Status Flags:**
-- Bit 0: Motors enabled
-- Bit 1: Azimuth homed
-- Bit 2: Elevation homed
-- Bit 3: At target position
-- Bit 4: GPS lock valid
-- Bit 5: Azimuth limit hit
-- Bit 6: Elevation limit hit
-- Bit 7: Error state
+**Proposed Status Packet Structure (Motor → Radio):**
+
+```cpp
+// TODO: Define exact packet format
+// Suggested data to send back:
+// - Current motor position (azimuth, elevation)
+// - Status flags (homed, tracking, error)
+// - GPS position of turret
+//
+// Example:
+// struct StatusPacket {
+//     uint8_t header;           // 0xBB
+//     uint8_t status_flags;     // Motor status bitfield
+//     float current_az_deg;     // Current azimuth (degrees)
+//     float current_el_deg;     // Current elevation (degrees)
+//     uint16_t checksum;        // CRC16-CCITT
+// };
+```
+
+**Implementation Tasks:**
+1. Define final packet structures in Common/serial_protocol.h
+2. Implement UART send/receive in both Picos
+3. Implement CRC16 checksum validation
+4. Test bidirectional communication at 10 Hz
+5. Handle packet loss and timeouts
 
 ---
 
 ### 4.3 Radio Pico to Ground Station (MQTT)
 
-**MQTT Topics:**
+**STATUS: Implementation TBD**
+
+**MQTT Configuration:**
+- Broker Address: TBD
+- Port: 1883 (standard MQTT)
+- WiFi SSID/Password: See config.h
+- QoS Level: TBD
+
+**Proposed Topics:**
 
 | Topic | Direction | Rate | Description |
 |-------|-----------|------|-------------|
-| rats/telemetry | Publish | 10 Hz | Full rocket telemetry |
-| rats/status | Publish | 1 Hz | System status |
-| rats/turret | Publish | 1 Hz | Turret position |
-| rats/command | Subscribe | On-demand | Ground commands |
+| rats/raw/{unit_id} | Publish | 10 Hz | Full rocket telemetry (JSON) |
+| rats/status/{unit_id} | Publish | 1 Hz | System status |
+| rats/command/{unit_id} | Subscribe | On-demand | Ground commands |
 
-**Telemetry Payload (JSON):**
-- Rocket: lat, lon, alt, velocity, attitude, flight_mode
-- Turret: azimuth, elevation, tracking status
-- Link: RSSI, packet rate
+**Implementation Notes:**
+- Use existing mqtt_client.cpp as starting point
+- Telemetry already formatted as JSON by packet_parser.cpp
+- WiFi credentials configured in Common/config.h
+- MQTT broker address in config.h: MQTT_BROKER_ADDRESS
+- Recommend using PubSubClient or Pico SDK MQTT library
 
-**Ground Commands:**
-- "home": Return to 0°, 0°
-- "emergency_stop": Stop motors
-- "resume": Resume tracking
-- "reboot": Reboot system
+**Implementation Tasks:**
+1. Define exact topic structure
+2. Define command message format
+3. Implement MQTT publish in Core 1 loop
+4. Test WiFi connection reliability
+5. Handle reconnection logic
 
 ---
 
@@ -422,31 +463,19 @@ struct StatusPacket {
 RATS/
 ├── Common/                   # Shared code
 │   ├── packet_types.h        # Telemetry structures
-│   ├── packet_parser.cpp     # Packet parsing
-│   ├── serial_protocol.h     # Inter-Pico protocol
-│   ├── config.h              # Configuration
-│   └── crc16.cpp             # Checksums
-│
+│   ├── ...
+|
 ├── RadioPico/                # Radio/Data Pico
 │   ├── RadioPico.cpp         # Main (core assignment)
-│   ├── rfd900x_uart.cpp      # RFD900x interface
-│   ├── inter_pico_uart.cpp   # UART to Motor Pico
-│   ├── sd_logger.cpp         # SD card logging
-│   ├── mqtt_client.cpp       # WiFi/MQTT
-│   ├── predictor.cpp         # Trajectory prediction
-│   └── ring_buffer.h         # Circular buffer
+│   ├── ...
 │
 ├── StepperPico/              # Motor Control Pico
 │   ├── StepperPico.cpp       # Main (core assignment)
-│   ├── stepper_control.cpp   # PIO motor control
-│   ├── stepper_control.pio   # PIO assembly
-│   ├── angle_calculator.cpp  # Pointing math
-│   ├── gps_parser.cpp        # NMEA parsing
-│   └── inter_pico_uart.cpp   # UART from Radio Pico
+│   ├── ...
 │
 └── Tests/                    # Test utilities
     ├── packet_simulator.cpp  # Fake telemetry
-    └── test_parser.cpp       # Unit tests
+    └── ...
 ```
 
 ### 5.2 Core Assignment Strategy
@@ -577,36 +606,49 @@ See section 4.2 for CommandPacket and StatusPacket structures.
 
 ### 8.3 Motor Pico - Core 0
 
-**Main Loop:**
+**STATUS: Implementation TBD**
+
+**Proposed Main Loop:**
 1. Get target position from Core 1 queue
-2. Calculate step requirements (azimuth)
-3. Apply acceleration profile
-4. Feed PIO FIFO with step count
-5. Set direction pin
-6. Track current position
-7. Repeat for elevation axis
-8. Check safety limits
-9. Update position for Core 1
-10. Sleep 1ms (1 kHz loop)
+2. Calculate step requirements for both axes
+3. Apply acceleration/deceleration profiles
+4. Generate step pulses (via PIO or GPIO)
+5. Update current position tracking
+6. Check safety limits (min/max angles)
+7. Sleep briefly (target 1 kHz update rate)
 
-**Timing:** 1 kHz loop, ±1µs precision
+**Suggested Timing:** 1 kHz loop
 
-**Constraints:** NO UART, NO blocking operations
+**Constraints:**
+- NO UART on Core 0 (use Core 1 for UART)
+- NO blocking operations
+- Keep loop fast for responsive motor control
+
+**TODO:**
+- Implement step pulse generation (PIO or GPIO)
+- Implement acceleration profiles
+- Add limit switch support (optional)
 
 ### 8.4 Motor Pico - Core 1
 
-**Main Loop:**
-1. Check UART1 for command from Radio Pico
-2. Parse command packet, validate CRC
-3. Read GPS NMEA sentences
-4. Calculate pointing angles (azimuth/elevation)
-5. Convert to motor steps
-6. Send target to Core 0 via queue
-7. Update status packet
-8. Send status to Radio Pico via UART1
-9. Sleep 100µs
+**STATUS: Implementation TBD**
 
-**Timing:** 1-10ms per task
+**Proposed Main Loop:**
+1. Check UART1 for commands from Radio Pico
+2. Parse command packet, validate checksum
+3. Read GPS (if using GPS for turret position)
+4. Calculate pointing angles (azimuth/elevation) from GPS coordinates
+5. Send target angles to Core 0 via queue
+6. Send status back to Radio Pico via UART1
+7. Sleep briefly
+
+**Suggested Timing:** 10-100 Hz update rate
+
+**TODO:**
+- Implement angle calculation algorithm
+- Implement UART receive/transmit
+- Add GPS parsing (optional)
+- Handle command timeouts
 
 ---
 
@@ -643,80 +685,13 @@ See section 4.2 for CommandPacket and StatusPacket structures.
 
 ---
 
-## 10. Implementation Roadmap
+## 10. Testing Strategy
 
-### Phase 1: Hardware Bring-Up (Week 1-2)
-- Assemble PCB, solder components
-- Power-on testing, measure voltages
-- Program both Picos with "Hello World"
-- Test UART communication (loopback tests)
-- Test GPIO (LED blink, motor enable)
-
-### Phase 2: Radio Reception (Week 3)
-- Implement packet parser
-- Test with packet simulator
-- Implement RFD900x UART driver
-- Test with real RFD900x
-- Measure packet reception rate
-
-### Phase 3: Inter-Pico Communication (Week 4)
-- Implement UART protocol (both Picos)
-- Test command/status exchange
-- Validate CRC checksums
-- Test at 10 Hz update rate
-
-### Phase 4: Motor Control (Week 5-6)
-- Implement PIO stepper program
-- Test single motor (azimuth)
-- Implement acceleration profiles
-- Test both motors simultaneously
-- Calibrate steps-per-degree
-
-### Phase 5: Angle Calculation (Week 7)
-- Implement GPS parser
-- Test with real GPS module
-- Implement angle calculation
-- Validate with known coordinates
-- Test end-to-end: GPS → motors
-
-### Phase 6: WiFi/MQTT (Week 8)
-- Implement WiFi connection
-- Implement MQTT client
-- Test telemetry publishing
-- Test command reception
-
-### Phase 7: SD Card Logging (Week 9)
-- Implement SD card driver
-- Test file writes
-- Implement batch writing
-- Test data integrity
-
-### Phase 8: Prediction & Link Loss (Week 10)
-- Implement trajectory prediction
-- Test with simulated link loss
-- Validate prediction accuracy
-
-### Phase 9: Integration Testing (Week 11-12)
-- End-to-end system test
-- Performance profiling
-- Stress testing (4+ hours)
-- Bug fixes and optimization
-
-### Phase 10: Launch Preparation (Week 13-14)
-- Final hardware checkout
-- Calibration procedures
-- Pre-flight checklist
-- Launch day operations
-
----
-
-## 11. Testing Strategy
-
-### 11.1 Unit Tests (PC-based)
+### 10.1 Unit Tests (PC-based)
 
 Test packet parser with valid/invalid packets, test angle calculator with known coordinates, verify CRC implementation.
 
-### 11.2 Hardware Tests
+### 10.2 Hardware Tests
 
 **Packet Reception Rate:**
 - Target: 10 Hz sustained
@@ -734,7 +709,7 @@ Test packet parser with valid/invalid packets, test angle calculator with known 
 - Target: <5 ms
 - Pass: <10 ms
 
-### 11.3 System Tests
+### 10.3 System Tests
 
 **Continuous Operation:**
 - Duration: 4 hours @ 10 Hz
@@ -750,47 +725,55 @@ Test packet parser with valid/invalid packets, test angle calculator with known 
 
 ---
 
-## 12. Configuration Reference
+## 11. Configuration Reference
 
-### 12.1 Constants
+### 11.1 Constants
 
 ```cpp
-// Radio
+// Radio (IMPLEMENTED - see Common/config.h)
 #define RFD_UART_ID        uart0
-#define RFD_BAUD_RATE      57600
+#define RFD900X_BAUD_RATE  115200
 
-// Inter-Pico
+// Inter-Pico (TODO - Motor Control team)
 #define INTER_PICO_UART_ID uart1
 #define INTER_PICO_BAUD    115200
 
-// Motor
-#define STEPS_PER_REV      3200
+// Motor (TBD - configure based on DM556T microstepping settings)
+#define MOTOR_FULL_STEPS   200     // NEMA 23: 1.8° per step
+#define MICROSTEPS         TBD     // Set via DM556T DIP switches (2-256)
+#define STEPS_PER_REV      (MOTOR_FULL_STEPS * MICROSTEPS)
 #define STEPS_PER_DEGREE   (STEPS_PER_REV / 360.0)
-#define MAX_STEP_RATE      20000
-#define ACCELERATION       10000
+#define MAX_STEP_RATE      TBD     // Test with actual motors (Hz)
+#define ACCELERATION       TBD     // Tune for smooth motion (steps/s²)
 
-// Limits
-#define AZ_MIN_ANGLE       -180.0
-#define AZ_MAX_ANGLE       180.0
+// Limits (TBD - set based on mechanical constraints)
+#define AZ_MIN_ANGLE       -180.0  // Or physical limit
+#define AZ_MAX_ANGLE       180.0   // Or physical limit
 #define EL_MIN_ANGLE       0.0
 #define EL_MAX_ANGLE       90.0
 
 // Timing
 #define LINK_LOSS_TIMEOUT_MS  500
 #define GPS_TIMEOUT_MS        2000
+#define PACKET_RATE_HZ        10
+#define SD_LOG_BATCH_SIZE     10
 
 // Earth
 #define EARTH_RADIUS       6371000.0  // meters
 #define GRAVITY            9.81       // m/s²
 
-// WiFi/MQTT
-#define WIFI_SSID          "your_ssid"
-#define WIFI_PASSWORD      "your_password"
-#define MQTT_BROKER        "192.168.1.100"
+// WiFi/MQTT (TODO - Ground Station team - see Common/config.h)
+#define WIFI_SSID          "CornellRocketry-2.4G"
+#define WIFI_PASSWORD      "Rocketry2526"
+#define MQTT_BROKER        "192.168.1.2"
 #define MQTT_PORT          1883
+#define RATS_UNIT_ID       1
+
+// Sync Word (IMPLEMENTED)
+#define SYNC_WORD          0x3E5D5967  // "CRT!"
 ```
 
-### 12.2 Pin Summary
+### 11.2 Pin Summary
 
 **Radio Pico #1:**
 - GP0-3: RFD900x UART0 (TX, RX, CTS, RTS)
@@ -806,7 +789,7 @@ Test packet parser with valid/invalid packets, test angle calculator with known 
 - GP9-11: Elevation motor (STEP, DIR, ENA)
 - GP28: Status LED (red)
 
-### 12.3 Calibration
+### 11.3 Calibration
 
 **Home Position:**
 1. Manually position to 0°, 0° (north, horizon)
@@ -833,36 +816,7 @@ Test packet parser with valid/invalid packets, test angle calculator with known 
 4. Compare with calculated angles
 5. Acceptable error: ±1°
 
-### 12.4 Pre-Flight Checklist
-
-**T-1 Hour:**
-- [ ] Connect all cables (power, motors, antennas)
-- [ ] Power on, verify both Picos boot
-- [ ] Check LED status (green/red)
-- [ ] Verify GPS lock (8+ satellites)
-- [ ] Test motor movement (full range)
-- [ ] Confirm SD card mounted
-- [ ] Test RFD900x reception
-- [ ] Confirm MQTT publishing
-
-**T-15 Minutes:**
-- [ ] Clear antenna field of view
-- [ ] Secure all cables
-- [ ] Final GPS position check
-- [ ] Set system to Armed mode
-- [ ] Verify link with rocket
-
-**T-0 (Launch):**
-- [ ] Confirm tracking active
-- [ ] Monitor antenna movement
-- [ ] Watch for link loss events
-
-**T+Recovery:**
-- [ ] Download SD card data
-- [ ] Export MQTT logs
-- [ ] Review tracking accuracy
-
-### 12.5 Troubleshooting
+### 11.4 Troubleshooting
 
 **No packets received:**
 - Check RFD900x power LED
@@ -895,5 +849,3 @@ Test packet parser with valid/invalid packets, test angle calculator with known 
 - Test card in PC first
 
 ---
-
-**END OF DOCUMENT**
