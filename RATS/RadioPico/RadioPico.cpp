@@ -3,12 +3,14 @@
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
 #include "pico/util/queue.h"
+#include "pico/cyw43_arch.h"
 #include "config.h"
 #include "packet_types.h"
 #include "packet_parser.h"
 #include "rfd900x_uart.h"
 #include "packet_simulator.h"
 #include "sd_logger.h"
+#include "mqtt_client.h"
 
 // Test Mode: Set to 1 for dual-radio test (TX+RX), 0 for normal operation (RX only)
 // Normal operation: Rocket -> RFD900x -> GP1 (RX)
@@ -30,6 +32,20 @@ void core1_entry() {
         printf("[Core 1] WARNING: SD card failed to initialize - logging disabled\n");
     }
 
+    // Connect to Wi-Fi and MQTT broker
+    // Blocks until Wi-Fi is connected
+    bool mqtt_ready = MqttClient::init();
+    if (!mqtt_ready) {
+        printf("[Core 1]: Failed to init MQTT client - datalink failure\n");
+        while(true) {
+            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
+            sleep_ms(LED_BLINK_ERROR);
+            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
+            sleep_ms(LED_BLINK_ERROR);
+        }
+    }
+
+
     char json_buffer[2048];
     RadioPacket packet;
     RadioPacket batch_buffer[SD_LOG_BATCH_SIZE];
@@ -37,13 +53,18 @@ void core1_entry() {
     uint32_t last_stats_time = 0;
 
     while (true) {
+        // Poll Network Stack
+        MqttClient::poll();
+
         // Wait for packets from Core 0
         if (queue_try_remove(&packet_queue, &packet)) {
             // Convert to JSON (can be slow, that's OK on Core 1)
             PacketParser::radioPacketToJSON(packet, json_buffer, sizeof(json_buffer));
 
-            // Send to USB serial (ground station)
-            printf("%s\n", json_buffer);
+            // Send to USB serial (debugging)
+            if(sd_ready && mqtt_ready) {
+                printf("%s\n", json_buffer);
+            }
 
             // Add to batch buffer for SD logging
             if (sd_ready && batch_count < SD_LOG_BATCH_SIZE) {
@@ -60,7 +81,11 @@ void core1_entry() {
                 }
             }
 
-            // TODO: Add MQTT publishing here
+            // Send individual packets over MQTT immediately
+            if (mqtt_ready) {
+                MqttClient::publish(json_buffer);
+            }
+            
         }
 
         // Print SD stats every 30 seconds
@@ -74,7 +99,7 @@ void core1_entry() {
         }
 
         // Core 1 can afford to sleep
-        sleep_ms(5);
+        sleep_ms(1);
     }
 }
 
@@ -82,7 +107,7 @@ int main() {
     stdio_init_all();
     sleep_ms(6000);
     
-    printf("\n=== RadioPico - Dual RFD900x Test ===\n");
+    printf("\n=== RadioPico ===\n");
     printf("Core 0: Real-time I/O\n");
     printf("Core 1: Processing & Logging\n\n");
 
@@ -98,6 +123,11 @@ int main() {
     printf("  Pin 9 (TX) -> Pico GP1 (UART0 RX)\n\n");
     printf("Simulating rocket telemetry at 10Hz\n");
     printf("Both radios must have Network ID = 217\n\n");
+
+    // Test mode: create simulator for generating packets
+    PacketSimulator simulator;
+    uint32_t last_transmit_time = 0;
+    printf("Starting packet transmission over air...\n\n");
 #else
     printf("*** NORMAL OPERATION MODE ***\n");
     printf("Connect RFD900x:\n");
@@ -115,13 +145,6 @@ int main() {
     // Initialize UART for RFD900x
     RFD900xUART::init();
     printf("[Core 0] Ready for packets\n\n");
-
-#if DUAL_RADIO_TEST_MODE
-    // Test mode: create simulator for generating packets
-    PacketSimulator simulator;
-    uint32_t last_transmit_time = 0;
-    printf("Starting packet transmission over air...\n\n");
-#endif
     
     // Core 0 main loop - FAST I/O ONLY
     uint8_t radio_buffer[107];

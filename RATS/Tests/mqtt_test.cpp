@@ -35,9 +35,16 @@ int main() {
     printf("\n=== RATS MQTT Test ===\n");
     printf("Connecting to Wi-Fi and MQTT broker...\n");
 
-    // Initialize Wi-Fi and MQTT client
-    // This will block until Wi-Fi is connected.
-    mqtt_client_init();
+    // Initialize Wi-Fi and MQTT
+    if (!MqttClient::init()) {
+        printf("FATAL: Failed to init MQTT client. Halting.\n");
+        while(true) {
+            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
+            sleep_ms(LED_BLINK_ERROR);
+            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
+            sleep_ms(LED_BLINK_ERROR);
+        }
+    }
 
     printf("Initialization complete. Starting publish loop...\n");
 
@@ -45,10 +52,8 @@ int main() {
 
     // Main loop: poll network and publish data
     while (true) {
-        // --- CRITICAL ---
-        // This must be called continuously in the loop
-        // to handle the non-blocking network stack.
-        mqtt_client_poll();
+        // Poll Network Stack
+        MqttClient::poll();
 
         // Check if 1 second (1,000,000 us) has passed
         absolute_time_t now = get_absolute_time();
@@ -57,20 +62,19 @@ int main() {
         if (diff_us > 1000 * 1000) { // 1 second
             last_publish_time = now;
 
-            // 1. Generate a new simulated packet
+            // Generate a new simulated packet
             RadioPacket packet;
             simulator.generateRadioPacket(packet);
 
-            // 2. Parse it to our JSON format
+            // Parse to JSON format
             PacketParser::radioPacketToJSON(packet, json_buffer, sizeof(json_buffer));
 
-            // 3. Publish to MQTT
+            // Publish to MQTT
             printf("Publishing packet:\n%s\n\n", json_buffer);
-            mqtt_client_publish(json_buffer);
+            MqttClient::publish(json_buffer);
         }
 
         // Give the network stack time to breathe
-        // This is not strictly necessary but is good practice
         sleep_ms(10);
     }
 
