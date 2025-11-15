@@ -15,17 +15,16 @@
 - SD Card Logging: CSV logging to microSD card via SPI1 (GP10-13, GP22)
 - Dual-Core Architecture: Core 0 for real-time I/O, Core 1 for logging
 - Test Mode: Packet simulator for testing without rocket
+- MQTT/Wi-Fi: Connecting to Wi-Fi, publishing packets to MQTT
 
 **IN PROGRESS:**
-- MQTT/WiFi: Framework exists, integration TBD
 - Inter-Pico UART: Protocol defined, implementation TBD
-
+- Ground Station Integration: MQTT topic structure and command handling
+  
 **TODO:**
 - Motor Control (Stepper Pico): Motor control functionality
 - Angle Calculation: GPS coordinate to azimuth/elevation conversion
 - Trajectory Prediction: Link loss handling with ballistic prediction
-- Ground Station Integration: MQTT topic structure and command handling
-
 ---
 
 ## Table of Contents
