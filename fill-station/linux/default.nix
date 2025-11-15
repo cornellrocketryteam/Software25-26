@@ -5,12 +5,10 @@ inputs.mixos.lib.mixosSystem {
       { ... }:
       {
         nixpkgs.nixpkgs = inputs.nixpkgs;
-        nixpkgs.overlays = [
-          inputs.mixos.overlays.default
-        ];
       }
     )
 
     ./mixosConfiguration.nix
+    ./mixos-fit-image.nix
   ];
 }

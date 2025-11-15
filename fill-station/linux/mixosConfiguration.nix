@@ -54,11 +54,5 @@
     ${config.users.root.name}:$6$cy4JUqDYWZowMaLn$oefiZuEJvrHqU3zB33WKrLxaBrsh8mdYqLvtZHP8X1b48E3MYGAYJ3vXtL9x83AI8H6TVO9rvBcsq7bu11li20:1::::::
   '';
 
-  system.build.fitImage = pkgs.callPackage ./fit.nix {
-    kernel = "${config.boot.kernel}/Image";
-    dtb = "${config.boot.kernel}/dtbs/ti/k3-am642-sk.dtb";
-    initrd = "${config.system.build.initrd}/initrd";
-  };
-
   mixos.testing.enable = false;
 }

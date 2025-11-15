@@ -11,7 +11,7 @@
   zstd,
 }:
 stdenvNoCC.mkDerivation {
-  name = "fill-station-fit-image";
+  name = "fit-image";
 
   nativeBuildInputs = [
     zstd
