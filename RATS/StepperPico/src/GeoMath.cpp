@@ -1,21 +1,14 @@
 #include "GeoMath.h"
 #include <cmath>
 
-Azimuth_El GeoMath::compute_angle_el(const LLA& rats, const LLA& rocket) {
-    const double earthRadius = 6378137;
-    const double eccentSqr = 6.69437999014e-3;
-    const double PI = M_PI;
+static constexpr double earthRadius = 6378137.0;
+static constexpr double eccentSqr = 6.69437999014e-3;
+static constexpr double PI = M_PI;
 
-    double deg_to_rad (double deg) {
-        return deg * PI / 180.0;
-    };
+static inline double deg_to_rad(double d) { return d * PI / 180.0; }
+static inline double rad_to_deg(double r) { return r * 180.0 / PI; }
 
-    double rad_to_deg (double rad) {
-        return rad * 180.0 / PI;
-    };
-
-    // LLA to ECEF (Cartesian Coords)
-    void to_ECEF(double lat, double lon, double alt, double& x, double& y, double& z) {
+static void to_ECEF(double lat, double lon, double alt, double& x, double& y, double& z) {
         double sinLat = sin(lat), cosLat = cos(lat);
         double sinLon = sin(lon), cosLon = cos(lon);
         double N = earthRadius / sqrt(1 - eccentSqr * pow(sin(lat), 2));
@@ -24,6 +17,7 @@ Azimuth_El GeoMath::compute_angle_el(const LLA& rats, const LLA& rocket) {
         z = ((1 - eccentSqr) * N + alt) * sinLat;
     };
 
+Vec3 GeoMath::llatoENU(const LLA &rats, const LLA &rocket) {
     double lat0 = deg_to_rad(rats.lat);
     double lon0 = deg_to_rad(rats.lon);
     double lat1 = deg_to_rad(rocket.lat);
@@ -38,18 +32,29 @@ Azimuth_El GeoMath::compute_angle_el(const LLA& rats, const LLA& rocket) {
     double sinLat = sin(lat0), cosLat = cos(lat0);
     double sinLon = sin(lon0), cosLon = cos(lon0); 
 
-    double east = -sinLon * distx + cosLon * disty;
-    double north = -cosLon * sinLat * distx - sinLat * sinLon * disty + cosLat * distz;
-    double up = cosLat * cosLon * distx + cosLat * sinLon * disty + sinLat * distz;
+    Vec3 enu;
+    enu.x = -sinLon * distx + cosLon * disty;
+    enu.y = -cosLon * sinLat * distx - sinLat * sinLon * disty + cosLat * distz;
+    enu.z = cosLat * cosLon * distx + cosLat * sinLon * disty + sinLat * distz;
+    return enu;
+}
 
+AzEl GeoMath::enuToAzEl(const Vec3 &enu) {
+    AzEl result;
+    double east = enu.x;
+    double north = enu.y;
+    double up = enu.z;
     double range = sqrt(pow(east, 2) + pow(north, 2) + pow(up, 2));
     double horizontal = sqrt(pow(east, 2) + pow(north, 2));
     double azimuth = atan2(east, north);
     double elevation = atan2(up, horizontal);
-
-    Azimuth_El result;
     result.azimuth = rad_to_deg(azimuth);
     result.elevation = rad_to_deg(elevation);
     result.range = range;
     return result;
+}
+
+AzEl GeoMath::computeAzEl(const LLA &rats, const LLA &rocket) {
+    Vec3 enu = llatoENU(rats, rocket);
+    return enuToAzEl(enu);
 }

@@ -1,7 +1,6 @@
 #pragma once
-#include "pico/stdlib.h"
+#include <Arduino.h>
 #include <AccelStepper.h>
-#include <cmath>
 
 class StepperMotor {
     public:
@@ -9,10 +8,12 @@ class StepperMotor {
     
     void moveAngleTo(double targetAngle);
     void update();
+    void setMaxSpeed(float stepsPerSec);
+    void setAcceleration(float stepsPerSec2);
     void reset();
 
     private:
-        uint DIR_, STEP_;
+        uint8_t DIR_, STEP_;
         int stepsPerRev_, microsteps_;
         double currentAngle_;
         AccelStepper motor_;
