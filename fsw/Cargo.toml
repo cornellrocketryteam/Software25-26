@@ -4,28 +4,19 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-embassy-embedded-hal = { version = "0.5.0", features = ["defmt"] }
-embassy-sync = { version = "0.7.2", features = ["defmt"] }
-embassy-executor = { version = "0.9.0", features = ["arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
-embassy-time = { version = "0.5.0", features = ["defmt", "defmt-timestamp-uptime"] }
-embassy-rp = { version = "0.8.0", features = ["defmt", "unstable-pac", "time-driver", "critical-section-impl", "rp235xa", "binary-info"] }
-
-defmt = "1.0.1"
-defmt-rtt = "1.0.0"
-
-panic-probe = { version = "1.0.0", features = ["print-defmt"] }
+# Core runtime and HAL
+cortex-m = "0.7.7"
 cortex-m-rt = "0.7.0"
-icm426xx = { version = "0.4.0", features = ["async", "defmt"] }
-bmp390 = { version = "0.4.1", features = ["embassy-time"] }
-ublox = { version = "0.7.0", default-features = false, features = ["alloc", "ubx_proto27"] }
-embedded-hal-async = "1.0.0"
-heapless = "0.8"
+rp-hal = { package = "rp235x-hal", version = "0.3.0", features = ["critical-section-impl"] }
+embedded-hal = "1.0.0"
+
+# Sensors
+# Using custom BMP390 driver (blocking I2C)
+
+# Utilities
 libm = "0.2.15"
-embedded-alloc = "0.6.0"
+fugit = "0.3.7"
 
-# sensors
-
-[package.metadata.embassy]
-build = [
-  { target = "thumbv8m.main-none-eabihf", artifact-dir = "out/examples/rp235x" }
-]
+# Panic handler
+panic-halt = "1.0.0"
+critical-section = "1.2.0"
