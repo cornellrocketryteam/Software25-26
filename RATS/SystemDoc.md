@@ -583,7 +583,7 @@ See section 4.2 for CommandPacket and StatusPacket structures.
 7. Send to Motor Pico via UART1
 8. Queue packet for Core 1 (MQTT/SD)
 9. Check for link loss (>500ms timeout)
-10. Sleep 100µs
+10. Continue immediately (tight_loop_contents)
 
 **Timing:** <1ms per iteration
 
