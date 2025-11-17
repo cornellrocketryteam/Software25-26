@@ -55,10 +55,10 @@ stdenvNoCC.mkDerivation {
 
     cp ${initrd} initrd
 
-    cp ${./kernel.its} fit.its
-    substituteInPlace fit.its --subst-var loadAddress
+    cp ${./kernel.its} fitImage.its
+    substituteInPlace fitImage.its --subst-var loadAddress
 
-    mkimage -f fit.its kernel.itb
-    install -Dm0644 -t $out kernel.itb
+    mkimage -f fitImage.its fitImage.itb
+    install -Dm0644 -t $out fitImage.itb
   '';
 }
