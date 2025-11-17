@@ -13,7 +13,7 @@ let
     cp ${uboot.r5}/tiboot3-am64x_sr2-hs-fs-evm.bin firmware/tiboot3.bin
     cp ${uboot.a53}/tispl.bin firmware/tispl.bin
     cp ${uboot.a53}/u-boot.img firmware/u-boot.img
-    cp ${uboot.uEnv}/uEnv.txt firmware/uEnv.txt
+    cp ${uboot.uEnv} firmware/uEnv.txt
     cp ${fill-station.config.system.build.fitImage}/fitImage.itb firmware/fitImage.itb
 
   '';
