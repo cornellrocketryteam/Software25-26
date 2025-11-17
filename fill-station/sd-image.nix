@@ -1,7 +1,7 @@
 { pkgs, uboot, fill-station }:
 let
   gapMiB = 2;
-  firmwareSizeMiB = 30;
+  firmwareSizeMiB = 60;
   # Controls for the second partition
   secondPartitionSizeMiB = 100;
   # Partition type codes for sfdisk: 'c' = W95 FAT32 (LBA), '83' = Linux
@@ -13,7 +13,7 @@ let
     cp ${uboot.r5}/tiboot3-am64x_sr2-hs-fs-evm.bin firmware/tiboot3.bin
     cp ${uboot.a53}/tispl.bin firmware/tispl.bin
     cp ${uboot.a53}/u-boot.img firmware/u-boot.img
-    cp ${fill-station.config.system.build.fitImage}/kernel.itb kernel.itb
+    cp ${fill-station.config.system.build.fitImage}/kernel.itb firmware/kernel.itb
   '';
 in
 pkgs.stdenv.mkDerivation (finalAttrs: {
