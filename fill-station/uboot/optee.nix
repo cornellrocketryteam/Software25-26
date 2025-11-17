@@ -16,6 +16,10 @@ stdenv.mkDerivation (finalAttrs: {
     hash = "sha256-eefwfjSkDMFubKk+tIzTqe7h+v3VYxV6gzpzFxuJsyU=";
   };
 
+  postPatch = ''
+    patchShebangs scripts/ ta/pkcs11/scripts/
+  '';
+
   strictDeps = true;
   enableParallelBuilding = true;
 
