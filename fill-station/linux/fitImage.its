@@ -12,8 +12,8 @@
                         arch = "arm64";
                         os = "linux";
                         compression = "lzma";
-                        load = <@loadAddress@>;
-                        entry = <@loadAddress@>;
+                        load = <@loadaddr@>;
+                        entry = <@loadaddr@>;
                         hash {
                                 algo = "crc32";
                         };

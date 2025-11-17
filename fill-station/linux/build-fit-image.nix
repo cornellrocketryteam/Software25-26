@@ -3,18 +3,15 @@
   dtb,
   initrd,
 
-  dtc,
-  lib,
   stdenvNoCC,
-  ubootTools,
+  dtc,
   xz,
-  zstd,
+  ubootTools,
 }:
 stdenvNoCC.mkDerivation {
   name = "fit-image";
 
   nativeBuildInputs = [
-    zstd
     dtc
     xz
     ubootTools
@@ -27,19 +24,9 @@ stdenvNoCC.mkDerivation {
       "panic=-1"
     ];
 
-    # We know we are fitting this FIT image in QSPI at least twice, which is
-    # 256 MiB in size. There is a bunch of other stuff in QSPI taking up space,
-    # so we aren't even taking up all the space. To be on the highly
-    # conservative side, let's assume we take 1/4 the size of QSPI and set the
-    # load address of our kernel to be U-Boot's load address plus that size. We
-    # have to add onto U-Boot's load address because that is where we are
-    # loading the FIT image itself, and U-Boot will unpack and decompress the
-    # kernel from the FIT image into the kernel's load address.
-    loadAddress =
-      let
-        loadAddress = (2080 + 45) * 1024 * 1024; # 0x82000000 + 45 MiB
-      in
-      "0x${lib.toHexString loadAddress}";
+    # Assuming that the FIT image is loaded to ${addr_fit}, this variable should
+    # be set equal to the UBoot $loadaddr env variable
+    loadaddr = "0x82000000";
   };
 
   __structuredAttrs = true;
@@ -55,8 +42,8 @@ stdenvNoCC.mkDerivation {
 
     cp ${initrd} initrd
 
-    cp ${./kernel.its} fitImage.its
-    substituteInPlace fitImage.its --subst-var loadAddress
+    cp ${./fitImage.its} fitImage.its
+    substituteInPlace fitImage.its --subst-var loadaddr
 
     mkimage -f fitImage.its fitImage.itb
     install -Dm0644 -t $out fitImage.itb
