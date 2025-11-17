@@ -3,48 +3,46 @@
 #![no_std]
 #![no_main]
 
-use cortex_m::delay::Delay;
-use cortex_m_rt::entry;
-use embedded_hal::delay::DelayNs;
-use panic_halt as _;
+use embassy_executor::Spawner;
+use embassy_rp::gpio::{Level, Output};
+use embassy_time::Timer;
+use {defmt_rtt as _, panic_probe as _};
 
-mod constants;
-mod drivers;
+mod driver;
 mod module;
+
 mod state;
 
-pub struct DelayWrapper(Delay);
+#[embassy_executor::main]
+async fn main(spawner: Spawner) {
+    let p = embassy_rp::init(Default::default());
 
-impl DelayNs for DelayWrapper {
-    fn delay_ns(&mut self, ns: u32) {
-        let us = ns / 1000;
-        if us > 0 {
-            self.0.delay_us(us);
-        }
-    }
-}
+    // Initialize USB driver for logger
+    let driver = module::init_usb_driver(p.USB);
 
-#[entry]
-fn main() -> ! {
-    let pac = hal::pac::Peripherals::take().unwrap();
-    let core = cortex_m::Peripherals::take().unwrap();
+    // Spawn USB logger task
+    spawner.spawn(logger_task(driver).unwrap());
 
-    module::initialize_modules(pac, core);
+    let i2c_bus = module::init_shared_i2c(p.I2C0, p.PIN_0, p.PIN_1);
+    let (spi, cs) = module::init_spi(p.SPI0, p.PIN_16, p.PIN_19, p.PIN_18, p.PIN_17);
 
+    // GPIO 25 is the onboard LED
+    let mut led = Output::new(p.PIN_25, Level::Low);
+
+    let mut flight_state = state::FlightState::new(i2c_bus, spi, cs).await;
     loop {
-        module::feed_watchdog();
+        flight_state.transition().await;
+        flight_state.execute().await;
 
-        let current_mode = module::get_current_mode();
-        current_mode.execute();
-        current_mode.transition();
+        log::info!("Current Flight Mode: {}", flight_state.flight_mode_name());
 
-        unsafe {
-            let delay_ptr = core::ptr::addr_of_mut!(module::delay::DELAY);
-            if let Some(delay) = (*delay_ptr).as_mut() {
-                delay.delay_ms(100);
-            }
-        }
+        // Toggle LED
+        led.toggle();
+        Timer::after_millis(500).await;
     }
 }
 
-use rp_hal as hal;
+#[embassy_executor::task]
+async fn logger_task(driver: embassy_rp::usb::Driver<'static, embassy_rp::peripherals::USB>) -> ! {
+    embassy_usb_logger::run!(1024, log::LevelFilter::Info, driver);
+}

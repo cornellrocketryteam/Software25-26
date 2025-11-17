@@ -1,200 +1,89 @@
-//! Global module state and sensor data
+//! USB Logger and Sensor Module
 
-use crate::drivers::bmp390::BMP390;
-use cortex_m::delay::Delay;
-use hal::gpio;
-use hal::pac;
-use hal::Clock;
-use hal::I2C;
-use rp_hal as hal;
+use bmp390::{Bmp390, Configuration};
+use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice as SharedI2cDevice;
+use embassy_rp::gpio::Output;
+use embassy_rp::i2c::{Config as I2cConfig, I2c, InterruptHandler as I2cInterruptHandler};
+use embassy_rp::peripherals::{I2C0, PIN_0, PIN_1, PIN_16, PIN_17, PIN_18, PIN_19, SPI0, USB};
+use embassy_rp::spi::{Config as SpiConfig, Spi};
+use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
+use embassy_rp::{bind_interrupts, i2c, spi, Peri};
+use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use embassy_sync::mutex::Mutex;
+use embassy_time::Delay;
 
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SensorState {
-    Off = 0,
-    Init = 1,
-    Valid = 2,
-    Invalid = 3,
+pub type SharedI2c = Mutex<NoopRawMutex, I2c<'static, I2C0, i2c::Async>>;
+pub type I2cDevice<'a> = SharedI2cDevice<'a, NoopRawMutex, I2c<'static, I2C0, i2c::Async>>;
+
+bind_interrupts!(pub struct Irqs {
+    USBCTRL_IRQ => UsbInterruptHandler<USB>;
+    I2C0_IRQ => I2cInterruptHandler<I2C0>;
+});
+
+/// Initialize USB driver for logger
+pub fn init_usb_driver(usb: Peri<'static, USB>) -> Driver<'static, USB> {
+    Driver::new(usb, Irqs)
 }
 
-// Altimeter state
-pub mod alt {
-    use super::*;
+/// Initialize shared I2C bus
+///
+/// Returns a shared I2C instance wrapped in a Mutex that can be used by multiple sensors
+pub fn init_shared_i2c(
+    i2c0: Peri<'static, I2C0>,
+    sda: Peri<'static, PIN_0>,
+    scl: Peri<'static, PIN_1>,
+) -> &'static SharedI2c {
+    // Configure I2C with 400kHz (fast mode)
+    let mut i2c_config = I2cConfig::default();
+    i2c_config.frequency = 400_000;
 
-    pub static mut STATUS: SensorState = SensorState::Off;
-    pub static mut FAILED_READS: u8 = 0;
-    pub static mut PRESSURE: f32 = -1.0;
-    pub static mut TEMPERATURE: f32 = -1.0;
-    pub static mut ALTITUDE: f32 = -1.0;
-    pub static mut REFERENCE_PRESSURE: f32 = -1.0;
+    let i2c = I2c::new_async(i2c0, scl, sda, Irqs, i2c_config);
+
+    // Store in static memory
+    static I2C_BUS: static_cell::StaticCell<SharedI2c> = static_cell::StaticCell::new();
+    I2C_BUS.init(Mutex::new(i2c))
 }
 
-// Flight mode state
-pub mod flight {
-    use super::*;
-    use crate::state::FlightMode;
+/// Initialize BMP390 sensor
+///
+/// Takes a shared I2C bus and returns a BMP390 sensor configured for pressure, temperature, and altitude readings
+pub async fn init_bmp390(i2c_bus: &'static SharedI2c) -> Bmp390<I2cDevice<'static>> {
+    let i2c_device = SharedI2cDevice::new(i2c_bus);
 
-    pub static mut CURRENT_MODE: FlightMode = FlightMode::Startup;
-    pub static mut CYCLE_COUNT: u32 = 0;
+    // BMP390 default I2C address (0x77, or 0x76 if SDO is low)
+    let address = bmp390::Address::Up; // 0x77
+
+    // Create BMP390 configuration
+    let config = Configuration::default();
+
+    // Initialize BMP390 sensor
+    let sensor = Bmp390::try_new(i2c_device, address, Delay, &config)
+        .await
+        .expect("Failed to initialize BMP390 sensor");
+
+    log::info!("BMP390 sensor initialized successfully");
+
+    sensor
 }
 
-// GPIO pins
-pub mod gpio_pins {
-    use super::*;
+/// Initialize SPI for FRAM
+///
+/// Returns SPI instance and CS pin
+pub fn init_spi(
+    spi0: Peri<'static, SPI0>,
+    miso: Peri<'static, PIN_16>,
+    mosi: Peri<'static, PIN_19>,
+    clk: Peri<'static, PIN_18>,
+    cs: Peri<'static, PIN_17>,
+) -> (Spi<'static, SPI0, spi::Blocking>, Output<'static>) {
+    // Configure SPI - FRAM can typically run at MHz speeds
+    let mut spi_config = SpiConfig::default();
+    spi_config.frequency = 1_000_000; // 1 MHz for safety, can go higher
 
-    pub type LedPin = gpio::Pin<
-        gpio::bank0::Gpio25,
-        gpio::FunctionSio<gpio::SioOutput>,
-        gpio::PullDown,
-    >;
+    let spi = Spi::new_blocking(spi0, clk, mosi, miso, spi_config);
 
-    pub static mut LED: Option<LedPin> = None;
-}
+    // CS pin starts high (inactive)
+    let cs = Output::new(cs, embassy_rp::gpio::Level::High);
 
-// Sensors
-pub mod sensors {
-    use super::*;
-
-    pub type Bmp390Type = BMP390<
-        I2C<
-            hal::pac::I2C0,
-            (
-                gpio::Pin<gpio::bank0::Gpio0, gpio::FunctionI2c, gpio::PullUp>,
-                gpio::Pin<gpio::bank0::Gpio1, gpio::FunctionI2c, gpio::PullUp>,
-            ),
-        >,
-    >;
-
-    pub static mut BMP390: Option<Bmp390Type> = None;
-}
-
-// Delay provider
-pub mod delay {
-    use super::*;
-
-    pub static mut DELAY: Option<crate::DelayWrapper> = None;
-}
-
-// Watchdog
-pub mod watchdog {
-    use super::*;
-
-    pub static mut WATCHDOG: Option<hal::Watchdog> = None;
-}
-
-pub fn init_bmp390(sensor: sensors::Bmp390Type) {
-    unsafe { sensors::BMP390 = Some(sensor) };
-}
-
-pub fn init_led(led: gpio_pins::LedPin) {
-    unsafe { gpio_pins::LED = Some(led) };
-}
-
-pub fn init_delay(delay_wrapper: crate::DelayWrapper) {
-    unsafe { delay::DELAY = Some(delay_wrapper) };
-}
-
-pub fn init_watchdog(wd: hal::Watchdog) {
-    unsafe { watchdog::WATCHDOG = Some(wd) };
-}
-
-pub fn feed_watchdog() {
-    unsafe {
-        let wd_ptr = core::ptr::addr_of_mut!(watchdog::WATCHDOG);
-        if let Some(wd) = (*wd_ptr).as_mut() {
-            wd.feed();
-        }
-    }
-}
-
-pub fn read_sensors() {
-    unsafe {
-        let bmp_ptr = core::ptr::addr_of_mut!(sensors::BMP390);
-        let delay_ptr = core::ptr::addr_of_mut!(delay::DELAY);
-
-        if let Some(bmp) = (*bmp_ptr).as_mut() {
-            if let Some(delay_ref) = (*delay_ptr).as_mut() {
-                match bmp.read(delay_ref) {
-                    Ok(reading) => {
-                        alt::STATUS = SensorState::Valid;
-                        alt::FAILED_READS = 0;
-                        alt::PRESSURE = reading.pressure;
-                        alt::TEMPERATURE = reading.temperature;
-                        alt::ALTITUDE = reading.altitude;
-                    }
-                    Err(_) => {
-                        alt::FAILED_READS += 1;
-                        if alt::FAILED_READS >= 3 {
-                            alt::STATUS = SensorState::Invalid;
-                        }
-                    }
-                }
-            }
-        }
-
-        flight::CYCLE_COUNT += 1;
-    }
-}
-
-pub fn to_mode(new_mode: crate::state::FlightMode) {
-    unsafe { flight::CURRENT_MODE = new_mode };
-}
-
-pub fn get_current_mode() -> crate::state::FlightMode {
-    unsafe { flight::CURRENT_MODE }
-}
-
-pub fn initialize_modules(mut pac: pac::Peripherals, core: cortex_m::Peripherals) {
-    use crate::constants::*;
-
-    let mut watchdog = hal::Watchdog::new(pac.WATCHDOG);
-    let clocks = hal::clocks::init_clocks_and_plls(
-        XOSC_FREQ_HZ,
-        pac.XOSC,
-        pac.CLOCKS,
-        pac.PLL_SYS,
-        pac.PLL_USB,
-        &mut pac.RESETS,
-        &mut watchdog,
-    )
-    .ok()
-    .unwrap();
-
-    watchdog.start(fugit::MicrosDurationU32::millis(WATCHDOG_TIMEOUT_MS));
-
-    let delay = crate::DelayWrapper(Delay::new(core.SYST, clocks.system_clock.freq().to_Hz()));
-
-    let sio = hal::Sio::new(pac.SIO);
-    let pins = hal::gpio::Pins::new(
-        pac.IO_BANK0,
-        pac.PADS_BANK0,
-        sio.gpio_bank0,
-        &mut pac.RESETS,
-    );
-
-    let led_pin = pins.gpio25.into_push_pull_output();
-
-    let sda_pin = pins
-        .gpio0
-        .reconfigure::<hal::gpio::FunctionI2c, hal::gpio::PullUp>();
-    let scl_pin = pins
-        .gpio1
-        .reconfigure::<hal::gpio::FunctionI2c, hal::gpio::PullUp>();
-
-    let i2c = hal::I2C::i2c0(
-        pac.I2C0,
-        sda_pin,
-        scl_pin,
-        fugit::RateExtU32::kHz(I2C_FREQ_KHZ),
-        &mut pac.RESETS,
-        &clocks.system_clock,
-    );
-
-    let mut delay_for_init = delay;
-    let bmp390 = BMP390::new(i2c, &mut delay_for_init).unwrap();
-
-    init_led(led_pin);
-    init_bmp390(bmp390);
-    init_delay(delay_for_init);
-    init_watchdog(watchdog);
+    (spi, cs)
 }
