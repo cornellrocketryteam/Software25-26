@@ -24,16 +24,10 @@ let
     inherit tfa optee ti-linux-firmware;
   };
 
-  uboot-all = pkgs.symlinkJoin {
-    name = "uboot";
-    paths = [
-      uboot-r5
-      uboot-a53
-    ];
-  };
+  uEnv = ./uEnv.txt;
 in
 {
   r5 = uboot-r5;
   a53 = uboot-a53;
-  all = uboot-all;
+  uEnv = uEnv;
 }

@@ -38,6 +38,13 @@
         { pkgs }:
         let
           uboot = import ./uboot { inherit pkgs; };
+          uboot-all = pkgs.symlinkJoin {
+            name = "uboot";
+            paths = [
+              uboot.r5
+              uboot.a53
+            ];
+          };
           sd-image = import ./sd-image.nix { 
             inherit pkgs uboot;
             fill-station = inputs.self.mixosConfigurations.fill-station;
@@ -46,7 +53,7 @@
         {
           uboot-r5 = uboot.r5;
           uboot-a53 = uboot.a53;
-          uboot = uboot.all;
+          uboot = uboot-all;
           sd-image = sd-image;
           default = sd-image;
         }

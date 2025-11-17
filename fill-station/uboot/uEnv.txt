@@ -1,0 +1,3 @@
+boot_targets=mmc1 mmc0
+bootdelay=1
+bootcmd=bootflow scan -lb
