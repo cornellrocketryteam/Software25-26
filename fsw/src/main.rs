@@ -25,16 +25,23 @@ async fn main(spawner: Spawner) {
 
     let i2c_bus = module::init_shared_i2c(p.I2C0, p.PIN_0, p.PIN_1);
     let (spi, cs) = module::init_spi(p.SPI0, p.PIN_16, p.PIN_19, p.PIN_18, p.PIN_17);
+    let uart = module::init_uart1(p.UART1, p.PIN_4, p.PIN_5, p.DMA_CH0, p.DMA_CH1);
 
     // GPIO 25 is the onboard LED
     let mut led = Output::new(p.PIN_25, Level::Low);
 
-    let mut flight_state = state::FlightState::new(i2c_bus, spi, cs).await;
+    let mut flight_state = state::FlightState::new(i2c_bus, spi, cs, uart).await;
     loop {
+        flight_state.cycle_count += 1;
+
         flight_state.transition().await;
         flight_state.execute().await;
 
-        log::info!("Current Flight Mode: {}", flight_state.flight_mode_name());
+        log::info!(
+            "Current Flight Mode: {} on cycle {}",
+            flight_state.flight_mode_name(),
+            flight_state.cycle_count
+        );
 
         // Toggle LED
         led.toggle();

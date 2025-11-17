@@ -4,10 +4,11 @@ use bmp390::{Bmp390, Configuration};
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice as SharedI2cDevice;
 use embassy_rp::gpio::Output;
 use embassy_rp::i2c::{Config as I2cConfig, I2c, InterruptHandler as I2cInterruptHandler};
-use embassy_rp::peripherals::{I2C0, PIN_0, PIN_1, PIN_16, PIN_17, PIN_18, PIN_19, SPI0, USB};
+use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, I2C0, PIN_0, PIN_1, PIN_16, PIN_17, PIN_18, PIN_19, PIN_4, PIN_5, SPI0, UART1, USB};
 use embassy_rp::spi::{Config as SpiConfig, Spi};
+use embassy_rp::uart::{Config as UartConfig, Uart, InterruptHandler as UartInterruptHandler};
 use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
-use embassy_rp::{bind_interrupts, i2c, spi, Peri};
+use embassy_rp::{bind_interrupts, i2c, spi, uart, Peri};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_time::Delay;
@@ -18,6 +19,7 @@ pub type I2cDevice<'a> = SharedI2cDevice<'a, NoopRawMutex, I2c<'static, I2C0, i2
 bind_interrupts!(pub struct Irqs {
     USBCTRL_IRQ => UsbInterruptHandler<USB>;
     I2C0_IRQ => I2cInterruptHandler<I2C0>;
+    UART1_IRQ => UartInterruptHandler<UART1>;
 });
 
 /// Initialize USB driver for logger
@@ -86,4 +88,21 @@ pub fn init_spi(
     let cs = Output::new(cs, embassy_rp::gpio::Level::High);
 
     (spi, cs)
+}
+
+/// Initialize UART1 for RFD900x radio
+///
+/// Returns async UART instance configured at 9600 baud
+pub fn init_uart1(
+    uart1: Peri<'static, UART1>,
+    tx: Peri<'static, PIN_4>,
+    rx: Peri<'static, PIN_5>,
+    tx_dma: Peri<'static, DMA_CH0>,
+    rx_dma: Peri<'static, DMA_CH1>,
+) -> Uart<'static, uart::Async> {
+    // Configure UART for RFD900x (9600 baud, 8N1)
+    let mut uart_config = UartConfig::default();
+    uart_config.baudrate = 9600;
+
+    Uart::new(uart1, tx, rx, Irqs, tx_dma, rx_dma, uart_config)
 }

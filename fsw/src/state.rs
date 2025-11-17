@@ -1,12 +1,13 @@
 use crate::module::*;
 
 use crate::driver::fram::Fram;
+use crate::driver::rfd900x::Rfd900x;
 use bmp390::Bmp390;
 
 use embassy_rp::gpio::Output;
 use embassy_rp::peripherals::SPI0;
 use embassy_rp::spi::Spi;
-use ublox::AlignmentToReferenceTime;
+use embassy_rp::uart::{Async, Uart};
 
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -44,12 +45,12 @@ impl FlightMode {
 
 pub struct FlightState {
     // state variables
-    flight_mode: FlightMode,
-    cycle_count: u32,
-    timestamp: u32,
-    boot_count: u16,
-    watchdog_boot_count: u8,
-    old_mode: FlightMode,
+    pub flight_mode: FlightMode,
+    pub cycle_count: u32,
+    pub timestamp: u32,
+    pub boot_count: u16,
+    pub watchdog_boot_count: u8,
+    pub old_mode: FlightMode,
 
     key_armed: bool,
     alt_armed: bool,
@@ -67,6 +68,7 @@ pub struct FlightState {
     // actuators
 
     // telemetry
+    radio: Rfd900x<'static>,
 }
 
 impl FlightState {
@@ -74,9 +76,11 @@ impl FlightState {
         i2c_bus: &'static SharedI2c,
         spi: Spi<'static, SPI0, embassy_rp::spi::Blocking>,
         cs: Output<'static>,
+        uart: Uart<'static, Async>,
     ) -> Self {
         let altimeter = init_bmp390(i2c_bus).await;
         let fram = Fram::new(spi, cs);
+        let radio = Rfd900x::new(uart);
 
         Self {
             flight_mode: FlightMode::Startup,
@@ -94,6 +98,7 @@ impl FlightState {
             fram_initialized: true,
             pointer_index: 0,
             fram: fram,
+            radio: radio,
         }
     }
 
@@ -131,6 +136,21 @@ impl FlightState {
                     temp,
                     alt
                 );
+
+                // Transmit data via radio
+                use core::fmt::Write;
+                let mut buffer = heapless::String::<128>::new();
+                let _ = write!(
+                    &mut buffer,
+                    "P={:.2},T={:.2},A={:.2}\n",
+                    pressure, temp, alt
+                );
+
+                if let Err(_) = self.radio.send(buffer.as_bytes()).await {
+                    log::warn!("Failed to transmit data via radio");
+                } else {
+                    log::info!("Transmitted radio packet!");
+                }
             }
             Err(e) => {
                 log::error!("Failed to read BMP390: {:?}", e);
