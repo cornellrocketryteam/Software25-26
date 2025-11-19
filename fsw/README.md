@@ -12,7 +12,7 @@ See Project Updates [here](https://github.com/orgs/cornellrocketryteam/projects/
 `brew install picotool`  
 
 * Install the correct toolchain 
-`rustup target add thumbv7em-none-eabihf`
+`rustup target add thumbv8m.main-none-eabihf`
 
 ## Building and Running  
 * Navigate into the fsw directory with `cd fsw`
