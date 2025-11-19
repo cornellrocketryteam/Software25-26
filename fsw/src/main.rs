@@ -10,7 +10,7 @@ use {defmt_rtt as _, panic_probe as _};
 
 mod driver;
 mod module;
-
+mod packet;
 mod state;
 
 #[embassy_executor::main]

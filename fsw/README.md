@@ -21,7 +21,7 @@ See Project Updates [here](https://github.com/orgs/cornellrocketryteam/projects/
 ## TODO: 
 - Update the FlightState initializer function 
 - transition and execute in FlightState should behave accurately 
-- Implement radio and umbilical 
+- Implement umbilical 
 - Implement actuators 
 - Implement other sensors
 - Implement SPI Flash storage 

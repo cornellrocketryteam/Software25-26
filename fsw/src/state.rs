@@ -1,7 +1,11 @@
 use crate::module::*;
 
+use crate::packet::Packet;
+
+use crate::driver::bmp390::{init_bmp390, read_bmp390_into_packet};
 use crate::driver::fram::Fram;
 use crate::driver::rfd900x::Rfd900x;
+use crate::driver::ublox_max_m10s::{init_ublox, UbloxMaxM10s};
 use bmp390::Bmp390;
 
 use embassy_rp::gpio::Output;
@@ -44,27 +48,22 @@ impl FlightMode {
 }
 
 pub struct FlightState {
+    // packet
+    pub packet: Packet,
     // state variables
     pub flight_mode: FlightMode,
     pub cycle_count: u32,
-    pub timestamp: u32,
-    pub boot_count: u16,
-    pub watchdog_boot_count: u8,
-    pub old_mode: FlightMode,
-
-    key_armed: bool,
-    alt_armed: bool,
-    safed: bool,
 
     // altimeter
-    altimeter_status: SensorState,
-    altimeter_failed_reads: u8,
     altimeter: Bmp390<I2cDevice<'static>>,
 
     // fram
-    fram_initialized: bool,
     pointer_index: u32,
     fram: Fram<'static>,
+
+    // gps
+    gps: UbloxMaxM10s<'static, I2cDevice<'static>>,
+
     // actuators
 
     // telemetry
@@ -78,31 +77,29 @@ impl FlightState {
         cs: Output<'static>,
         uart: Uart<'static, Async>,
     ) -> Self {
+        let packet = Packet::init_empty();
         let altimeter = init_bmp390(i2c_bus).await;
         let fram = Fram::new(spi, cs);
+        let gps = init_ublox(i2c_bus);
         let radio = Rfd900x::new(uart);
 
         Self {
+            packet: packet,
             flight_mode: FlightMode::Startup,
             cycle_count: 0,
-            timestamp: 0,
-            boot_count: 0,
-            watchdog_boot_count: 0,
-            old_mode: FlightMode::Startup,
-            key_armed: false,
-            alt_armed: false,
-            safed: false,
-            altimeter_status: SensorState::VALID,
-            altimeter_failed_reads: 0,
             altimeter: altimeter,
-            fram_initialized: true,
             pointer_index: 0,
             fram: fram,
+            gps: gps,
             radio: radio,
         }
     }
 
     pub async fn read_sensors(&mut self) {
+        // Update packet flight mode
+        self.packet.flight_mode = self.flight_mode as u32;
+
+        // Read from FRAM
         match self.fram.read_u32(self.pointer_index) {
             Ok(raw) => {
                 log::info!("FlightMode read from FRAM: {:?}", FlightMode::from_u32(raw));
@@ -112,48 +109,71 @@ impl FlightState {
             }
         }
 
+        // Write to FRAM
         if let Err(_) = self
             .fram
             .write_u32(self.pointer_index, self.flight_mode as u32)
         {
-            // 6 is "Fault"
-            log::warn!("Failed to read the FlightMode from FRAM!");
+            log::warn!("Failed to write the FlightMode to FRAM!");
         }
 
-        match self.altimeter.measure().await {
-            Ok(meas) => {
-                use uom::si::length::meter;
-                use uom::si::pressure::pascal;
-                use uom::si::thermodynamic_temperature::degree_celsius;
-
-                let pressure = meas.pressure.get::<pascal>();
-                let temp = meas.temperature.get::<degree_celsius>();
-                let alt = meas.altitude.get::<meter>();
-
+        // Read altimeter and update packet
+        match read_bmp390_into_packet(&mut self.altimeter, &mut self.packet).await {
+            Ok(_) => {
                 log::info!(
                     "BMP | Pressure = {:.2} Pa, Temp = {:.2} °C, Alt = {:.2} m",
-                    pressure,
-                    temp,
-                    alt
+                    self.packet.pressure,
+                    self.packet.temp,
+                    self.packet.altitude
                 );
-
-                // Transmit data via radio
-                use core::fmt::Write;
-                let mut buffer = heapless::String::<128>::new();
-                let _ = write!(
-                    &mut buffer,
-                    "P={:.2},T={:.2},A={:.2}\n",
-                    pressure, temp, alt
-                );
-
-                if let Err(_) = self.radio.send(buffer.as_bytes()).await {
-                    log::warn!("Failed to transmit data via radio");
-                } else {
-                    log::info!("Transmitted radio packet!");
-                }
             }
             Err(e) => {
                 log::error!("Failed to read BMP390: {:?}", e);
+            }
+        }
+
+        // Read GPS and update packet
+        match self.gps.read_into_packet(&mut self.packet).await {
+            Ok(_) => {
+                log::info!(
+                    "GPS | Lat = {:.6}°, Lon = {:.6}°, Sats = {}, Time = {:.0} s",
+                    self.packet.latitude,
+                    self.packet.longitude,
+                    self.packet.num_satellites,
+                    self.packet.timestamp
+                );
+            }
+            Err(e) => {
+                log::error!("Failed to read GPS: {:?}", e);
+            }
+        }
+    }
+
+    pub async fn transmit(&mut self) {
+        use core::fmt::Write;
+        let mut buffer = heapless::String::<256>::new();
+
+        // Format packet data into a single transmission
+        let _ = write!(
+            &mut buffer,
+            "FM={},P={:.2},T={:.2},A={:.2},LAT={:.6},LON={:.6},SAT={},TS={:.0}\n",
+            self.packet.flight_mode,
+            self.packet.pressure,
+            self.packet.temp,
+            self.packet.altitude,
+            self.packet.latitude,
+            self.packet.longitude,
+            self.packet.num_satellites,
+            self.packet.timestamp
+        );
+
+        // Transmit via radio
+        match self.radio.send(buffer.as_bytes()).await {
+            Ok(_) => {
+                log::info!("Transmitted packet via radio");
+            }
+            Err(e) => {
+                log::warn!("Failed to transmit packet via radio: {:?}", e);
             }
         }
     }
@@ -171,15 +191,11 @@ impl FlightState {
     }
 
     pub async fn execute(&mut self) {
-        match self.flight_mode {
-            FlightMode::Startup => self.read_sensors().await,
-            FlightMode::Standby => self.read_sensors().await,
-            FlightMode::Ascent => self.read_sensors().await,
-            FlightMode::Coast => self.read_sensors().await,
-            FlightMode::DrogueDeployed => self.read_sensors().await,
-            FlightMode::MainDeployed => self.read_sensors().await,
-            FlightMode::Fault => self.read_sensors().await,
-        }
+        // Read sensors and update packet
+        self.read_sensors().await;
+
+        // Transmit packet via radio
+        self.transmit().await;
     }
 
     pub fn flight_mode_name(&mut self) -> &'static str {
