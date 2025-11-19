@@ -24,7 +24,9 @@ async fn main(spawner: Spawner) {
     spawner.spawn(logger_task(driver).unwrap());
 
     let i2c_bus = module::init_shared_i2c(p.I2C0, p.PIN_0, p.PIN_1);
-    let (spi, cs) = module::init_spi(p.SPI0, p.PIN_16, p.PIN_19, p.PIN_18, p.PIN_17, p.DMA_CH2, p.DMA_CH3);
+    let (spi, cs) = module::init_spi(
+        p.SPI0, p.PIN_16, p.PIN_19, p.PIN_18, p.PIN_17, p.DMA_CH2, p.DMA_CH3,
+    );
     let uart = module::init_uart1(p.UART1, p.PIN_4, p.PIN_5, p.DMA_CH0, p.DMA_CH1);
 
     // GPIO 25 is the onboard LED
@@ -45,7 +47,7 @@ async fn main(spawner: Spawner) {
 
         // Toggle LED
         led.toggle();
-        Timer::after_millis(500).await;
+        Timer::after_millis(1000).await;
     }
 }
 

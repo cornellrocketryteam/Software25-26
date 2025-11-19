@@ -78,7 +78,13 @@ impl FlightState {
         let packet = Packet::default();
         let altimeter = Bmp390Sensor::new(i2c_bus).await;
         let fram = Fram::new(spi, cs);
-        let gps = UbloxMaxM10s::new(i2c_bus);
+        let mut gps = UbloxMaxM10s::new(i2c_bus);
+
+        // Configure GPS module to output NAV-PVT messages
+        if let Err(e) = gps.configure().await {
+            log::error!("Failed to configure GPS: {:?}", e);
+        }
+
         let radio = Rfd900x::new(uart);
 
         Self {
@@ -150,7 +156,7 @@ impl FlightState {
         // Format packet data into a single transmission
         let _ = write!(
             &mut buffer,
-            "FM={},P={:.2},T={:.2},A={:.2},LAT={:.6},LON={:.6},SAT={},TS={:.0}\n",
+            "{}{:.2}{:.2}{:.2}{:.6}{:.6}{}{:.0}\n",
             self.packet.flight_mode,
             self.packet.pressure,
             self.packet.temp,
