@@ -1,17 +1,17 @@
 //! USB Logger and Sensor Module
-
-use bmp390::{Bmp390, Configuration};
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice as SharedI2cDevice;
 use embassy_rp::gpio::Output;
 use embassy_rp::i2c::{Config as I2cConfig, I2c, InterruptHandler as I2cInterruptHandler};
-use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, I2C0, PIN_0, PIN_1, PIN_16, PIN_17, PIN_18, PIN_19, PIN_4, PIN_5, SPI0, UART1, USB};
+use embassy_rp::peripherals::{
+    DMA_CH0, DMA_CH1, I2C0, PIN_0, PIN_1, PIN_16, PIN_17, PIN_18, PIN_19, PIN_4, PIN_5, SPI0,
+    UART1, USB,
+};
 use embassy_rp::spi::{Config as SpiConfig, Spi};
-use embassy_rp::uart::{Config as UartConfig, Uart, InterruptHandler as UartInterruptHandler};
+use embassy_rp::uart::{Config as UartConfig, InterruptHandler as UartInterruptHandler, Uart};
 use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
 use embassy_rp::{bind_interrupts, i2c, spi, uart, Peri};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
-use embassy_time::Delay;
 
 pub type SharedI2c = Mutex<NoopRawMutex, I2c<'static, I2C0, i2c::Async>>;
 pub type I2cDevice<'a> = SharedI2cDevice<'a, NoopRawMutex, I2c<'static, I2C0, i2c::Async>>;
@@ -46,28 +46,6 @@ pub fn init_shared_i2c(
     I2C_BUS.init(Mutex::new(i2c))
 }
 
-/// Initialize BMP390 sensor
-///
-/// Takes a shared I2C bus and returns a BMP390 sensor configured for pressure, temperature, and altitude readings
-pub async fn init_bmp390(i2c_bus: &'static SharedI2c) -> Bmp390<I2cDevice<'static>> {
-    let i2c_device = SharedI2cDevice::new(i2c_bus);
-
-    // BMP390 default I2C address (0x77, or 0x76 if SDO is low)
-    let address = bmp390::Address::Up; // 0x77
-
-    // Create BMP390 configuration
-    let config = Configuration::default();
-
-    // Initialize BMP390 sensor
-    let sensor = Bmp390::try_new(i2c_device, address, Delay, &config)
-        .await
-        .expect("Failed to initialize BMP390 sensor");
-
-    log::info!("BMP390 sensor initialized successfully");
-
-    sensor
-}
-
 /// Initialize SPI for FRAM
 ///
 /// Returns SPI instance and CS pin
@@ -100,9 +78,9 @@ pub fn init_uart1(
     tx_dma: Peri<'static, DMA_CH0>,
     rx_dma: Peri<'static, DMA_CH1>,
 ) -> Uart<'static, uart::Async> {
-    // Configure UART for RFD900x (9600 baud, 8N1)
+    // Configure UART for RFD900x (115200 baud, 8N1)
     let mut uart_config = UartConfig::default();
-    uart_config.baudrate = 9600;
+    uart_config.baudrate = 115200;
 
     Uart::new(uart1, tx, rx, Irqs, tx_dma, rx_dma, uart_config)
 }
