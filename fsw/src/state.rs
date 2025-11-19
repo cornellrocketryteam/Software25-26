@@ -2,11 +2,10 @@ use crate::module::*;
 
 use crate::packet::Packet;
 
-use crate::driver::bmp390::{init_bmp390, read_bmp390_into_packet};
+use crate::driver::bmp390::Bmp390Sensor;
 use crate::driver::fram::Fram;
 use crate::driver::rfd900x::Rfd900x;
-use crate::driver::ublox_max_m10s::{init_ublox, UbloxMaxM10s};
-use bmp390::Bmp390;
+use crate::driver::ublox_max_m10s::UbloxMaxM10s;
 
 use embassy_rp::gpio::Output;
 use embassy_rp::peripherals::SPI0;
@@ -55,10 +54,9 @@ pub struct FlightState {
     pub cycle_count: u32,
 
     // altimeter
-    altimeter: Bmp390<I2cDevice<'static>>,
+    altimeter: Bmp390Sensor,
 
     // fram
-    pointer_index: u32,
     fram: Fram<'static>,
 
     // gps
@@ -73,14 +71,14 @@ pub struct FlightState {
 impl FlightState {
     pub async fn new(
         i2c_bus: &'static SharedI2c,
-        spi: Spi<'static, SPI0, embassy_rp::spi::Blocking>,
+        spi: Spi<'static, SPI0, embassy_rp::spi::Async>,
         cs: Output<'static>,
         uart: Uart<'static, Async>,
     ) -> Self {
-        let packet = Packet::init_empty();
-        let altimeter = init_bmp390(i2c_bus).await;
+        let packet = Packet::default();
+        let altimeter = Bmp390Sensor::new(i2c_bus).await;
         let fram = Fram::new(spi, cs);
-        let gps = init_ublox(i2c_bus);
+        let gps = UbloxMaxM10s::new(i2c_bus);
         let radio = Rfd900x::new(uart);
 
         Self {
@@ -88,7 +86,6 @@ impl FlightState {
             flight_mode: FlightMode::Startup,
             cycle_count: 0,
             altimeter: altimeter,
-            pointer_index: 0,
             fram: fram,
             gps: gps,
             radio: radio,
@@ -100,7 +97,7 @@ impl FlightState {
         self.packet.flight_mode = self.flight_mode as u32;
 
         // Read from FRAM
-        match self.fram.read_u32(self.pointer_index) {
+        match self.fram.read_u32(0).await {
             Ok(raw) => {
                 log::info!("FlightMode read from FRAM: {:?}", FlightMode::from_u32(raw));
             }
@@ -110,15 +107,12 @@ impl FlightState {
         }
 
         // Write to FRAM
-        if let Err(_) = self
-            .fram
-            .write_u32(self.pointer_index, self.flight_mode as u32)
-        {
+        if let Err(_) = self.fram.write_u32(0, self.flight_mode as u32).await {
             log::warn!("Failed to write the FlightMode to FRAM!");
         }
 
         // Read altimeter and update packet
-        match read_bmp390_into_packet(&mut self.altimeter, &mut self.packet).await {
+        match self.altimeter.read_into_packet(&mut self.packet).await {
             Ok(_) => {
                 log::info!(
                     "BMP | Pressure = {:.2} Pa, Temp = {:.2} °C, Alt = {:.2} m",
