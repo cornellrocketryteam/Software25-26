@@ -39,6 +39,7 @@
 
   bin = [
     pkgs.dropbear
+    pkgs.libgpiod
   ];
 
   users.root = {
