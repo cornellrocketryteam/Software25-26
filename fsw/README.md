@@ -5,7 +5,7 @@ Written by Benjamin Zou (bwz5)
 See Project Updates [here](https://github.com/orgs/cornellrocketryteam/projects/4/views/1)
 
 ## Necessary Dependencies 
-* Install rustup and Cargo
+* Install rustup and Cargo (standard installation)
 `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`  
 
 * Install picotool (to flash code onto the Pico 2)  
