@@ -18,6 +18,13 @@ See Project Updates [here](https://github.com/orgs/cornellrocketryteam/projects/
 * To build in release mode, run: `cargo build --release` 
 * To flash the code onto the Pico 2, run: `cargo run --release`  
 
+## TODO: 
+- Update the FlightState initializer function 
+- transition and execute in FlightState should behave accurately 
+- Implement umbilical 
+- Implement actuators 
+- Implement other sensors
+- Implement SPI Flash storage 
 
 
 
