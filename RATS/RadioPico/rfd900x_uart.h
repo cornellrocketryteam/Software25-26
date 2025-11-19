@@ -6,12 +6,12 @@
 #include "config.h"         // Shared configuration
 #include "packet_types.h"   // From Common folder
 
-// UART Configuration
-#define RFD_UART_ID uart1
+// UART Configuration (per system design: Radio Pico uses UART0 for RFD900x)
+#define RFD_UART_ID uart0
 
-// Pin definitions (using UART1)
-#define RFD_TX_PIN 4   // Pico GP4 -> RFD900x RX (Pin 7)
-#define RFD_RX_PIN 5   // Pico GP5 -> RFD900x TX (Pin 9)
+// Pin definitions (using UART0)
+#define RFD_TX_PIN 0   // Pico GP0 -> RFD900x RX (Pin 7)
+#define RFD_RX_PIN 1   // Pico GP1 -> RFD900x TX (Pin 9)
 
 class RFD900xUART {
 public:

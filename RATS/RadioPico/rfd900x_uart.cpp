@@ -34,7 +34,7 @@ void RFD900xUART::init() {
     // Enable RX interrupt
     uart_set_irq_enables(RFD_UART_ID, true, false);
     
-    printf("RFD900x UART initialized on UART1 (TX=GP%d, RX=GP%d) at %d baud\n", 
+    printf("RFD900x UART initialized on UART0 (TX=GP%d, RX=GP%d) at %d baud\n",
            RFD_TX_PIN, RFD_RX_PIN, RFD900X_BAUD_RATE);
 }
 
@@ -42,14 +42,25 @@ void RFD900xUART::uartRxHandler() {
     // Read all available bytes from UART into circular buffer
     while (uart_is_readable(RFD_UART_ID)) {
         uint8_t byte = uart_getc(RFD_UART_ID);
-        
+
         uint32_t next_head = (rx_head + 1) % RFD_RX_BUFFER_SIZE;
-        
+
         // Check for buffer overflow
         if (next_head != rx_tail) {
             rx_buffer[rx_head] = byte;
             rx_head = next_head;
             total_bytes_received++;
+
+            // Debug disabled - uncomment below to see hex dump
+            // if (total_bytes_received <= 128) {
+            //     if ((total_bytes_received - 1) % 16 == 0) {
+            //         printf("[RX] %04u: ", total_bytes_received - 1);
+            //     }
+            //     printf("%02X ", byte);
+            //     if (total_bytes_received % 16 == 0) {
+            //         printf("\n");
+            //     }
+            // }
         } else {
             // Buffer overflow - this is an error condition
             packet_errors++;
@@ -78,12 +89,12 @@ uint8_t RFD900xUART::peekBufferByte(uint32_t offset) {
 
 bool RFD900xUART::findSyncWord(uint32_t& position) {
     uint32_t available = bufferAvailable();
-    
+
     // Need at least 4 bytes to check for sync word
     if (available < 4) {
         return false;
     }
-    
+
     // Search for sync word (from config.h: 0x3E5D5967 = "CRT!")
     for (uint32_t i = 0; i <= available - 4; i++) {
         uint32_t word = 0;
@@ -91,13 +102,13 @@ bool RFD900xUART::findSyncWord(uint32_t& position) {
         word |= (uint32_t)peekBufferByte(i + 1) << 8;
         word |= (uint32_t)peekBufferByte(i + 2) << 16;
         word |= (uint32_t)peekBufferByte(i + 3) << 24;
-        
+
         if (word == SYNC_WORD) {
             position = i;
             return true;
         }
     }
-    
+
     return false;
 }
 

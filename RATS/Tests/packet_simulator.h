@@ -1,7 +1,7 @@
 #ifndef PACKET_SIMULATOR_H
 #define PACKET_SIMULATOR_H
 
-#include "./Common/packet_types.h"
+#include "../Common/packet_types.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -17,12 +17,8 @@ public:
     // Generate a simulated radio packet with realistic values
     void generateRadioPacket(RadioPacket& packet);
     
-    // Generate a simulated umbilical packet
-    void generateUmbilicalPacket(UmbilicalPacket& packet);
-    
     // Serialize packet to raw bytes (as would come from radio)
     static void serializeRadioPacket(const RadioPacket& packet, uint8_t* buffer);
-    static void serializeUmbilicalPacket(const UmbilicalPacket& packet, uint8_t* buffer);
     
 private:
     uint32_t sim_time_ms;

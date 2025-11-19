@@ -1,0 +1,33 @@
+diff --git a/board/ti/common/board_detect.c b/board/ti/common/board_detect.c
+index a43cc075b92..5bc7a830e65 100644
+--- a/board/ti/common/board_detect.c
++++ b/board/ti/common/board_detect.c
+@@ -765,6 +765,7 @@ static void u64_to_mac(u64 addr, u8 mac[6])
+ 
+ void board_ti_set_ethaddr(int index)
+ {
++#if CONFIG_IS_ENABLED(NET)
+ 	uint8_t mac_addr[6];
+ 	int i;
+ 	u64 mac1, mac2;
+@@ -800,10 +801,12 @@ void board_ti_set_ethaddr(int index)
+ 			}
+ 		}
+ 	}
++#endif
+ }
+ 
+ void board_ti_am6_set_ethaddr(int index, int count)
+ {
++#if CONFIG_IS_ENABLED(NET)
+ 	u8 mac_addr[6];
+ 	int i;
+ 
+@@ -813,6 +816,7 @@ void board_ti_am6_set_ethaddr(int index, int count)
+ 			eth_env_set_enetaddr_by_index("eth", i + index,
+ 						      mac_addr);
+ 	}
++#endif
+ }
+ 
+ bool __maybe_unused board_ti_was_eeprom_read(void)

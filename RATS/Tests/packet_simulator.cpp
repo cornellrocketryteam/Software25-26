@@ -54,27 +54,28 @@ void PacketSimulator::generateRadioPacket(RadioPacket& packet) {
     packet.sync_word = SYNC_WORD;
     packet.ms_since_boot = sim_time_ms;
     
-    // Metadata
-    packet.metadata.altitude_armed = true;
-    packet.metadata.altimeter_valid = true;
-    packet.metadata.gps_valid = true;
-    packet.metadata.imu_valid = true;
-    packet.metadata.accelerometer_valid = true;
-    packet.metadata.umbilical_locked = (current_mode == STANDBY);
-    packet.metadata.adc_valid = true;
-    packet.metadata.fram_valid = true;
-    packet.metadata.sd_valid = true;
-    packet.metadata.gps_fresh = true;
-    packet.metadata.safed = false;
-    packet.metadata.mav_state = (current_mode == ASCENT);
-    packet.metadata.sv_state = false;
-    packet.metadata.flight_mode = current_mode;
+    // Raw metadata
+    packet.raw_metadata = 0;
+    packet.raw_metadata |= (true << 0); // altitude_armed
+    packet.raw_metadata |= (true << 1); // altimeter_valid
+    packet.raw_metadata |= (true << 2); // gps_valid
+    packet.raw_metadata |= (true << 3); // imu_valid
+    packet.raw_metadata |= (true << 4); // accelerometer_valid
+    packet.raw_metadata |= ((current_mode == STANDBY) << 5); // umbilical_locked
+    packet.raw_metadata |= (true << 6); // adc_valid
+    packet.raw_metadata |= (true << 7); // fram_valid
+    packet.raw_metadata |= (true << 8); // sd_valid
+    packet.raw_metadata |= (true << 9); // gps_fresh
+    packet.raw_metadata |= (false << 10); // safed
+    packet.raw_metadata |= ((current_mode == ASCENT) << 11); // mav_state
+    packet.raw_metadata |= (false << 12); // sv_state
+    packet.raw_metadata |= (current_mode << 13); // flight_mode
     
     // Events (mostly false for normal operation)
-    memset(&packet.events, 0, sizeof(Events));
-    if (current_mode == ASCENT && sim_time_ms == 5100) {
-        packet.events.launch_cmd = true;
-    }
+    bool launch_cmd = (current_mode == ASCENT && sim_time_ms == 5100);
+    packet.raw_events = 0;
+    packet.raw_events |= (launch_cmd << 22);
+
     
     // Altimeter
     packet.altitude = sim_altitude;
@@ -112,33 +113,6 @@ void PacketSimulator::generateRadioPacket(RadioPacket& packet) {
     packet.motor_state = 0.0f;
 }
 
-void PacketSimulator::generateUmbilicalPacket(UmbilicalPacket& packet) {
-    packet.ms_since_boot = sim_time_ms;
-    
-    packet.metadata.altitude_armed = false;
-    packet.metadata.altimeter_valid = true;
-    packet.metadata.gps_valid = false;
-    packet.metadata.imu_valid = false;
-    packet.metadata.accelerometer_valid = false;
-    packet.metadata.umbilical_locked = true;
-    packet.metadata.adc_valid = true;
-    packet.metadata.fram_valid = true;
-    packet.metadata.sd_valid = true;
-    packet.metadata.gps_fresh = false;
-    packet.metadata.safed = false;
-    packet.metadata.mav_state = false;
-    packet.metadata.sv_state = false;
-    packet.metadata.flight_mode = STANDBY;
-    
-    memset(&packet.events, 0, sizeof(Events));
-    
-    packet.battery_voltage = 12.6f;
-    packet.pt3_pressure = 0.0f;
-    packet.pt4_pressure = 0.0f;
-    packet.rtd_temperature = 20.0f;
-    packet.altitude = 100.0f;
-}
-
 void PacketSimulator::serializeRadioPacket(const RadioPacket& packet, uint8_t* buffer) {
     size_t offset = 0;
     
@@ -146,60 +120,14 @@ void PacketSimulator::serializeRadioPacket(const RadioPacket& packet, uint8_t* b
     offset += sizeof(uint32_t);
     
     // Pack metadata into uint16_t
-    uint16_t meta_bits = 0;
-    meta_bits |= (packet.metadata.altitude_armed << 0);
-    meta_bits |= (packet.metadata.altimeter_valid << 1);
-    meta_bits |= (packet.metadata.gps_valid << 2);
-    meta_bits |= (packet.metadata.imu_valid << 3);
-    meta_bits |= (packet.metadata.accelerometer_valid << 4);
-    meta_bits |= (packet.metadata.umbilical_locked << 5);
-    meta_bits |= (packet.metadata.adc_valid << 6);
-    meta_bits |= (packet.metadata.fram_valid << 7);
-    meta_bits |= (packet.metadata.sd_valid << 8);
-    meta_bits |= (packet.metadata.gps_fresh << 9);
-    meta_bits |= (packet.metadata.safed << 10);
-    meta_bits |= (packet.metadata.mav_state << 11);
-    meta_bits |= (packet.metadata.sv_state << 12);
-    meta_bits |= (packet.metadata.flight_mode << 13);
-    memcpy(buffer + offset, &meta_bits, sizeof(uint16_t));
+    memcpy(buffer + offset, &packet.raw_metadata, sizeof(uint16_t));
     offset += sizeof(uint16_t);
     
     memcpy(buffer + offset, &packet.ms_since_boot, sizeof(uint32_t));
     offset += sizeof(uint32_t);
     
     // Pack events into uint32_t
-    uint32_t event_bits = 0;
-    event_bits |= (packet.events.altitude_armed << 0);
-    event_bits |= (packet.events.altimeter_init_failed << 1);
-    event_bits |= (packet.events.altimeter_read_failed << 2);
-    event_bits |= (packet.events.gps_init_failed << 3);
-    event_bits |= (packet.events.gps_read_failed << 4);
-    event_bits |= (packet.events.imu_init_failed << 5);
-    event_bits |= (packet.events.imu_read_failed << 6);
-    event_bits |= (packet.events.accel_init_failed << 7);
-    event_bits |= (packet.events.accel_read_failed << 8);
-    event_bits |= (packet.events.adc_init_failed << 9);
-    event_bits |= (packet.events.adc_read_failed << 10);
-    event_bits |= (packet.events.fram_init_failed << 11);
-    event_bits |= (packet.events.fram_read_failed << 12);
-    event_bits |= (packet.events.fram_write_failed << 13);
-    event_bits |= (packet.events.sd_init_failed << 14);
-    event_bits |= (packet.events.sd_write_failed << 15);
-    event_bits |= (packet.events.mav_actuated << 16);
-    event_bits |= (packet.events.sv_actuated << 17);
-    event_bits |= (packet.events.main_deploy_wait_end << 18);
-    event_bits |= (packet.events.main_log_shutoff << 19);
-    event_bits |= (packet.events.cycle_overflow << 20);
-    event_bits |= (packet.events.unknown_cmd << 21);
-    event_bits |= (packet.events.launch_cmd << 22);
-    event_bits |= (packet.events.mav_cmd << 23);
-    event_bits |= (packet.events.sv_cmd << 24);
-    event_bits |= (packet.events.safe_cmd << 25);
-    event_bits |= (packet.events.reset_card_cmd << 26);
-    event_bits |= (packet.events.reset_fram_cmd << 27);
-    event_bits |= (packet.events.state_change_cmd << 28);
-    event_bits |= (packet.events.umbilical_disconnected << 29);
-    memcpy(buffer + offset, &event_bits, sizeof(uint32_t));
+    memcpy(buffer + offset, &packet.raw_events, sizeof(uint32_t));
     offset += sizeof(uint32_t);
     
     // Copy all float and int values
@@ -253,34 +181,4 @@ void PacketSimulator::serializeRadioPacket(const RadioPacket& packet, uint8_t* b
     memcpy(buffer + offset, &packet.rtd_temperature, sizeof(float));
     offset += sizeof(float);
     memcpy(buffer + offset, &packet.motor_state, sizeof(float));
-}
-
-void PacketSimulator::serializeUmbilicalPacket(const UmbilicalPacket& packet, uint8_t* buffer) {
-    size_t offset = 0;
-    
-    uint16_t meta_bits = 0;
-    meta_bits |= (packet.metadata.altitude_armed << 0);
-    meta_bits |= (packet.metadata.altimeter_valid << 1);
-    meta_bits |= (packet.metadata.umbilical_locked << 5);
-    meta_bits |= (packet.metadata.adc_valid << 6);
-    meta_bits |= (packet.metadata.flight_mode << 13);
-    memcpy(buffer + offset, &meta_bits, sizeof(uint16_t));
-    offset += sizeof(uint16_t);
-    
-    memcpy(buffer + offset, &packet.ms_since_boot, sizeof(uint32_t));
-    offset += sizeof(uint32_t);
-    
-    uint32_t event_bits = 0;
-    memcpy(buffer + offset, &event_bits, sizeof(uint32_t));
-    offset += sizeof(uint32_t);
-    
-    memcpy(buffer + offset, &packet.battery_voltage, sizeof(float));
-    offset += sizeof(float);
-    memcpy(buffer + offset, &packet.pt3_pressure, sizeof(float));
-    offset += sizeof(float);
-    memcpy(buffer + offset, &packet.pt4_pressure, sizeof(float));
-    offset += sizeof(float);
-    memcpy(buffer + offset, &packet.rtd_temperature, sizeof(float));
-    offset += sizeof(float);
-    memcpy(buffer + offset, &packet.altitude, sizeof(float));
 }

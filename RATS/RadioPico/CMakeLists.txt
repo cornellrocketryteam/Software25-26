@@ -34,20 +34,23 @@ if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 
-set(PICO_BOARD pico2 CACHE STRING "Board type")
+set(PICO_BOARD pico2_w CACHE STRING "Board type")
 
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
 project(RadioPico C CXX ASM)
 
+
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
 # Add executable with all source files
-add_executable(RadioPico 
+add_executable(RadioPico
     RadioPico.cpp
     rfd900x_uart.cpp
+    mqtt_client.cpp
+    sd_logger.cpp
     ../Common/packet_parser.cpp
     ../Tests/packet_simulator.cpp
 )
@@ -64,7 +67,11 @@ target_link_libraries(RadioPico
     pico_stdlib
     hardware_uart
     hardware_irq
+    hardware_spi
     pico_multicore
+    pico_cyw43_arch_lwip_poll
+    pico_lwip_mqtt
+    FatFs_SPI
 )
 
 # Include directories
