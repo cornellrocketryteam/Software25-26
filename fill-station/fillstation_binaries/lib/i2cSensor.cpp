@@ -1,3 +1,6 @@
+#ifndef I2C_SENSOR_HPP
+#define I2C_SENSOR_HPP
+
 #include <cstdint>
 #include <string>
 #include <stdexcept>
@@ -215,3 +218,4 @@ public:
         return file_descriptor >= 0;
     }
 };
+#endif
