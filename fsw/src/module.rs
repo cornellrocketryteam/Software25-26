@@ -3,7 +3,7 @@ use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice as SharedI2cDevice;
 use embassy_rp::gpio::Output;
 use embassy_rp::i2c::{Config as I2cConfig, I2c, InterruptHandler as I2cInterruptHandler};
 use embassy_rp::peripherals::{
-    DMA_CH0, DMA_CH1, I2C0, PIN_0, PIN_1, PIN_16, PIN_17, PIN_18, PIN_19, PIN_4, PIN_5, SPI0,
+    DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, I2C0, PIN_0, PIN_1, PIN_16, PIN_17, PIN_18, PIN_19, PIN_4, PIN_5, SPI0,
     UART1, USB,
 };
 use embassy_rp::spi::{Config as SpiConfig, Spi};
@@ -48,19 +48,21 @@ pub fn init_shared_i2c(
 
 /// Initialize SPI for FRAM
 ///
-/// Returns SPI instance and CS pin
+/// Returns async SPI instance and CS pin
 pub fn init_spi(
     spi0: Peri<'static, SPI0>,
     miso: Peri<'static, PIN_16>,
     mosi: Peri<'static, PIN_19>,
     clk: Peri<'static, PIN_18>,
     cs: Peri<'static, PIN_17>,
-) -> (Spi<'static, SPI0, spi::Blocking>, Output<'static>) {
+    tx_dma: Peri<'static, DMA_CH2>,
+    rx_dma: Peri<'static, DMA_CH3>,
+) -> (Spi<'static, SPI0, spi::Async>, Output<'static>) {
     // Configure SPI - FRAM can typically run at MHz speeds
     let mut spi_config = SpiConfig::default();
     spi_config.frequency = 1_000_000; // 1 MHz for safety, can go higher
 
-    let spi = Spi::new_blocking(spi0, clk, mosi, miso, spi_config);
+    let spi = Spi::new(spi0, clk, mosi, miso, tx_dma, rx_dma, spi_config);
 
     // CS pin starts high (inactive)
     let cs = Output::new(cs, embassy_rp::gpio::Level::High);
