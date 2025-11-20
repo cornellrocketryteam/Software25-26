@@ -150,25 +150,18 @@ impl FlightState {
     }
 
     pub async fn transmit(&mut self) {
-        use core::fmt::Write;
-        let mut buffer = heapless::String::<256>::new();
-
-        // Format packet data into a single transmission
-        let _ = write!(
-            &mut buffer,
-            "{}{:.2}{:.2}{:.2}{:.6}{:.6}{}{:.0}\n",
-            self.packet.flight_mode,
-            self.packet.pressure,
-            self.packet.temp,
-            self.packet.altitude,
-            self.packet.latitude,
-            self.packet.longitude,
-            self.packet.num_satellites,
-            self.packet.timestamp
-        );
+        let mut data = [0u8; 32];
+        data[0..4].copy_from_slice(&self.packet.flight_mode.to_le_bytes());
+        data[4..8].copy_from_slice(&self.packet.pressure.to_le_bytes());
+        data[8..12].copy_from_slice(&self.packet.temp.to_le_bytes());
+        data[12..16].copy_from_slice(&self.packet.altitude.to_le_bytes());
+        data[16..20].copy_from_slice(&self.packet.latitude.to_le_bytes());
+        data[20..24].copy_from_slice(&self.packet.longitude.to_le_bytes());
+        data[24..28].copy_from_slice(&self.packet.num_satellites.to_le_bytes());
+        data[28..32].copy_from_slice(&self.packet.timestamp.to_le_bytes());
 
         // Transmit via radio
-        match self.radio.send(buffer.as_bytes()).await {
+        match self.radio.send(&data).await {
             Ok(_) => {
                 log::info!("Transmitted packet via radio");
             }
