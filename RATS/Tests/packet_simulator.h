@@ -22,10 +22,10 @@ public:
     
 private:
     uint32_t sim_time_ms;
-    FlightMode current_mode;
+    FlightMode current_mode;  // Current flight mode state
     float sim_altitude;
     float sim_velocity;
-    
+
     void updateSimulation();
 };
 

@@ -45,12 +45,16 @@ project(RadioPico C CXX ASM)
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
+# Add FatFS library as subdirectory
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/../FatFS_SPI/FatFs_SPI ${CMAKE_CURRENT_BINARY_DIR}/FatFs_SPI)
+
 # Add executable with all source files
 add_executable(RadioPico
     RadioPico.cpp
     rfd900x_uart.cpp
     mqtt_client.cpp
     sd_logger.cpp
+    hw_config.c
     ../Common/packet_parser.cpp
     ../Tests/packet_simulator.cpp
 )
@@ -68,6 +72,7 @@ target_link_libraries(RadioPico
     hardware_uart
     hardware_irq
     hardware_spi
+    hardware_dma
     pico_multicore
     pico_cyw43_arch_lwip_poll
     pico_lwip_mqtt
