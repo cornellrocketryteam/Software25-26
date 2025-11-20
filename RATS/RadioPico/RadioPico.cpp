@@ -61,11 +61,6 @@ void core1_entry() {
             // Convert to JSON (can be slow, that's OK on Core 1)
             PacketParser::radioPacketToJSON(packet, json_buffer, sizeof(json_buffer));
 
-            // Send to USB serial (debugging)
-            if(sd_ready && mqtt_ready) {
-                printf("%s\n", json_buffer);
-            }
-
             // Add to batch buffer for SD logging
             if (sd_ready && batch_count < SD_LOG_BATCH_SIZE) {
                 batch_buffer[batch_count++] = packet;
@@ -147,6 +142,7 @@ int main() {
     printf("[Core 0] Ready for packets\n\n");
     
     // Core 0 main loop - FAST I/O ONLY
+    // Full 107-byte Radio Packet buffer
     uint8_t radio_buffer[107];
     RadioPacket parsed_packet;
     uint32_t packet_count = 0;
@@ -159,11 +155,11 @@ int main() {
         if (now - last_transmit_time >= 100) {
             last_transmit_time = now;
 
-            // Generate simulated packet
+            // Generate full 107-byte Radio Packet
             RadioPacket sim_packet;
             simulator.generateRadioPacket(sim_packet);
 
-            // Serialize to bytes
+            // Serialize to bytes (107 bytes full structure)
             uint8_t tx_buffer[107];
             PacketSimulator::serializeRadioPacket(sim_packet, tx_buffer);
 
@@ -173,8 +169,9 @@ int main() {
             // Debug: confirm transmission
             static uint32_t tx_count = 0;
             if (++tx_count % 10 == 0) {
-                printf("[TX] Sent %u packets (Sync: 0x%08X, Lat: %d, Alt: %.1fm)\n",
-                       tx_count, sim_packet.sync_word, sim_packet.latitude_udeg, sim_packet.altitude);
+                uint8_t flight_mode = (sim_packet.metadata >> 13) & 0x07;
+                printf("[TX] Sent %u packets (Sync: 0x%08X, Mode: %u, Alt: %.1fm)\n",
+                       tx_count, sim_packet.sync_word, flight_mode, sim_packet.altitude);
             }
         }
 #endif
@@ -183,26 +180,44 @@ int main() {
         if (RFD900xUART::packetAvailable()) {
             // Read packet
             if (RFD900xUART::readPacket(radio_buffer, sizeof(radio_buffer))) {
-                // Quick validation
+                // Validate sync word
                 uint32_t potential_sync;
                 memcpy(&potential_sync, radio_buffer, sizeof(uint32_t));
-                
+
                 if (potential_sync == SYNC_WORD) {
                     // Parse (fast operation)
                     if (PacketParser::parseRadioPacket(radio_buffer, sizeof(radio_buffer), parsed_packet)) {
                         packet_count++;
-                        
+
+                        // Print packet contents immediately on Core 0
+                        // Extract flight mode from metadata
+                        uint8_t flight_mode = (parsed_packet.metadata >> 13) & 0x07;
+                        float lat_deg = parsed_packet.latitude / 1000000.0f;
+                        float lon_deg = parsed_packet.longitude / 1000000.0f;
+
+                        printf("\n=== PACKET RECEIVED ===\n");
+                        printf("Sync Word:      0x%08X\n", parsed_packet.sync_word);
+                        printf("Flight Mode:    %u\n", flight_mode);
+                        printf("MS Since Boot:  %u ms\n", parsed_packet.ms_since_boot);
+                        printf("Altitude:       %.2f m\n", parsed_packet.altitude);
+                        printf("Temperature:    %.2f C\n", parsed_packet.temperature);
+                        printf("GPS Lat/Lon:    %.6f, %.6f deg\n", lat_deg, lon_deg);
+                        printf("GPS Sats:       %u\n", parsed_packet.num_satellites);
+                        printf("IMU Accel:      [%.2f, %.2f, %.2f] m/s^2\n",
+                               parsed_packet.imu_accel_x, parsed_packet.imu_accel_y, parsed_packet.imu_accel_z);
+                        printf("Battery:        %.2f V\n", parsed_packet.battery_voltage);
+                        printf("=======================\n\n");
+
                         // TODO: Send minimal data to Stepper Pico via UART0
                         // (Just GPS + altitude, ~12 bytes)
-                        
+
                         // Send to Core 1 for processing (non-blocking)
                         if (!queue_try_add(&packet_queue, &parsed_packet)) {
                             printf("[Core 0] Warning: Queue full, packet dropped\n");
                         }
                     }
                 } else {
-                    // Possible umbilical packet or noise
-                    printf("[Core 0] Non-radio packet detected\n");
+                    printf("[Core 0] Invalid sync word: 0x%08X (expected 0x%08X)\n", potential_sync, SYNC_WORD);
                 }
             }
         }
