@@ -53,7 +53,7 @@ public:
     }
     
     /** 
-     * Prevent Copying - Need this becasue I2CSensor owns a file descriptor (file_descriptor) — an OS resource that needs to be closed exactly once.
+     * Prevent Copying - Need this because I2CSensor owns a file descriptor (file_descriptor) — an OS resource that needs to be closed exactly once.
      * ie these are not allowed
      * I2CSensor s1(...);
      * I2CSensor s2 = s1; 
@@ -64,7 +64,7 @@ public:
     
     /**
      * Allow Moving
-     * ir. allows the follwing; 
+     * i.e. allows the following; 
      * I2CSensor makeSensor() {
      *      I2CSensor tmp(1, 0x48);
      *      return tmp;
@@ -77,7 +77,21 @@ public:
           device_address(other.device_address) {
         other.file_descriptor = -1;
     }
-    
+    /**
+     * move assignment operator
+     */
+    I2CSensor& operator=(I2CSensor&& other) noexcept {
+        if (this != &other) {
+            if (file_descriptor >= 0) {
+                close(file_descriptor);
+            }
+            file_descriptor = other.file_descriptor;
+            bus_number = other.bus_number;
+            device_address = other.device_address;
+            other.file_descriptor = -1;
+        }
+        return *this;
+    }
 
     // WRITE FUNCTIONS - Send data to the sensor
     

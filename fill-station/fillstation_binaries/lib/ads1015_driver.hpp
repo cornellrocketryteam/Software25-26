@@ -490,4 +490,4 @@ public:
 //     }
 // };
 
-#endif // ADS1115_DRIVER_HPP
+#endif // ADS1015_DRIVER_HPP

@@ -6,7 +6,7 @@ int main() {
     adc.begin();
     
     // Set voltage range
-    adc.setGain(GAIN_TWOTHIRDS);  // +/- 4.096V
+    adc.setGain(GAIN_TWOTHIRDS);  // +/- 6.144V
     
     // Read channel 0
     uint16_t raw = adc.readADC_SingleEnded(0);
