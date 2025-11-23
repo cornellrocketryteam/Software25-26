@@ -1,3 +1,0 @@
-boot_targets=mmc1 mmc0
-bootdelay=1
-uenvcmd=echo "Booting FIT from mmc 1:1..."; load mmc 1:1 ${addr_fit} fitImage.itb; bootm ${addr_fit}
