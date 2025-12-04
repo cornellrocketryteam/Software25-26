@@ -6,14 +6,30 @@ inputs.nixpkgs.lib.mapAttrs (
     settings = {
       on-unmatched = "info";
 
-      formatter.nixfmt = {
-        command = "nixfmt";
-        includes = [ "*.nix" ];
+      formatter = {
+        nixfmt = {
+          command = "nixfmt";
+          includes = [ "*.nix" ];
+        };
+        rustfmt = {
+          command = "rustfmt";
+          options = [ "--edition=2024" ];
+          includes = [ "*.rs" ];
+        };
+        yamlfmt = {
+          command = "yamlfmt";
+          includes = [
+            "*.yaml"
+            "*.yml"
+          ];
+        };
       };
     };
 
     runtimeInputs = with pkgs; [
       nixfmt
+      rustfmt
+      yamlfmt
     ];
   }
 ) inputs.self.legacyPackages
