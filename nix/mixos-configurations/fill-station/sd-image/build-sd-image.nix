@@ -8,6 +8,9 @@
   util-linux,
 }:
 let
+  inherit (pkgsCross.armv7l-hf-multiplatform.crt) ti-uboot-r5;
+  inherit (pkgsCross.aarch64-multiplatform.crt) ti-uboot-a53;
+
   gapMiB = 2;
   firmwareSizeMiB = 60;
   # Controls for the second partition
@@ -18,8 +21,6 @@ let
   secondPartitionLabel = "DATA";
   label-id = "0x2178694e";
 
-  ti-uboot-r5 = pkgsCross.armv7l-hf-multiplatform.crt.ti-uboot-r5;
-  ti-uboot-a53 = pkgsCross.aarch64-multiplatform.crt.ti-uboot-a53;
   populateFirmwareCommands = ''
     cp ${ti-uboot-r5}/tiboot3-am64x_sr2-hs-fs-evm.bin firmware/tiboot3.bin
     cp ${ti-uboot-a53}/tispl.bin firmware/tispl.bin

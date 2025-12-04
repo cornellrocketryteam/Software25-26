@@ -4,7 +4,7 @@ let
   targetBoard = "lite";
 in
 buildArmTrustedFirmware {
-  platform = platform;
+  inherit platform;
   extraMeta.platforms = [ "aarch64-linux" ];
   extraMakeFlags = [
     "TARGET_BOARD=${targetBoard}"

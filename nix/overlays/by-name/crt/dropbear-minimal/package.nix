@@ -1,5 +1,5 @@
 { dropbear }:
-dropbear.overrideAttrs (oldAttrs: {
+dropbear.overrideAttrs (_: {
   # https://github.com/mkj/dropbear/blob/master/SMALL.md#tips-for-a-small-system
   preConfigure = ''
     makeFlagsArray=(

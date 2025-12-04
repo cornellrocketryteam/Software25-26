@@ -21,4 +21,4 @@ mapAttrs (
       ./${name}/default.nix
     ];
   }
-) (filterAttrs (name: type: type == "directory") (builtins.readDir ./.))
+) (filterAttrs (_: type: type == "directory") (builtins.readDir ./.))

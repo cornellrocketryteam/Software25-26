@@ -1,4 +1,4 @@
-final: prev: {
+_: prev: {
   crt = prev.crt.overrideScope (
     _: _: {
       crt-software-root = ../..;

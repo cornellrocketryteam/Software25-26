@@ -15,21 +15,23 @@
 
   boot.kernel = pkgs.crt.custom-linux;
 
-  init.shell = {
-    tty = "ttyS2";
-    action = "askfirst";
-    process = "/bin/sh";
-  };
-
   etc."dropbear".source = pkgs.emptyDirectory;
-  init.sshd = {
-    action = "respawn";
-    process = "${lib.getExe' pkgs.dropbear "dropbear"} -F -R";
-  };
+  init = {
+    shell = {
+      tty = "ttyS2";
+      action = "askfirst";
+      process = "/bin/sh";
+    };
 
-  init.fill-station = {
-    action = "once";
-    process = lib.getExe pkgs.crt.fill-station;
+    sshd = {
+      action = "respawn";
+      process = "${lib.getExe' pkgs.dropbear "dropbear"} -F -R";
+    };
+
+    fill-station = {
+      action = "once";
+      process = lib.getExe pkgs.crt.fill-station;
+    };
   };
 
   bin = [
