@@ -1,0 +1,29 @@
+[package]
+name = "fill-station"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = [
+    "tracing/max_level_debug", "tracing/release_max_level_info",
+    "log/max_level_debug", "log/release_max_level_info",
+]
+
+[dependencies]
+anyhow = "1.0.100"
+# async-gpiod = "0.3.0"
+async-tungstenite = "0.32.0"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+smol = "2.0.2"
+log = "*" # Only here so that I can set the max logging levels
+tracing = "0.1.41"
+tracing-appender = "0.2.3"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+
+[profile.release]
+opt-level = "s"     # Optimize for size
+lto = true          # Enable fat LTO
+codegen-units = 1   # Better optimization (slower compile)
+strip = true        # Strip symbols from binary
+# panic = "abort"     # Don't include unwinding code

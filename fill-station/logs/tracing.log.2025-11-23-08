@@ -1,0 +1,100 @@
+2025-11-23T08:08:06.182840Z DEBUG request{method=GET uri=/ws version=HTTP/1.1}: tower_http::trace::on_request: started processing request
+2025-11-23T08:08:06.182958Z TRACE request{method=GET uri=/ws version=HTTP/1.1}: fill_station: Received WebSocket upgrade request
+2025-11-23T08:08:06.183081Z DEBUG request{method=GET uri=/ws version=HTTP/1.1}: tower_http::trace::on_response: finished processing request latency=0 ms status=101
+2025-11-23T08:08:06.183245Z TRACE tokio_tungstenite::handshake: Setting context when skipping handshake
+2025-11-23T08:08:06.183290Z DEBUG request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: fill_station: Client upgraded to WebSocket
+2025-11-23T08:08:06.183331Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/lib.rs:292 Stream.poll_next
+2025-11-23T08:08:06.183369Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/lib.rs:243 WebSocketStream.with_context
+2025-11-23T08:08:06.183409Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/lib.rs:302 Stream.with_context poll_next -> read()
+2025-11-23T08:08:06.183482Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/compat.rs:154 Read.read
+2025-11-23T08:08:06.183530Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/compat.rs:131 AllowStd.with_context
+2025-11-23T08:08:06.183569Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/compat.rs:157 Read.with_context read -> poll_read
+2025-11-23T08:08:06.183624Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: WouldBlock
+2025-11-23T08:08:09.021070Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/lib.rs:292 Stream.poll_next
+2025-11-23T08:08:09.021416Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/lib.rs:243 WebSocketStream.with_context
+2025-11-23T08:08:09.021511Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/lib.rs:302 Stream.with_context poll_next -> read()
+2025-11-23T08:08:09.021668Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/compat.rs:154 Read.read
+2025-11-23T08:08:09.021755Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/compat.rs:131 AllowStd.with_context
+2025-11-23T08:08:09.021840Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/compat.rs:157 Read.with_context read -> poll_read
+2025-11-23T08:08:09.021968Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tungstenite::protocol::frame::frame: Parsed headers [129, 133]
+2025-11-23T08:08:09.022037Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tungstenite::protocol::frame::frame: First: 10000001
+2025-11-23T08:08:09.022104Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tungstenite::protocol::frame::frame: Second: 10000101
+2025-11-23T08:08:09.022177Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tungstenite::protocol::frame::frame: Opcode: Data(Text)
+2025-11-23T08:08:09.022231Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tungstenite::protocol::frame::frame: Masked: true
+2025-11-23T08:08:09.022301Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tungstenite::protocol::frame: received frame 
+<FRAME>
+final: true
+reserved: false false false
+opcode: TEXT
+length: 7
+payload length: 5
+payload: 0x617364660a
+            
+2025-11-23T08:08:09.022474Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tungstenite::protocol: Received message asdf
+
+2025-11-23T08:08:09.022567Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/lib.rs:292 Stream.poll_next
+2025-11-23T08:08:09.022665Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/lib.rs:243 WebSocketStream.with_context
+2025-11-23T08:08:09.022752Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/lib.rs:302 Stream.with_context poll_next -> read()
+2025-11-23T08:08:09.022838Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/compat.rs:154 Read.read
+2025-11-23T08:08:09.022909Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/compat.rs:131 AllowStd.with_context
+2025-11-23T08:08:09.022984Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/compat.rs:157 Read.with_context read -> poll_read
+2025-11-23T08:08:09.023074Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: WouldBlock
+2025-11-23T08:08:21.323500Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/lib.rs:292 Stream.poll_next
+2025-11-23T08:08:21.324057Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/lib.rs:243 WebSocketStream.with_context
+2025-11-23T08:08:21.324377Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/lib.rs:302 Stream.with_context poll_next -> read()
+2025-11-23T08:08:21.324581Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/compat.rs:154 Read.read
+2025-11-23T08:08:21.324666Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/compat.rs:131 AllowStd.with_context
+2025-11-23T08:08:21.324750Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/compat.rs:157 Read.with_context read -> poll_read
+2025-11-23T08:08:21.324884Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tungstenite::protocol::frame::frame: Parsed headers [129, 145]
+2025-11-23T08:08:21.324964Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tungstenite::protocol::frame::frame: First: 10000001
+2025-11-23T08:08:21.325033Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tungstenite::protocol::frame::frame: Second: 10010001
+2025-11-23T08:08:21.325086Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tungstenite::protocol::frame::frame: Opcode: Data(Text)
+2025-11-23T08:08:21.325148Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tungstenite::protocol::frame::frame: Masked: true
+2025-11-23T08:08:21.325214Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tungstenite::protocol::frame: received frame 
+<FRAME>
+final: true
+reserved: false false false
+opcode: TEXT
+length: 19
+payload length: 17
+payload: 0x7b2269676e697465223a20747275657d0a
+            
+2025-11-23T08:08:21.325363Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tungstenite::protocol: Received message {"ignite": true}
+
+2025-11-23T08:08:21.325480Z  INFO request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: fill_station: Iginition command sent
+2025-11-23T08:08:21.325549Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/lib.rs:292 Stream.poll_next
+2025-11-23T08:08:21.325629Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/lib.rs:243 WebSocketStream.with_context
+2025-11-23T08:08:21.325712Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/lib.rs:302 Stream.with_context poll_next -> read()
+2025-11-23T08:08:21.325802Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/compat.rs:154 Read.read
+2025-11-23T08:08:21.325879Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/compat.rs:131 AllowStd.with_context
+2025-11-23T08:08:21.325956Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/compat.rs:157 Read.with_context read -> poll_read
+2025-11-23T08:08:21.326069Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: WouldBlock
+2025-11-23T08:08:30.862018Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/lib.rs:292 Stream.poll_next
+2025-11-23T08:08:30.862381Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/lib.rs:243 WebSocketStream.with_context
+2025-11-23T08:08:30.862633Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/lib.rs:302 Stream.with_context poll_next -> read()
+2025-11-23T08:08:30.862833Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/compat.rs:154 Read.read
+2025-11-23T08:08:30.863247Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/compat.rs:131 AllowStd.with_context
+2025-11-23T08:08:30.863337Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/compat.rs:157 Read.with_context read -> poll_read
+2025-11-23T08:08:30.863454Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tungstenite::protocol::frame::frame: Parsed headers [129, 146]
+2025-11-23T08:08:30.863531Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tungstenite::protocol::frame::frame: First: 10000001
+2025-11-23T08:08:30.863584Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tungstenite::protocol::frame::frame: Second: 10010010
+2025-11-23T08:08:30.863636Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tungstenite::protocol::frame::frame: Opcode: Data(Text)
+2025-11-23T08:08:30.863703Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tungstenite::protocol::frame::frame: Masked: true
+2025-11-23T08:08:30.863776Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tungstenite::protocol::frame: received frame 
+<FRAME>
+final: true
+reserved: false false false
+opcode: TEXT
+length: 20
+payload length: 18
+payload: 0x7b2269676e697465223a2066616c73657d0a
+            
+2025-11-23T08:08:30.863914Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tungstenite::protocol: Received message {"ignite": false}
+
+2025-11-23T08:08:30.864012Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/lib.rs:292 Stream.poll_next
+2025-11-23T08:08:30.864107Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/lib.rs:243 WebSocketStream.with_context
+2025-11-23T08:08:30.864247Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/lib.rs:302 Stream.with_context poll_next -> read()
+2025-11-23T08:08:30.864336Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/compat.rs:154 Read.read
+2025-11-23T08:08:30.864421Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/compat.rs:131 AllowStd.with_context
+2025-11-23T08:08:30.864506Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: /Users/maxlarsson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-tungstenite-0.28.0/src/compat.rs:157 Read.with_context read -> poll_read
+2025-11-23T08:08:30.864609Z TRACE request{method=GET uri=/ws version=HTTP/1.1}:websocket{ip_addr="127.0.0.1"}: tokio_tungstenite::compat: WouldBlock
