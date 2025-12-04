@@ -15,6 +15,7 @@
 
   outputs = inputs: {
     devShells = import ./nix/dev-shells inputs;
+    formatter = import ./nix/formatter inputs;
     legacyPackages = import ./nix/legacy-packages inputs;
     mixosConfigurations = import ./nix/mixos-configurations inputs;
     overlays = import ./nix/overlays inputs;

@@ -7,10 +7,6 @@ inputs.nixpkgs.lib.mapAttrs (_: pkgs: {
         fenix.targets.aarch64-unknown-linux-musl.stable.rust-std
       ])
       rust-analyzer
-
-      deadnix
-      nixfmt
-      statix
     ];
   };
 }) inputs.self.legacyPackages
