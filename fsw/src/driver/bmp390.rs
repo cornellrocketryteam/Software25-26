@@ -1,5 +1,5 @@
-use bmp390::{Bmp390, Configuration};
 use crate::module::{I2cDevice, SharedI2c};
+use bmp390::{Bmp390, Configuration};
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice as SharedI2cDevice;
 use embassy_time::Delay;
 
@@ -38,7 +38,8 @@ impl Bmp390Sensor {
     pub async fn read_into_packet(
         &mut self,
         packet: &mut crate::packet::Packet,
-    ) -> Result<(), bmp390::Error<<I2cDevice<'static> as embedded_hal_async::i2c::ErrorType>::Error>> {
+    ) -> Result<(), bmp390::Error<<I2cDevice<'static> as embedded_hal_async::i2c::ErrorType>::Error>>
+    {
         use uom::si::length::meter;
         use uom::si::pressure::pascal;
         use uom::si::thermodynamic_temperature::degree_celsius;

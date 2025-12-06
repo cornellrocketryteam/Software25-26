@@ -1,6 +1,6 @@
 mod command;
-mod hardware;
 mod components;
+mod hardware;
 
 use anyhow::Result;
 use async_tungstenite::{WebSocketStream, tungstenite};

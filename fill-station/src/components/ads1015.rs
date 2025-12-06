@@ -11,7 +11,6 @@
 /// let mut adc = Ads1015::new("/dev/i2c-2", 0x48)?;
 /// let voltage = adc.read_voltage(Channel::Ain0, Gain::TwoThirds)?;
 /// ```
-
 use anyhow::Result;
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -34,15 +33,15 @@ const REG_CONFIG: u8 = 0x01;
 
 // Configuration Register Bits
 #[cfg(any(target_os = "linux", target_os = "android"))]
-const OS_SINGLE: u16 = 0x8000;  // Start single conversion
+const OS_SINGLE: u16 = 0x8000; // Start single conversion
 #[cfg(any(target_os = "linux", target_os = "android"))]
-const MUX_SHIFT: u16 = 12;       // Multiplexer shift amount
+const MUX_SHIFT: u16 = 12; // Multiplexer shift amount
 #[cfg(any(target_os = "linux", target_os = "android"))]
-const PGA_SHIFT: u16 = 9;        // PGA shift amount
+const PGA_SHIFT: u16 = 9; // PGA shift amount
 #[cfg(any(target_os = "linux", target_os = "android"))]
 const MODE_SINGLE: u16 = 0x0100; // Single-shot mode
 #[cfg(any(target_os = "linux", target_os = "android"))]
-const DR_SHIFT: u16 = 5;         // Data rate shift amount
+const DR_SHIFT: u16 = 5; // Data rate shift amount
 #[cfg(any(target_os = "linux", target_os = "android"))]
 const COMP_QUE_DISABLE: u16 = 0x0003; // Disable comparator
 
@@ -157,9 +156,13 @@ impl Ads1015 {
     /// let adc = Ads1015::new("/dev/i2c-2", 0x48)?;
     /// ```
     pub fn new(bus: &str, address: u16) -> Result<Self> {
-        let device = LinuxI2CDevice::new(bus, address)
-            .with_context(|| format!("Failed to open I2C device {} at address 0x{:02X}", bus, address))?;
-        
+        let device = LinuxI2CDevice::new(bus, address).with_context(|| {
+            format!(
+                "Failed to open I2C device {} at address 0x{:02X}",
+                bus, address
+            )
+        })?;
+
         Ok(Self { device, address })
     }
 
@@ -178,11 +181,12 @@ impl Ads1015 {
             | ((gain as u16) << PGA_SHIFT)                 // Set gain
             | MODE_SINGLE                                   // Single-shot mode
             | ((data_rate as u16) << DR_SHIFT)             // Set data rate
-            | COMP_QUE_DISABLE;                            // Disable comparator
+            | COMP_QUE_DISABLE; // Disable comparator
 
         // Write configuration as 16-bit word to start conversion
         // ADS1015 expects MSB first (big-endian)
-        self.device.smbus_write_word_data(REG_CONFIG, config.swap_bytes())
+        self.device
+            .smbus_write_word_data(REG_CONFIG, config.swap_bytes())
             .context("Failed to write config register")?;
 
         // Wait for conversion to complete
@@ -190,13 +194,15 @@ impl Ads1015 {
 
         // Read conversion result as 16-bit word
         // ADS1015 returns MSB first, but smbus_read_word_data expects little-endian
-        let raw_word = self.device.smbus_read_word_data(REG_CONVERSION)
+        let raw_word = self
+            .device
+            .smbus_read_word_data(REG_CONVERSION)
             .context("Failed to read conversion register")?;
-        
-        // Swap bytes back to big-endian and shift right by 4 
+
+        // Swap bytes back to big-endian and shift right by 4
         // (ADS1015 is 12-bit, left-aligned in 16 bits)
         let raw = (raw_word.swap_bytes() as i16) >> 4;
-        
+
         Ok(raw)
     }
 
@@ -212,7 +218,12 @@ impl Ads1015 {
     }
 
     /// Read voltage with specified data rate
-    pub fn read_voltage_with_rate(&mut self, channel: Channel, gain: Gain, data_rate: DataRate) -> Result<f32> {
+    pub fn read_voltage_with_rate(
+        &mut self,
+        channel: Channel,
+        gain: Gain,
+        data_rate: DataRate,
+    ) -> Result<f32> {
         let raw = self.read_raw(channel, gain, data_rate)?;
         let voltage = (raw as f32) * gain.lsb_size();
         Ok(voltage)
@@ -222,9 +233,11 @@ impl Ads1015 {
     ///
     /// Returns true if a conversion is complete and data is ready to read
     pub fn is_ready(&mut self) -> Result<bool> {
-        let config = self.device.smbus_read_word_data(REG_CONFIG)
+        let config = self
+            .device
+            .smbus_read_word_data(REG_CONFIG)
             .context("Failed to read config register")?;
-        
+
         // Swap bytes to get big-endian, then check OS bit (bit 15)
         // OS bit is 1 when conversion is complete
         let config_be = config.swap_bytes();
@@ -248,7 +261,12 @@ impl Ads1015 {
         self._address
     }
 
-    pub fn read_raw(&mut self, _channel: Channel, _gain: Gain, _data_rate: DataRate) -> Result<i16> {
+    pub fn read_raw(
+        &mut self,
+        _channel: Channel,
+        _gain: Gain,
+        _data_rate: DataRate,
+    ) -> Result<i16> {
         anyhow::bail!("ADS1015 is only supported on Linux/Android")
     }
 
@@ -256,7 +274,12 @@ impl Ads1015 {
         anyhow::bail!("ADS1015 is only supported on Linux/Android")
     }
 
-    pub fn read_voltage_with_rate(&mut self, _channel: Channel, _gain: Gain, _data_rate: DataRate) -> Result<f32> {
+    pub fn read_voltage_with_rate(
+        &mut self,
+        _channel: Channel,
+        _gain: Gain,
+        _data_rate: DataRate,
+    ) -> Result<f32> {
         anyhow::bail!("ADS1015 is only supported on Linux/Android")
     }
 

@@ -3,13 +3,13 @@ use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice as SharedI2cDevice;
 use embassy_rp::gpio::Output;
 use embassy_rp::i2c::{Config as I2cConfig, I2c, InterruptHandler as I2cInterruptHandler};
 use embassy_rp::peripherals::{
-    DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, I2C0, PIN_0, PIN_1, PIN_16, PIN_17, PIN_18, PIN_19, PIN_4, PIN_5, SPI0,
-    UART1, USB,
+    DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, I2C0, PIN_0, PIN_1, PIN_4, PIN_5, PIN_16, PIN_17, PIN_18,
+    PIN_19, SPI0, UART1, USB,
 };
 use embassy_rp::spi::{Config as SpiConfig, Spi};
 use embassy_rp::uart::{Config as UartConfig, InterruptHandler as UartInterruptHandler, Uart};
 use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
-use embassy_rp::{bind_interrupts, i2c, spi, uart, Peri};
+use embassy_rp::{Peri, bind_interrupts, i2c, spi, uart};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
 

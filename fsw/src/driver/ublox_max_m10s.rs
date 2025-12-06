@@ -53,7 +53,6 @@ impl<'a, I2C> UbloxMaxM10s<'a, I2C>
 where
     I2C: I2cTrait,
 {
-
     /// Read available bytes from GPS module via I2C
     async fn read_bytes(&mut self, buffer: &mut [u8]) -> Result<usize, GpsError> {
         // First, read 2 bytes to get number of available bytes
