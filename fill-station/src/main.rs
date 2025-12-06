@@ -1,6 +1,6 @@
 mod command;
-// mod hardware;
-// mod components;
+mod hardware;
+mod components;
 
 use anyhow::Result;
 use async_tungstenite::{WebSocketStream, tungstenite};
@@ -13,7 +13,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tungstenite::Message;
 
 use crate::command::{Command, CommandResponse};
-// use crate::hardware::Hardware;
+use crate::hardware::Hardware;
 
 fn main() -> Result<()> {
     // Create a log layer for file output
@@ -32,7 +32,7 @@ fn main() -> Result<()> {
 
     smol::block_on(async {
         info!("Initializing fill station...");
-        // let hardware = Hardware::new().await?;
+        let _hardware = Hardware::new().await?;
 
         info!("Initializing web socket server...");
         let listener = Async::<TcpListener>::bind(([0, 0, 0, 0], 9000))?;

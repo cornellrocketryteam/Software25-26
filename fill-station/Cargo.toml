@@ -11,7 +11,6 @@ default = [
 
 [dependencies]
 anyhow = "1.0.100"
-# async-gpiod = "0.3.0"
 async-tungstenite = "0.32.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
@@ -20,6 +19,10 @@ log = "*" # Only here so that I can set the max logging levels
 tracing = "0.1.41"
 tracing-appender = "0.2.3"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+i2cdev = "0.6"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+async-gpiod = "0.3.0"
 
 [profile.release]
 opt-level = "s"     # Optimize for size
