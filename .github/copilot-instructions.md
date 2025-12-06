@@ -3,16 +3,13 @@
 
 Purpose: Help an AI coding agent become productive quickly in this repository by describing the architecture, developer workflows, conventions, and important integration points with concrete file references and commands.
 
-- **Big Picture:**
   - This repo contains multiple subsystems: embedded flight firmware (`fsw/`), a ground-side fill station service (`fill-station/`), hardware/system docs and helpers (`RATS/`, `Common/`), and Nix-based build/image tooling (`nix/`). See `RATS/SystemDoc.md` for the high-level design (radio/dual‑Pico architecture).
   - Flight firmware (`fsw/`) is a no_std Rust binary built for a Cortex-M target using `embassy` async runtimes. Key files: `fsw/src/main.rs`, `fsw/Cargo.toml`, `fsw/build.rs`, `fsw/memory.x`.
   - Fill station (`fill-station/`) is a host-side Rust service (async, `smol`) exposing a WebSocket interface on port 9000. Key files: `fill-station/src/main.rs`, `fill-station/Cargo.toml`.
 
-- **Architecture & data flow (concise):**
   - Rocket telemetry arrives on RFD900x → Radio Pico UART (RX only). Radio Pico parses 107‑byte packets, logs to SD, and publishes via MQTT/Wi‑Fi. It forwards simple tracking commands to Motor Pico via an inter‑Pico UART link. (See `RATS/SystemDoc.md` sections 3–6.)
   - Motor Pico receives commands and drives stepper motor drivers via GPIO/PIO. Micro‑controller-side code follows a `module::init_*` pattern for hardware setup (`fsw/src/module.rs`).
 
-- **Build / Flash / Debug workflows (explicit commands):**
   - Local firmware (FSW) compile: from `fsw/`:
     - `rustup target add thumbv7em-none-eabihf`
     - `cargo build --release` (works when toolchain and environment are set)
@@ -24,28 +21,73 @@ Purpose: Help an AI coding agent become productive quickly in this repository by
   - Fill station (host) run from repo root or `fill-station/`:
     - `cargo run --manifest-path fill-station/Cargo.toml` or build with `cargo build --manifest-path fill-station/Cargo.toml --release`.
 
-- **Conventions & patterns agents must follow:**
   - Embedded code is `#![no_std]` and uses `embassy` — spawn tasks with `#[embassy_executor::task]` and `#[embassy_executor::main]` patterns. Avoid inserting std-only code or allocations in `fsw/`.
   - Logging on embedded uses `defmt`/`defmt-rtt`; host-side uses `tracing` and writes rotated logs into `logs/` (see `fill-station/src/main.rs`).
   - Hardware initialization centralizes in `module::init_*` helpers; prefer adding/initing hardware there rather than scattering pin setup across files.
   - Packet parsing expects sync‑word search and fixed packet sizes (see `RATS/SystemDoc.md` and `Common/packet_parser.*` if present). Do not change packet framing without updating docs and both Picos.
   - Pin mappings, serial ports, and timing constraints are authoritative in `RATS/SystemDoc.md` — treat that file as the single source of truth for hardware wiring.
 
-- **Integration points & external deps:**
   - RFD900x radio (UART) — radio telemetry at 115200 bps. Look at UART init in `fsw/src/module.rs` and parsing in `fsw/src/packet.rs`.
   - Inter‑Pico UART (Radio Pico ↔ Motor Pico) — check `RATS/SystemDoc.md` and `Common/serial_protocol.h` for packet structure; changes require coordinated updates on both sides.
   - MicroSD (SPI) logging — `fsw` uses SPI1 pins and FAT32; ensure file system code matches `RATS` pin assignments.
   - Nix overlays provide cross-toolchains and image builders. Avoid ad‑hoc environment changes; prefer adding dev-shells in `nix/dev-shells/`.
 
-- **When modifying code, be careful about:**
   - Changing `Cargo.toml` dependencies to a different major version (embedded toolchains and `embassy` are sensitive). Test builds in the Nix dev shell or locally with the correct target.
   - Pin or protocol changes — update `RATS/SystemDoc.md` and any `Common/*` protocol headers.
   - Build artifacts and images — use the provided `nix` targets to produce repeatable images.
 
-- **Concrete examples to look at when performing tasks:**
   - Embedded main loop & task spawn: `fsw/src/main.rs`.
   - Hardware init pattern: `fsw/src/module.rs` (search for `init_spi`, `init_i2c`, `init_uart`).
   - Packet definitions & formats: `RATS/SystemDoc.md` + `Common/packet_parser.*`.
   - Host websocket service: `fill-station/src/main.rs` (listen on port 9000, JSON commands via `serde`).
 
 If any section is unclear or you need more details (pin names, packet fields, or build failures), tell me which area to expand and I will iterate.
+
+# Copilot / AI Agent Instructions
+
+Goal: Make AI agents productive immediately in this repo by documenting actual architecture, workflows, conventions, and integration points with concrete file references and commands.
+
+**Big Picture**
+- Embedded flight firmware in `fsw/` (Rust `#![no_std]`, `embassy` async) targets Cortex‑M; key files: `fsw/src/main.rs`, `fsw/src/module.rs`, `fsw/src/packet.rs`, `fsw/Cargo.toml`, `fsw/memory.x`, `fsw/build.rs`.
+- Ground‑side fill station in `fill-station/` (Rust async via `smol`) exposes a WebSocket server on port 9000; key files: `fill-station/src/main.rs`, `fill-station/src/command.rs`, `fill-station/src/components/`.
+- Hardware/system docs + host C/C++ Pico code in `RATS/` and `RATS/Common/`; see `RATS/SystemDoc.md` for dual‑Pico radio architecture and packet framing.
+- Nix tooling for images and dev shells in `nix/` (`nix/mixos-configurations/fill-station`, `nix/dev-shells`, `nix/overlays`).
+
+**Data Flow**
+- RFD900x → Radio Pico UART (RX): parse fixed 107‑byte packets, log to SD, publish via MQTT/Wi‑Fi; forward tracking commands to Motor Pico over inter‑Pico UART. See `RATS/SystemDoc.md`, `RATS/Common/packet_parser.*`.
+- Motor Pico drives steppers via GPIO/PIO; init follows `module::init_*` patterns. See `fsw/src/module.rs` for UART/SPI/I2C init and pin roles.
+- Fill station coordinates hardware components (e.g., igniter) and exposes command JSON over WebSocket. See `fill-station/src/components/igniter.rs`, `fill-station/src/command.rs`.
+
+**Build / Flash / Run**
+- Firmware (`fsw/`):
+  - `rustup target add thumbv7em-none-eabihf`
+  - `cargo build --release`
+  - `cargo run --release` (flashes if Pico tooling/USB available).
+- Embedded logging: `defmt` + `panic-probe` (RTT). Avoid `std` and heap in `fsw/`.
+- Fill station (host):
+  - `cargo run --manifest-path fill-station/Cargo.toml`
+  - `cargo build --manifest-path fill-station/Cargo.toml --release`
+- Nix images/dev env:
+  - `nix build .#mixosConfigurations.fill-station.config.system.build.sdImage`
+  - Dev shells/toolchains under `nix/dev-shells/`; overlays under `nix/overlays/`.
+- Pico flashing tools: `brew install picotool`.
+
+**Conventions**
+- Embedded uses `#[embassy_executor::main]` and `#[embassy_executor::task]`; spawn tasks in `fsw/src/main.rs`. Keep hardware setup centralized in `module::init_*`.
+- Packet parsing uses a sync‑word and fixed sizes; do not change framing without coordinated updates in `RATS/SystemDoc.md` and both Pico codebases.
+- Host logging uses `tracing` (rotated to `logs/` if configured in `fill-station/src/main.rs`).
+- Treat `RATS/SystemDoc.md` as the source of truth for pin mappings, serial ports, timings, and protocol specifics.
+
+**Integration Points**
+- UART (RFD900x, inter‑Pico): init and usage in `fsw/src/module.rs`; packet definitions in `RATS/Common/packet_types.h`, `packet_parser.*`, `serial_protocol.h`.
+- SPI (MicroSD logging): pins and setup referenced in `fsw/src/module.rs`; ensure consistency with `RATS` pin assignments.
+- WebSocket commands: JSON schema in `fill-station/src/command.rs`; components implemented in `fill-station/src/components/`.
+- Nix build/overlay integration: `nix/mixos-configurations/fill-station/*`, `nix/overlays/by-name/*` (e.g., custom Linux, U‑Boot, firmware).
+
+**Useful File Examples**
+- Task spawn + main loop: `fsw/src/main.rs`.
+- Hardware init helpers: `fsw/src/module.rs` (`init_spi`, `init_i2c`, `init_uart`).
+- Packet formats: `RATS/SystemDoc.md`, `RATS/Common/packet_parser.cpp`, `packet_types.h`.
+- Fill station server: `fill-station/src/main.rs`; commands in `fill-station/src/command.rs`; igniter component in `fill-station/src/components/igniter.rs`.
+
+If any area is unclear (pins, packet fields, UART speeds, Nix targets), tell me which section to expand and we’ll iterate.
