@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - main
+      - devicetree_overlay
 jobs:
   # Build the MixOS configuration for FillStation and push it to FlakeHub Cache
   build-publish:
