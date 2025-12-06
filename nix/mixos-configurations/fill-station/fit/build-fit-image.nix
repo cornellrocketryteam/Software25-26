@@ -1,6 +1,7 @@
 {
   kernel,
   dtb,
+  dtbo ? null,
   initrd,
   debug ? false,
 
@@ -39,6 +40,14 @@ stdenvNoCC.mkDerivation {
 
     cp ${dtb} dtb
     chmod u+w dtb
+    
+    # Apply device tree overlay if provided
+    ${if dtbo != null then ''
+      echo "Applying device tree overlay..."
+      fdtoverlay -i dtb -o dtb-with-overlay ${dtbo}
+      mv dtb-with-overlay dtb
+    '' else ""}
+    
     fdtput --auto-path --verbose --type=s dtb /chosen bootargs "''${kernelParams[@]}"
 
     cp ${initrd} initrd
