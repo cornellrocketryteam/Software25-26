@@ -11,22 +11,23 @@
 /dts-v1/;
 /plugin/;
 
-/*
- * Fragment 0: add pinctrl groups under the main pinctrl node
- * Target path discovered in the base DTB: /bus@f4000/pinctrl@f4000
- */
-fragment@0 {
-	target-path = "/bus@f4000/pinctrl@f4000";
-	__overlay__ {
-		myepwm1_pins_default: myepwm1-default-pins {
-			compatible = "pinctrl-single";
-			#pinctrl-cells = <1>;
-			pinctrl-single,register-width = <0x20>;
-			pinctrl-single,pins = <
-				0x0088 0x0103 /* (R18) GPMC0_OEn_REn -> EHRPWM4_A */
-			>;
-		};
+/
+{
 
+/* Define pinctrl groups inside the fragments that use them (labels must be visible
+   in the same fragment for phandle references). */
+
+/*
+ * Fragment 1: assign the pin groups to GPIO bank 0
+ * Target path discovered: /bus@f4000/gpio@600000
+ */
+fragment@1 {
+	target-path = "/bus@f4000/gpio@600000";
+	__overlay__ {
+		status = "okay";
+		pinctrl-names = "default";
+		pinctrl-0 = <&allgpio0_pins_default>;
+		/* pinctrl group for GPIO bank 0 */
 		allgpio0_pins_default: allgpio0-default-pins {
 			compatible = "pinctrl-single";
 			#pinctrl-cells = <1>;
@@ -41,7 +42,17 @@ fragment@0 {
 				0x00ac 0x1007 /* (R20) GPMC0_CSn1 -> GPIO0_42 */
 			>;
 		};
+	};
+}
 
+/* Fragment 2: assign the pin groups to GPIO bank 1 */
+fragment@2 {
+	target-path = "/bus@f4000/gpio@601000";
+	__overlay__ {
+		status = "okay";
+		pinctrl-names = "default";
+		pinctrl-0 = <&allgpio1_pins_default>;
+		/* pinctrl group for GPIO bank 1 */
 		allgpio1_pins_default: allgpio1-default-pins {
 			compatible = "pinctrl-single";
 			#pinctrl-cells = <1>;
@@ -59,39 +70,6 @@ fragment@0 {
 				0x0264 0x0000 /* (B18) I2C0_SDA -> GPIO1_65 */
 			>;
 		};
-
-		senseboard_pins_default: senseboard-default-pins {
-			compatible = "pinctrl-single";
-			#pinctrl-cells = <1>;
-			pinctrl-single,register-width = <0x20>;
-			pinctrl-single,pins = <
-				0x00b0 0x0001 /* (P19) GPMC0_CSn2 -> I2C2_SCL */
-				0x00b4 0x0001 /* (R21) GPMC0_CSn3 -> I2C2_SDA */
-			>;
-		};
-	};
-}
-
-/*
- * Fragment 1: assign the pin groups to GPIO bank 0
- * Target path discovered: /bus@f4000/gpio@600000
- */
-fragment@1 {
-	target-path = "/bus@f4000/gpio@600000";
-	__overlay__ {
-		status = "okay";
-		pinctrl-names = "default";
-		pinctrl-0 = <&allgpio0_pins_default>;
-	};
-}
-
-/* Fragment 2: assign the pin groups to GPIO bank 1 */
-fragment@2 {
-	target-path = "/bus@f4000/gpio@601000";
-	__overlay__ {
-		status = "okay";
-		pinctrl-names = "default";
-		pinctrl-0 = <&allgpio1_pins_default>;
 	};
 }
 
@@ -102,6 +80,16 @@ fragment@3 {
 		status = "okay";
 		pinctrl-names = "default";
 		pinctrl-0 = <&senseboard_pins_default>;
+		/* pinctrl group for I2C2 (senseboard) */
+		senseboard_pins_default: senseboard-default-pins {
+			compatible = "pinctrl-single";
+			#pinctrl-cells = <1>;
+			pinctrl-single,register-width = <0x20>;
+			pinctrl-single,pins = <
+				0x00b0 0x0001 /* (P19) GPMC0_CSn2 -> I2C2_SCL */
+				0x00b4 0x0001 /* (R21) GPMC0_CSn3 -> I2C2_SDA */
+			>;
+		};
 		clock-frequency = <400000>;
 	};
 }
@@ -111,5 +99,16 @@ fragment@4 {
 	target-path = "/soc@0/bus@f4000/pwm@23000000";
 	__overlay__ {
 		status = "okay";
+		pinctrl-names = "default";
+		pinctrl-0 = <&myepwm1_pins_default>;
+		myepwm1_pins_default: myepwm1-default-pins {
+			compatible = "pinctrl-single";
+			#pinctrl-cells = <1>;
+			pinctrl-single,register-width = <0x20>;
+			pinctrl-single,pins = <
+				0x0088 0x0103 /* (R18) GPMC0_OEn_REn -> EHRPWM4_A */
+			>;
+		};
 	};
 }
+};
