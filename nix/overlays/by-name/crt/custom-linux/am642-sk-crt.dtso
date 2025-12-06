@@ -3,79 +3,113 @@
  * Cornell Rocket Team Fill Station Device Tree Overlay
  * for TI SK-AM64B board
  *
- * This overlay enables custom pin configurations for the fill station
- * including PWM, GPIO, and I2C peripherals.
+ * Uses fragment/target-path fragments that match the base kernel DTB
+ * (k3-am642-sk.dtb) so overlay application does not rely on labels
+ * that may be missing in the base tree.
  */
 
 /dts-v1/;
 /plugin/;
 
-&{/} {
-	compatible = "ti,am642-sk";
-};
+/*
+ * Fragment 0: add pinctrl groups under the main pinctrl node
+ * Target path discovered in the base DTB: /bus@f4000/pinctrl@f4000
+ */
+fragment@0 {
+	target-path = "/bus@f4000/pinctrl@f4000";
+	__overlay__ {
+		myepwm1_pins_default: myepwm1-default-pins {
+			compatible = "pinctrl-single";
+			#pinctrl-cells = <1>;
+			pinctrl-single,register-width = <0x20>;
+			pinctrl-single,pins = <
+				0x0088 0x0103 /* (R18) GPMC0_OEn_REn -> EHRPWM4_A */
+			>;
+		};
 
-/* Copy pin mux configuration from am642-sk-crt-pins.dtsi */
-&main_pmx0 {
-	myepwm1_pins_default: myepwm1-default-pins {
-		pinctrl-single,pins = <
-			0x0088 0x0103  /* (R18) GPMC0_OEn_REn.EHRPWM4_A */
-		>;
+		allgpio0_pins_default: allgpio0-default-pins {
+			compatible = "pinctrl-single";
+			#pinctrl-cells = <1>;
+			pinctrl-single,register-width = <0x20>;
+			pinctrl-single,pins = <
+				0x0084 0x0007 /* (P16) GPMC0_ADVn_ALE -> GPIO0_32 */
+				0x008c 0x4007 /* (T21) GPMC0_WEn -> GPIO0_34 */
+				0x0090 0x0007 /* (P17) GPMC0_BE0n_CLE -> GPIO0_35 */
+				0x0094 0x4007 /* (T19) GPMC0_BE1n -> GPIO0_36 */
+				0x0098 0x0007 /* (W19) GPMC0_WAIT0 -> GPIO0_37 */
+				0x00a4 0x0007 /* (N17) GPMC0_DIR -> GPIO0_40 */
+				0x00ac 0x1007 /* (R20) GPMC0_CSn1 -> GPIO0_42 */
+			>;
+		};
+
+		allgpio1_pins_default: allgpio1-default-pins {
+			compatible = "pinctrl-single";
+			#pinctrl-cells = <1>;
+			pinctrl-single,register-width = <0x20>;
+			pinctrl-single,pins = <
+				0x0208 0x4007 /* (D12) SPI0_CS0 -> GPIO1_42 */
+				0x020c 0x4007 /* (C13) SPI0_CS1 -> GPIO1_43 */
+				0x0214 0x4007 /* (A13) SPI0_D0 -> GPIO1_45 */
+				0x0218 0x0007 /* (A14) SPI0_D1 -> GPIO1_46 */
+				0x0220 0x4007 /* (D14) SPI1_CS1 -> GPIO1_48 */
+				0x022c 0x4007 /* (A15) SPI1_D1 -> GPIO1_51 */
+				0x0258 0x0007 /* (C17) MCAN1_TX -> GPIO1_62 */
+				0x025c 0x0007 /* (D17) MCAN1_RX -> GPIO1_63 */
+				0x0260 0x0007 /* (A18) I2C0_SCL -> GPIO1_64 */
+				0x0264 0x0000 /* (B18) I2C0_SDA -> GPIO1_65 */
+			>;
+		};
+
+		senseboard_pins_default: senseboard-default-pins {
+			compatible = "pinctrl-single";
+			#pinctrl-cells = <1>;
+			pinctrl-single,register-width = <0x20>;
+			pinctrl-single,pins = <
+				0x00b0 0x0001 /* (P19) GPMC0_CSn2 -> I2C2_SCL */
+				0x00b4 0x0001 /* (R21) GPMC0_CSn3 -> I2C2_SDA */
+			>;
+		};
 	};
-	allgpio0_pins_default: allgpio0-default-pins {
-		pinctrl-single,pins = <
-			0x0084 0x0007  /* (P16) GPMC0_ADVn_ALE.GPIO0_32 */
-			0x008c 0x4007  /* (T21) GPMC0_WEn.GPIO0_34 */
-			0x0090 0x0007  /* (P17) GPMC0_BE0n_CLE.GPIO0_35 */
-			0x0094 0x4007  /* (T19) GPMC0_BE1n.GPIO0_36 */
-			0x0098 0x0007  /* (W19) GPMC0_WAIT0.GPIO0_37 */
-			0x00a4 0x0007  /* (N17) GPMC0_DIR.GPIO0_40 */
-			0x00ac 0x1007  /* (R20) GPMC0_CSn1.GPIO0_42 */
-		>;
+}
+
+/*
+ * Fragment 1: assign the pin groups to GPIO bank 0
+ * Target path discovered: /bus@f4000/gpio@600000
+ */
+fragment@1 {
+	target-path = "/bus@f4000/gpio@600000";
+	__overlay__ {
+		status = "okay";
+		pinctrl-names = "default";
+		pinctrl-0 = <&allgpio0_pins_default>;
 	};
-	allgpio1_pins_default: allgpio1-default-pins {
-		pinctrl-single,pins = <
-			0x0208 0x4007  /* (D12) SPI0_CS0.GPIO1_42 */
-			0x020c 0x4007  /* (C13) SPI0_CS1.GPIO1_43 */
-			0x0214 0x4007  /* (A13) SPI0_D0.GPIO1_45 */
-			0x0218 0x0007  /* (A14) SPI0_D1.GPIO1_46 */
-			0x0220 0x4007  /* (D14) SPI1_CS1.GPIO1_48 */
-			0x022c 0x4007  /* (A15) SPI1_D1.GPIO1_51 */
-			0x0258 0x0007  /* (C17) MCAN1_TX.GPIO1_62 */
-			0x025c 0x0007  /* (D17) MCAN1_RX.GPIO1_63 */
-			0x0260 0x0007  /* (A18) I2C0_SCL.GPIO1_64 */
-			0x0264 0x0000  /* (B18) I2C0_SDA.GPIO1_65 */
-		>;
+}
+
+/* Fragment 2: assign the pin groups to GPIO bank 1 */
+fragment@2 {
+	target-path = "/bus@f4000/gpio@601000";
+	__overlay__ {
+		status = "okay";
+		pinctrl-names = "default";
+		pinctrl-0 = <&allgpio1_pins_default>;
 	};
-	senseboard_pins_default: senseboard-default-pins {
-		pinctrl-single,pins = <
-			0x00b0 0x0001  /* (P19) GPMC0_CSn2.I2C2_SCL */
-			0x00b4 0x0001  /* (R21) GPMC0_CSn3.I2C2_SDA */
-		>;
+}
+
+/* Fragment 3: enable I2C2 and assign pins */
+fragment@3 {
+	target-path = "/bus@f4000/i2c@20020000";
+	__overlay__ {
+		status = "okay";
+		pinctrl-names = "default";
+		pinctrl-0 = <&senseboard_pins_default>;
+		clock-frequency = <400000>;
 	};
-};
+}
 
-/* Enable and configure peripherals */
-&main_gpio0 {
-	status = "okay";
-	pinctrl-names = "default";
-	pinctrl-0 = <&allgpio0_pins_default>;
-};
-
-&main_gpio1 {
-	status = "okay";
-	pinctrl-names = "default";
-	pinctrl-0 = <&allgpio1_pins_default>;
-};
-
-&main_i2c2 {
-	status = "okay";
-	pinctrl-names = "default";
-	pinctrl-0 = <&senseboard_pins_default>;
-	clock-frequency = <400000>;
-};
-
-&ehrpwm4 {
-	status = "okay";
-	pinctrl-names = "default";
-	pinctrl-0 = <&myepwm1_pins_default>;
-};
+/* Fragment 4: enable a PWM instance (pwm@23000000) */
+fragment@4 {
+	target-path = "/soc@0/bus@f4000/pwm@23000000";
+	__overlay__ {
+		status = "okay";
+	};
+}
