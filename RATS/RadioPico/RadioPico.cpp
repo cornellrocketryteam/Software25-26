@@ -11,10 +11,16 @@
 #include "packet_simulator.h"
 #include "sd_logger.h"
 #include "mqtt_client.h"
+#include "inter_pico_uart.h"
 
 // Test Mode: Set to 1 for dual-radio test (TX+RX), 0 for normal operation (RX only)
 // Normal operation: Rocket -> RFD900x -> GP1 (RX)
 #define DUAL_RADIO_TEST_MODE 0
+
+// Loopback Test Mode: Set to 1 to test with jumper wire GP0->GP1
+// Tests: RX, SD logging, and inter-Pico UART (no MQTT)
+// Hardware: Connect GP0 to GP1 with jumper wire
+#define LOOPBACK_TEST_MODE 1
 
 // Inter-core communication queue
 queue_t packet_queue;
@@ -32,7 +38,8 @@ void core1_entry() {
         printf("[Core 1] WARNING: SD card failed to initialize - logging disabled\n");
     }
 
-    // Connect to Wi-Fi and MQTT broker
+#if !LOOPBACK_TEST_MODE
+    // Connect to Wi-Fi and MQTT broker (skip in loopback test mode)
     // Blocks until Wi-Fi is connected
     bool mqtt_ready = MqttClient::init();
     if (!mqtt_ready) {
@@ -44,7 +51,10 @@ void core1_entry() {
             sleep_ms(LED_BLINK_ERROR);
         }
     }
-
+#else
+    bool mqtt_ready = false;  // MQTT disabled in loopback test
+    printf("[Core 1] MQTT/WiFi disabled (loopback test mode)\n");
+#endif
 
     char json_buffer[2048];
     RadioPacket packet;
@@ -53,8 +63,10 @@ void core1_entry() {
     uint32_t last_stats_time = 0;
 
     while (true) {
-        // Poll Network Stack
+        // Poll Network Stack (only if MQTT is enabled)
+#if !LOOPBACK_TEST_MODE
         MqttClient::poll();
+#endif
 
         // Wait for packets from Core 0
         if (queue_try_remove(&packet_queue, &packet)) {
@@ -80,7 +92,7 @@ void core1_entry() {
             if (mqtt_ready) {
                 MqttClient::publish(json_buffer);
             }
-            
+
         }
 
         // Print SD stats every 30 seconds
@@ -101,12 +113,30 @@ void core1_entry() {
 int main() {
     stdio_init_all();
     sleep_ms(6000);
-    
+
     printf("\n=== RadioPico ===\n");
     printf("Core 0: Real-time I/O\n");
     printf("Core 1: Processing & Logging\n\n");
 
-#if DUAL_RADIO_TEST_MODE
+#if LOOPBACK_TEST_MODE
+    printf("*** LOOPBACK TEST MODE ***\n");
+    printf("Hardware Setup:\n");
+    printf("  1. Connect GP0 to GP1 with jumper wire\n");
+    printf("  2. SD card inserted (optional but recommended)\n");
+    printf("  3. No RFD900x radio needed\n\n");
+    printf("This test simulates full operation:\n");
+    printf("  - Generates packets on GP0 (TX)\n");
+    printf("  - Receives on GP1 (RX)\n");
+    printf("  - Logs to SD card via Core 1\n");
+    printf("  - Sends to StepperPico via GP4 (UART1)\n");
+    printf("  - No MQTT/WiFi (faster testing)\n\n");
+
+    // Test mode: create simulator for generating packets
+    PacketSimulator simulator;
+    uint32_t last_transmit_time = 0;
+    printf("Starting loopback packet transmission at 10Hz...\n\n");
+
+#elif DUAL_RADIO_TEST_MODE
     printf("*** DUAL RFD900x TEST MODE ***\n");
     printf("Transmit Radio (RFD #1):\n");
     printf("  Pin 1,2 (GND) -> Pico GND\n");
@@ -133,10 +163,13 @@ int main() {
     
     // Initialize inter-core queue (holds up to 64 packets)
     queue_init(&packet_queue, sizeof(RadioPacket), 64);
-    
+
+    // Initialize inter-Pico UART (RadioPico -> StepperPico)
+    InterPicoUART::init();
+
     // Launch Core 1
     multicore_launch_core1(core1_entry);
-    
+
     // Initialize UART for RFD900x
     RFD900xUART::init();
     printf("[Core 0] Ready for packets\n\n");
@@ -149,7 +182,7 @@ int main() {
     uint32_t last_stats_time = 0;
     
     while (true) {
-#if DUAL_RADIO_TEST_MODE
+#if DUAL_RADIO_TEST_MODE || LOOPBACK_TEST_MODE
         // Transmit a test packet every 100ms (10Hz)
         uint32_t now = to_ms_since_boot(get_absolute_time());
         if (now - last_transmit_time >= 100) {
@@ -163,7 +196,7 @@ int main() {
             uint8_t tx_buffer[107];
             PacketSimulator::serializeRadioPacket(sim_packet, tx_buffer);
 
-            // Transmit over UART0 to RFD900x #1 (transmit radio)
+            // Transmit over UART0 to RFD900x #1 (or loopback to GP1 via GP0)
             uart_write_blocking(RFD_UART_ID, tx_buffer, sizeof(tx_buffer));
 
             // Debug: confirm transmission
@@ -189,27 +222,12 @@ int main() {
                     if (PacketParser::parseRadioPacket(radio_buffer, sizeof(radio_buffer), parsed_packet)) {
                         packet_count++;
 
-                        // Print packet contents immediately on Core 0
-                        // Extract flight mode from metadata
-                        uint8_t flight_mode = (parsed_packet.metadata >> 13) & 0x07;
-                        float lat_deg = parsed_packet.latitude / 1000000.0f;
-                        float lon_deg = parsed_packet.longitude / 1000000.0f;
-
-                        printf("\n=== PACKET RECEIVED ===\n");
-                        printf("Sync Word:      0x%08X\n", parsed_packet.sync_word);
-                        printf("Flight Mode:    %u\n", flight_mode);
-                        printf("MS Since Boot:  %u ms\n", parsed_packet.ms_since_boot);
-                        printf("Altitude:       %.2f m\n", parsed_packet.altitude);
-                        printf("Temperature:    %.2f C\n", parsed_packet.temperature);
-                        printf("GPS Lat/Lon:    %.6f, %.6f deg\n", lat_deg, lon_deg);
-                        printf("GPS Sats:       %u\n", parsed_packet.num_satellites);
-                        printf("IMU Accel:      [%.2f, %.2f, %.2f] m/s^2\n",
-                               parsed_packet.imu_accel_x, parsed_packet.imu_accel_y, parsed_packet.imu_accel_z);
-                        printf("Battery:        %.2f V\n", parsed_packet.battery_voltage);
-                        printf("=======================\n\n");
-
-                        // TODO: Send minimal data to Stepper Pico via UART0
-                        // (Just GPS + altitude, ~12 bytes)
+                        // Send tracking data to Stepper Pico via UART1
+                        InterPicoUART::sendTrackingData(
+                            parsed_packet.latitude,
+                            parsed_packet.longitude,
+                            parsed_packet.altitude
+                        );
 
                         // Send to Core 1 for processing (non-blocking)
                         if (!queue_try_add(&packet_queue, &parsed_packet)) {

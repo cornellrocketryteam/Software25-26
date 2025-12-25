@@ -12,14 +12,15 @@
 **COMPLETED (Radio Pico):**
 - RFD900x UART Reception: Full packet reception at 115200 baud (UART0, GP0/GP1)
 - Packet Parsing: 107-byte telemetry packets with sync word detection
-- SD Card Logging: CSV logging to microSD card via SPI1 (GP10-13, GP22)
-- Dual-Core Architecture: Core 0 for real-time I/O, Core 1 for logging
-- Test Mode: Packet simulator for testing without rocket
-- MQTT/Wi-Fi: Connecting to Wi-Fi, publishing packets to MQTT
+- SD Card Logging: CSV logging to microSD card via SPI1 (GP10-13), all 27 fields
+- Dual-Core Architecture: Core 0 for real-time I/O, Core 1 for logging/MQTT
+- Test Mode: Loopback test mode with simulated packets (GP0→GP1 jumper)
+- MQTT/Wi-Fi: Publishing full packets to MQTT broker
+- Inter-Pico UART: Sending tracking data (lat/lon/alt) via UART1 (GP4 TX)
 
 **IN PROGRESS:**
-- Inter-Pico UART: Protocol defined, implementation TBD
 - Ground Station Integration: MQTT topic structure and command handling
+- Motor Control Pico: Receiving tracking data, motor control TBD
   
 **TODO:**
 - Motor Control (Stepper Pico): Motor control functionality
@@ -123,85 +124,130 @@ The RATS system tracks a launch vehicle during flight by continuously aiming a d
 ### 3.1 Raspberry Pi Pico 2 W #1 (Radio/Data Pico)
 
 **Primary Functions:**
-- RFD900x UART communication (UART0)
-- MicroSD card data logging (SPI1)
+- RFD900x UART reception (UART0)
+- MicroSD card logging (SPI1)
 - WiFi/MQTT ground station link
-- Inter-Pico communication (UART1)
+- Inter-Pico UART transmission (UART1)
 
 | GPIO | Function | Connection | Notes |
 |------|----------|------------|-------|
-| GP0 | UART0 TX | RFD900x RX | Not used (RX only) |
-| GP1 | UART0 RX | RFD900x TX | Radio telemetry |
-| GP4 | UART1 TX | Pico #2 GP5 (RX) | Inter-Pico commands |
-| GP5 | UART1 RX | Pico #2 GP4 (TX) | Inter-Pico status |
-| GP10 | SPI1 SCK | MicroSD CLK | SD card |
-| GP11 | SPI1 TX | MicroSD MOSI | SD card |
-| GP12 | SPI1 RX | MicroSD MISO | SD card |
-| GP13 | SPI1 CSn | MicroSD CS | SD card |
-| GP22 | GPIO Input | MicroSD Card Detect | Card presence |
-| GP26 | GPIO Output | Status LED (Green) | Activity indicator |
+| GP0 | UART0 TX | RFD900x RX (Pin 7) | TX only used in loopback test mode |
+| GP1 | UART0 RX | RFD900x TX (Pin 9) | **Telemetry from radio** |
+| GP4 | UART1 TX | Stepper Pico GP5 (RX) | **Tracking data to Stepper Pico** |
+| GP10 | SPI1 SCK | MicroSD CLK | SD card clock |
+| GP11 | SPI1 MOSI | MicroSD CMD | SD card data input |
+| GP12 | SPI1 MISO | MicroSD D0 | SD card data output |
+| GP13 | SPI1 CS | MicroSD CS | Chip select |
+| GP25 | Onboard LED | Internal | Status indicator |
 
-**UART0 Configuration (RFD900x):**
-- Baud Rate: 115200 bps
-- Data Format: 8N1
-- Flow Control: None
-- Buffer Size: 512 bytes RX
+**UART0 (RFD900x Reception):**
+- Baud: 115200 bps, 8N1
+- Direction: RX only (GP1 receives from RFD900x Pin 9)
+- Buffer: 512 bytes circular, interrupt-driven
+- Sync Word: 0x3E5D5967 ("CRT!")
+- Packet: 107 bytes @ 10 Hz
 
-**UART1 Configuration (Inter-Pico):**
-- Baud Rate: 115200 bps
-- Data Format: 8N1
-- Flow Control: None
-- Buffer Size: 256 bytes RX/TX
+**UART1 (Inter-Pico Transmission):**
+- Baud: 115200 bps, 8N1
+- Direction: TX only (GP4 transmits to Stepper Pico GP5)
+- Sync Word: 0x54524B21 ("TRK!")
+- Packet: 16 bytes (4-byte sync + 12-byte TrackingData)
+- Rate: Every received packet (~10 Hz)
+- Data: latitude (µdeg), longitude (µdeg), altitude (m)
 
-**SPI1 Configuration (MicroSD):**
-- Clock Speed: 10 MHz (init), up to 25 MHz
-- Mode: Mode 0
-- File System: FAT32
+**SPI1 (MicroSD Card):**
+- Clock: 12.5 MHz
+- Format: FAT32, CSV with 27 fields
+- Batch: 10 packets per write
+- Card Detect: DISABLED (unreliable)
 
 ---
 
-### 3.2 Raspberry Pi Pico 2 W #2 (Motor Control Pico)
-
-**STATUS: Implementation TBD**
+### 3.2 Raspberry Pi Pico 2 W #2 (Stepper/Motor Pico)
 
 **Primary Functions:**
+- Inter-Pico UART reception (UART1)
 - Stepper motor control (DM556T drivers)
-- GPS module communication (UART0) - optional
-- Angle calculations (azimuth/elevation from GPS coordinates)
-- Inter-Pico communication (UART1)
+- Angle calculations (azimuth/elevation)
+- GPS module (UART0) - optional
 
 | GPIO | Function | Connection | Notes |
 |------|----------|------------|-------|
-| GP0 | UART0 TX | GPS RX (optional) | Optional GPS commands |
-| GP1 | UART0 RX | GPS TX (optional) | NMEA sentences |
-| GP4 | UART1 TX | Pico #1 GP5 (RX) | Inter-Pico status |
-| GP5 | UART1 RX | Pico #1 GP4 (TX) | Inter-Pico commands |
-| GP6 | GPIO Output | Azimuth STEP | DM556T PUL- |
-| GP7 | GPIO Output | Azimuth DIR | DM556T DIR- |
-| GP8 | GPIO Output | Azimuth ENA | DM556T ENA- |
-| GP9 | GPIO Output | Elevation STEP | DM556T PUL- |
-| GP10 | GPIO Output | Elevation DIR | DM556T DIR- |
-| GP11 | GPIO Output | Elevation ENA | DM556T ENA- |
-| GP28 | GPIO Output | Status LED (Red) | Motor activity |
+| GP5 | UART1 RX | Radio Pico GP4 (TX) | **Receives tracking data** |
+| GP6 | STEP | Azimuth Driver PUL- | Step pulses |
+| GP7 | DIR | Azimuth Driver DIR- | Direction |
+| GP8 | ENA | Azimuth Driver ENA- | Enable (active low) |
+| GP9 | STEP | Elevation Driver PUL- | Step pulses |
+| GP10 | DIR | Elevation Driver DIR- | Direction |
+| GP11 | ENA | Elevation Driver ENA- | Enable (active low) |
 
-**UART0 Configuration (GPS - Optional):**
-- Baud Rate: 9600 bps
-- Data Format: 8N1
-- Protocol: NMEA 0183
-- Update Rate: 1 Hz typical
-- Note: GPS provides turret location for angle calculation
+**UART1 (Inter-Pico Reception):**
+- Baud: 115200 bps, 8N1
+- Direction: RX only (GP5 receives from Radio Pico GP4)
+- Sync Word: 0x54524B21 ("TRK!")
+- Packet: 16 bytes (4-byte sync + 12-byte TrackingData)
+- Rate: ~10 Hz
+- Data: latitude (µdeg), longitude (µdeg), altitude (m)
 
-**UART1 Configuration (Inter-Pico):**
-- Baud Rate: 115200 bps
-- Data Format: 8N1
-- Flow Control: None
+**Receiver Example:**
+```cpp
+#include "hardware/uart.h"
+#include "hardware/irq.h"
+#include "serial_protocol.h"
 
-**Stepper Control (Stepperonline E Series NEMA 23):**
-- Motor: 3.0 Nm, 4.2A, 1.8° per step (200 steps/rev)
-- Driver: DM556T
-- Microstepping: Configurable via DIP switches (1/2 to 1/256)
-- Control Method: PIO or GPIO
-- Maximum Step Rate: TBD (test with hardware)
+#define UART_ID uart1
+#define UART_RX_PIN 5
+#define BAUD_RATE 115200
+#define SYNC_WORD 0x54524B21
+
+volatile uint8_t rx_buffer[256];
+volatile uint32_t rx_write = 0, rx_read = 0;
+
+void on_uart_rx() {
+    while (uart_is_readable(UART_ID)) {
+        rx_buffer[rx_write++] = uart_getc(UART_ID);
+        rx_write %= 256;
+    }
+}
+
+void init() {
+    uart_init(UART_ID, BAUD_RATE);
+    gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
+    irq_set_exclusive_handler(UART1_IRQ, on_uart_rx);
+    irq_set_enabled(UART1_IRQ, true);
+    uart_set_irq_enables(UART_ID, true, false);
+}
+
+bool receive_packet(TrackingData* data) {
+    // Wait for 16 bytes (4 sync + 12 data)
+    if ((rx_write - rx_read) % 256 < 16) return false;
+
+    // Find sync word
+    uint32_t sync = 0;
+    for (int i = 0; i < 4; i++) {
+        sync |= rx_buffer[(rx_read + i) % 256] << (i * 8);
+    }
+
+    if (sync != SYNC_WORD) {
+        rx_read = (rx_read + 1) % 256; // Advance by 1
+        return false;
+    }
+
+    // Read data (skip sync)
+    rx_read = (rx_read + 4) % 256;
+    for (int i = 0; i < 12; i++) {
+        ((uint8_t*)data)[i] = rx_buffer[rx_read++];
+        rx_read %= 256;
+    }
+
+    return true;
+}
+```
+
+**Stepper Control:**
+- Motor: NEMA 23, 3.0 Nm, 1.8°/step (200 steps/rev)
+- Driver: DM556T, microstepping 1/2 to 1/256 (DIP switches)
+- Min Pulse: 2.5 µs, signals are 3.3V compatible
 
 ---
 
