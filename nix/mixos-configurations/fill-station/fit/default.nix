@@ -2,7 +2,8 @@
 {
   system.build.fitImage = pkgs.callPackage ./build-fit-image.nix {
     kernel = "${config.boot.kernel}/Image";
-    dtb = ./k3-am642-sk-fill-station.dtb;
+    dtb = "${config.boot.kernel}/dtbs/ti/k3-am642-sk.dtb";
+    dtbOverlay = ./k3-am64-fillstation-pinmux-overlay.dtbo;
     initrd = "${config.system.build.initrd}/initrd";
   };
 }

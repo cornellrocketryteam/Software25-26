@@ -1,6 +1,7 @@
 {
   kernel,
   dtb,
+  dtbOverlay,
   initrd,
   debug ? false,
 
@@ -39,7 +40,15 @@ stdenvNoCC.mkDerivation {
 
     cp ${dtb} dtb
     chmod u+w dtb
-    fdtput --auto-path --verbose --type=s dtb /chosen bootargs "''${kernelParams[@]}"
+    
+    # Apply the overlay to the base DTB
+    fdtoverlay -i dtb -o dtb-merged ${dtbOverlay}
+    
+    # Add kernel boot parameters to the merged DTB
+    fdtput --auto-path --verbose --type=s dtb-merged /chosen bootargs "''${kernelParams[@]}"
+    
+    # Use the merged DTB
+    mv dtb-merged dtb
 
     cp ${initrd} initrd
 
