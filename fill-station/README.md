@@ -1,0 +1,256 @@
+# Fill Station Server
+
+Ground-side service for Cornell Rocketry Team's rocket fill operations. This Rust application provides a WebSocket-based control interface for hardware components including igniters, ADCs, valves, and sensors.
+
+## Quick Start
+
+### Development (macOS/Linux)
+```bash
+cargo run --release
+```
+
+### Production (Nix Build)
+```bash
+# Build the entire system image including fill-station
+cd /path/to/Software25-26
+nix build .#mixosConfigurations.fill-station.config.system.build.sdImage
+```
+
+The server listens on `ws://0.0.0.0:9000` for WebSocket connections.
+
+## Architecture
+
+```
+fill-station/
+├── src/
+│   ├── main.rs              # WebSocket server & background tasks
+│   ├── command.rs           # Command/response protocol definitions
+│   ├── hardware.rs          # Hardware initialization & aggregation
+│   ├── lib.rs               # Public API exports
+│   └── components/          # Individual hardware drivers
+│       ├── igniter.rs       # GPIO-based igniter control
+│       ├── ads1015.rs       # I2C ADC driver (pressure sensors)
+│       └── mod.rs           # Component exports
+├── docs/                    # Documentation
+│   ├── ADDING_FEATURES.md   # Guide to extending the system
+│   ├── ADC_STREAMING.md     # ADC background monitoring docs
+│   ├── ADC_MONITOR_GUIDE.md # ADC hardware setup
+│   ├── QUICKSTART_ADC.md    # Quick ADC testing guide
+│   └── TROUBLESHOOTING.md   # Common issues & solutions
+└── test_adc_stream.py       # WebSocket client test script
+```
+
+## Features
+
+### ✅ WebSocket Server
+- Async WebSocket server using `smol` runtime
+- JSON-based command/response protocol
+- Multiple concurrent client support
+- Robust error handling (doesn't crash on client errors)
+
+### ✅ Hardware Control
+- **Igniters**: GPIO-based control with continuity checking
+- **ADC Monitoring**: Dual ADS1015 12-bit ADCs (8 channels total)
+- **Pressure Sensors**: Calibrated scaling for ADC channels
+- Platform-aware: Compiles on macOS for dev, runs on Linux
+
+### ✅ Background Tasks
+- **ADC Monitoring**: Continuous 10 Hz sampling with retry logic
+- **Streaming**: Real-time ADC data pushed to WebSocket clients
+- Thread-safe shared state using `Arc<Mutex<>>`
+
+### ✅ Logging
+- Dual output: stdout + rotating file logs
+- Structured logging with `tracing` crate
+- Per-connection span tracking
+
+## WebSocket Commands
+
+### Igniter Control
+```json
+{"command": "ignite"}
+```
+
+### ADC Streaming
+```json
+{"command": "start_adc_stream"}
+{"command": "stop_adc_stream"}
+```
+
+See [`docs/ADC_STREAMING.md`](docs/ADC_STREAMING.md) for detailed protocol specification.
+
+## Hardware Configuration
+
+### ADC Settings
+- **I2C Bus**: `/dev/i2c-2`
+- **ADC1 Address**: `0x48`
+- **ADC2 Address**: `0x49`
+- **Gain**: ±4.096V (configurable)
+- **Sample Rate**: 10 Hz (configurable)
+
+### GPIO Pins
+- **Igniter 1**: GPIO 18 (continuity), GPIO 16 (signal)
+- **Igniter 2**: GPIO 24 (continuity), GPIO 22 (signal)
+
+See [`src/hardware.rs`](src/hardware.rs) for pin mappings.
+
+## Configuration
+
+All configuration constants are at the top of `src/main.rs`:
+
+```rust
+// ADC sampling rate
+const ADC_SAMPLE_RATE_HZ: u64 = 10;  // Change to 20, 50, 100...
+
+// Pressure sensor calibration
+const ADC1_CH0_SCALE: f32 = 0.9365126677;
+const ADC1_CH0_OFFSET: f32 = 3.719970194;
+// ... etc
+```
+
+Easy to modify without diving into code logic.
+
+## Testing
+
+### Test ADC Streaming
+```bash
+./test_adc_stream.py
+```
+
+Or use `websocat`:
+```bash
+websocat ws://localhost:9000
+# Then type commands:
+{"command": "start_adc_stream"}
+```
+
+### Unit ADC Testing
+```bash
+cargo run --bin adc_test       # Test I2C communication
+cargo run --bin adc_monitor    # Monitor with scaling
+cargo run --bin dual_adc_monitor  # Basic dual ADC monitor
+```
+
+## Development
+
+### Adding New Features
+
+See the comprehensive guide: **[`docs/ADDING_FEATURES.md`](docs/ADDING_FEATURES.md)**
+
+This covers:
+- Creating new hardware components
+- Adding WebSocket commands
+- Implementing background tasks
+- Integration with main server
+- Complete valve controller example
+
+### Adding New Hardware Component
+
+1. Create driver in `src/components/your_component.rs`
+2. Export in `src/components/mod.rs`
+3. Add to `Hardware` struct in `src/hardware.rs`
+4. Add commands to `src/command.rs`
+5. Handle in `execute_command()` in `src/main.rs`
+
+Detailed walkthrough in [`docs/ADDING_FEATURES.md`](docs/ADDING_FEATURES.md).
+
+### Dependencies
+
+Core:
+- `smol` - Async runtime
+- `async-tungstenite` - WebSocket server
+- `serde` / `serde_json` - JSON serialization
+- `tracing` - Structured logging
+- `anyhow` - Error handling
+
+Hardware (Linux only):
+- `async-gpiod` - GPIO control
+- `i2cdev` - I2C communication
+
+## Building
+
+### Local Development
+```bash
+cargo build --release
+```
+
+### Nix-based Build
+The fill station is built as a Nix package defined in:
+```
+nix/overlays/by-name/crt/fill-station/package.nix
+```
+
+Build the package alone:
+```bash
+nix build .#crt.fill-station
+```
+
+Build full system SD card image:
+```bash
+nix build .#mixosConfigurations.fill-station.config.system.build.sdImage
+```
+
+The SD image is at `./result/fill-station.img` and can be flashed directly to an SD card.
+
+## Deployment
+
+The fill-station runs on the **TI AM64x SK board** with a custom MixOS-based Linux system.
+
+**Init System**: MixOS uses a minimal init system (not systemd). The service is configured in:
+```
+nix/mixos-configurations/fill-station/default.nix
+```
+
+**Service Configuration**:
+```nix
+init = {
+  fill-station = {
+    action = "once";
+    process = lib.getExe pkgs.crt.fill-station;
+  };
+};
+```
+
+**Logs**: Written to both stdout and rotating log files in `logs/`.
+
+**SD Card Image**: The complete bootable system is built with:
+```bash
+nix build .#mixosConfigurations.fill-station.config.system.build.sdImage
+```
+
+See [LINUX_IMAGE_BUILD_PROCESS.md](docs/LINUX_IMAGE_BUILD_PROCESS.md) for complete build system documentation.
+
+## Troubleshooting
+
+See [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) for:
+- I2C permission issues
+- GPIO access problems
+- WebSocket connection errors
+- ADC reading issues
+
+## Documentation
+
+- **[INDEX.md](docs/INDEX.md)** - Documentation hub with navigation
+- **[ADDING_FEATURES.md](docs/ADDING_FEATURES.md)** - Complete guide to extending the system
+- **[ADC_STREAMING.md](docs/ADC_STREAMING.md)** - ADC background monitoring & streaming
+- **[ADC_MONITOR_GUIDE.md](docs/ADC_MONITOR_GUIDE.md)** - ADC hardware setup
+- **[QUICKSTART_ADC.md](docs/QUICKSTART_ADC.md)** - Quick ADC testing
+- **[TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Common issues & fixes
+- **[DTBO_BUILDER.md](docs/DTBO_BUILDER.md)** - Device tree overlay automation
+- **[LINUX_IMAGE_BUILD_PROCESS.md](docs/LINUX_IMAGE_BUILD_PROCESS.md)** - Complete build system guide
+
+## License
+
+Cornell Rocketry Team - Internal Use
+
+## Contributing
+
+When adding features:
+1. Follow the patterns in existing components
+2. Use `#[cfg]` for platform-specific code
+3. Add comprehensive error handling
+4. Document your commands and protocol
+5. Test on both macOS (dev) and Linux (target)
+6. Update this README if adding major features
+
+See [`docs/ADDING_FEATURES.md`](docs/ADDING_FEATURES.md) for detailed contribution guidelines.

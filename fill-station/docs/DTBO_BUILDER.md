@@ -20,7 +20,7 @@ To update the pinmux configuration:
 4. Rebuild: `nix build .#mixosConfigurations.fill-station.config.system.build.sdImage`
 
 ## Files
-
+All source files are in the `nix/overlays/by-name/crt/fillstation-dtbo` directory:
 - `src/sysconfig-pinmux.dtsi` - Raw SysConfig output (UPDATE THIS)
 - `src/k3.h` - Pinctrl macro definitions (don't modify)
 - `src/k3-am64-fillstation-pinmux-overlay.dts` - Wrapper overlay that includes the dtsi and attaches to devices - modify as needed 
