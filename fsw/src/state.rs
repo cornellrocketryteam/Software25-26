@@ -2,8 +2,10 @@ use crate::module::*;
 
 use crate::packet::Packet;
 
+use crate::driver::ak09915::Ak09915Sensor;
 use crate::driver::bmp390::Bmp390Sensor;
 use crate::driver::fram::Fram;
+use crate::driver::icm42688::Icm42688Sensor;
 use crate::driver::rfd900x::Rfd900x;
 use crate::driver::ublox_max_m10s::UbloxMaxM10s;
 
@@ -62,6 +64,12 @@ pub struct FlightState {
     // gps
     gps: UbloxMaxM10s<'static, I2cDevice<'static>>,
 
+    // magnetometer
+    magnetometer: Ak09915Sensor,
+
+    // imu
+    imu: Icm42688Sensor,
+
     // actuators
 
     // telemetry
@@ -85,6 +93,8 @@ impl FlightState {
             log::error!("Failed to configure GPS: {:?}", e);
         }
 
+        let magnetometer = Ak09915Sensor::new(i2c_bus).await;
+        let imu = Icm42688Sensor::new(i2c_bus).await;
         let radio = Rfd900x::new(uart);
 
         Self {
@@ -94,6 +104,8 @@ impl FlightState {
             altimeter: altimeter,
             fram: fram,
             gps: gps,
+            magnetometer: magnetometer,
+            imu: imu,
             radio: radio,
         }
     }
@@ -147,10 +159,43 @@ impl FlightState {
                 log::error!("Failed to read GPS: {:?}", e);
             }
         }
+
+        // Read magnetometer and update packet
+        match self.magnetometer.read_into_packet(&mut self.packet).await {
+            Ok(_) => {
+                log::info!(
+                    "MAG | X = {:.2} µT, Y = {:.2} µT, Z = {:.2} µT",
+                    self.packet.mag_x,
+                    self.packet.mag_y,
+                    self.packet.mag_z
+                );
+            }
+            Err(e) => {
+                log::error!("Failed to read AK09915 magnetometer: {:?}", e);
+            }
+        }
+
+        // Read IMU and update packet
+        match self.imu.read_into_packet(&mut self.packet).await {
+            Ok(_) => {
+                log::info!(
+                    "IMU | Accel: X={:.2} Y={:.2} Z={:.2} m/s² | Gyro: X={:.2} Y={:.2} Z={:.2} °/s",
+                    self.packet.accel_x,
+                    self.packet.accel_y,
+                    self.packet.accel_z,
+                    self.packet.gyro_x,
+                    self.packet.gyro_y,
+                    self.packet.gyro_z
+                );
+            }
+            Err(e) => {
+                log::error!("Failed to read ICM-42688-P IMU: {:?}", e);
+            }
+        }
     }
 
     pub async fn transmit(&mut self) {
-        let mut data = [0u8; 32];
+        let mut data = [0u8; 68];
         data[0..4].copy_from_slice(&self.packet.flight_mode.to_le_bytes());
         data[4..8].copy_from_slice(&self.packet.pressure.to_le_bytes());
         data[8..12].copy_from_slice(&self.packet.temp.to_le_bytes());
@@ -159,6 +204,15 @@ impl FlightState {
         data[20..24].copy_from_slice(&self.packet.longitude.to_le_bytes());
         data[24..28].copy_from_slice(&self.packet.num_satellites.to_le_bytes());
         data[28..32].copy_from_slice(&self.packet.timestamp.to_le_bytes());
+        data[32..36].copy_from_slice(&self.packet.mag_x.to_le_bytes());
+        data[36..40].copy_from_slice(&self.packet.mag_y.to_le_bytes());
+        data[40..44].copy_from_slice(&self.packet.mag_z.to_le_bytes());
+        data[44..48].copy_from_slice(&self.packet.accel_x.to_le_bytes());
+        data[48..52].copy_from_slice(&self.packet.accel_y.to_le_bytes());
+        data[52..56].copy_from_slice(&self.packet.accel_z.to_le_bytes());
+        data[56..60].copy_from_slice(&self.packet.gyro_x.to_le_bytes());
+        data[60..64].copy_from_slice(&self.packet.gyro_y.to_le_bytes());
+        data[64..68].copy_from_slice(&self.packet.gyro_z.to_le_bytes());
 
         // Transmit via radio
         match self.radio.send(&data).await {
