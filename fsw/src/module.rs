@@ -1,4 +1,5 @@
 //! USB Logger and Sensor Module
+use crate::constants;
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice as SharedI2cDevice;
 use embassy_rp::gpio::Output;
 use embassy_rp::i2c::{Config as I2cConfig, I2c, InterruptHandler as I2cInterruptHandler};
@@ -35,9 +36,9 @@ pub fn init_shared_i2c(
     sda: Peri<'static, PIN_0>,
     scl: Peri<'static, PIN_1>,
 ) -> &'static SharedI2c {
-    // Configure I2C with 400kHz (fast mode)
+    // Configure I2C (fast mode)
     let mut i2c_config = I2cConfig::default();
-    i2c_config.frequency = 400_000;
+    i2c_config.frequency = constants::I2C_FREQUENCY;
 
     let i2c = I2c::new_async(i2c0, scl, sda, Irqs, i2c_config);
 
@@ -58,9 +59,9 @@ pub fn init_spi(
     tx_dma: Peri<'static, DMA_CH2>,
     rx_dma: Peri<'static, DMA_CH3>,
 ) -> (Spi<'static, SPI0, spi::Async>, Output<'static>) {
-    // Configure SPI - FRAM can typically run at MHz speeds
+    // Configure SPI for FRAM
     let mut spi_config = SpiConfig::default();
-    spi_config.frequency = 1_000_000; // 1 MHz for safety, can go higher
+    spi_config.frequency = constants::SPI_FREQUENCY;
 
     let spi = Spi::new(spi0, clk, mosi, miso, tx_dma, rx_dma, spi_config);
 
@@ -80,9 +81,9 @@ pub fn init_uart1(
     tx_dma: Peri<'static, DMA_CH0>,
     rx_dma: Peri<'static, DMA_CH1>,
 ) -> Uart<'static, uart::Async> {
-    // Configure UART for RFD900x (115200 baud, 8N1)
+    // Configure UART for RFD900x (8N1)
     let mut uart_config = UartConfig::default();
-    uart_config.baudrate = 115200;
+    uart_config.baudrate = constants::UART_BAUDRATE;
 
     Uart::new(uart1, tx, rx, Irqs, tx_dma, rx_dma, uart_config)
 }

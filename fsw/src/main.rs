@@ -8,6 +8,7 @@ use embassy_rp::gpio::{Level, Output};
 use embassy_time::Timer;
 use {defmt_rtt as _, panic_probe as _};
 
+mod constants;
 mod driver;
 mod module;
 mod packet;
@@ -29,7 +30,7 @@ async fn main(spawner: Spawner) {
     );
     let uart = module::init_uart1(p.UART1, p.PIN_4, p.PIN_5, p.DMA_CH0, p.DMA_CH1);
 
-    // GPIO 25 is the onboard LED
+    // Onboard LED
     let mut led = Output::new(p.PIN_25, Level::Low);
 
     let mut flight_state = state::FlightState::new(i2c_bus, spi, cs, uart).await;
@@ -47,11 +48,11 @@ async fn main(spawner: Spawner) {
 
         // Toggle LED
         led.toggle();
-        Timer::after_millis(1000).await;
+        Timer::after_millis(constants::MAIN_LOOP_DELAY_MS).await;
     }
 }
 
 #[embassy_executor::task]
 async fn logger_task(driver: embassy_rp::usb::Driver<'static, embassy_rp::peripherals::USB>) -> ! {
-    embassy_usb_logger::run!(1024, log::LevelFilter::Info, driver);
+    embassy_usb_logger::run!({ constants::USB_LOGGER_BUFFER_SIZE }, log::LevelFilter::Info, driver);
 }
