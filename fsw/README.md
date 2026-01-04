@@ -17,8 +17,8 @@ See Project Updates [here](https://github.com/orgs/cornellrocketryteam/projects/
 ## Building and Running  
 * Navigate into the fsw directory with `cd fsw`
 * To build in release mode, run: `cargo build --release` 
-* To flash the code onto the Pico 2, run: `cargo run --release`
-* Open the serial port to see the logs
+* To flash the code onto the Pico 2, first press the BOOTSEL button on the pico and then connect it to your computer, then run: `cargo run --release`
+* To see logs, open the /dev device that corresponds to the Pico 2 (on MacOS this is usually /dev/cu.usbmodem[random numbers]
 
 ## TODO: 
 - transition and execute in FlightState should behave accurately 
