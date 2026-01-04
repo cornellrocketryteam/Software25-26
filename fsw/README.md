@@ -21,12 +21,12 @@ See Project Updates [here](https://github.com/orgs/cornellrocketryteam/projects/
 * Open the serial port to see the logs
 
 ## TODO: 
-- Update the FlightState initializer function 
 - transition and execute in FlightState should behave accurately 
-- Implement umbilical 
+- Implement umbilical commanding 
 - Implement actuators 
-- Implement other sensors
-- Implement SPI Flash storage 
+- Correct packet structure 
+- Testing for faults 
+- Storing flight data
 
 
 
