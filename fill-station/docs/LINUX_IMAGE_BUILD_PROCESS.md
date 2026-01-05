@@ -25,7 +25,7 @@ The build process produces a complete bootable SD card image (`fill-station.img`
 └───────────┬───────────────┘   └──────────┬───────────────────┘
             │                               │
             │                               │ Provides:
-            │                               │ - custom-linux
+            │                               │ - fill-station-linux
             │                               │ - ti-uboot-r5/a53
             │                               │ - ti-arm-trusted-firmware
             │                               │ - ti-optee
@@ -36,7 +36,7 @@ The build process produces a complete bootable SD card image (`fill-station.img`
 │  Fill Station Configuration     │◄────────┘
 │  (fill-station/default.nix)     │
 │                                 │
-│  - Kernel: custom-linux         │
+│  - Kernel: fill-station-linux         │
 │  - Init processes               │
 │  - Binaries to include          │
 │  - User/group config            │
@@ -73,7 +73,7 @@ The build process produces a complete bootable SD card image (`fill-station.img`
 
 The system requires several custom-built packages specific to the TI AM64x platform:
 
-#### **custom-linux** (`custom-linux/package.nix`)
+#### **fill-station-linux** (`fill-station-linux/package.nix`)
 - Custom Linux kernel with AM64x-specific configuration
 - Based on `linux_latest` from nixpkgs
 - Uses manual kernel configuration from `kernel.config`
@@ -135,7 +135,7 @@ Defines the system configuration:
   nixpkgs.hostPlatform.config = "aarch64-unknown-linux-musl";
 
   # Kernel selection
-  boot.kernel = pkgs.crt.custom-linux;
+  boot.kernel = pkgs.crt.fill-station-linux;
 
   # Init processes (PID 1 responsibilities)
   init = {
@@ -146,7 +146,7 @@ Defines the system configuration:
     };
     sshd = {
       action = "respawn";
-      process = "${lib.getExe' pkgs.dropbear "dropbear"} -F -R";
+      process = "${lib.getExe' pkgs.crt.dropbear-minimal "dropbear"} -F -R";
     };
     fill-station = {
       action = "once";
@@ -187,7 +187,7 @@ system.build.fitImage = pkgs.callPackage ./build-fit-image.nix {
 ```
 
 Passes three inputs to the build script:
-1. **Kernel Image**: Uncompressed ARM64 kernel from `custom-linux`
+1. **Kernel Image**: Uncompressed ARM64 kernel from `fill-station-linux`
 2. **DTB** (Device Tree Blob): Hardware description for AM64x SK board with custom peripherals
 3. **Initrd**: Initial RAM disk containing minimal userspace and init system
 
@@ -448,7 +448,7 @@ nix build .#mixosConfigurations.fill-station.config.system.build.sdImage
 1. Nix evaluates `flake.nix` → imports `nix/mixos-configurations/default.nix`
 2. MixOS configuration loads `fill-station/default.nix`
 3. Overlay packages are built (or fetched from cache):
-   - `custom-linux` (kernel)
+   - `fill-station-linux` (kernel)
    - `ti-uboot-r5`, `ti-uboot-a53` (bootloaders)
    - `ti-arm-trusted-firmware`, `ti-optee` (secure firmware)
    - `fill-station` (application)
@@ -545,7 +545,7 @@ Benefits:
 | `nix/mixos-configurations/fill-station/sd-image/default.nix` | SD image build entry |
 | `nix/mixos-configurations/fill-station/sd-image/build-sd-image.nix` | SD image build script |
 | `nix/mixos-configurations/fill-station/sd-image/uEnv.txt` | U-Boot environment |
-| `nix/overlays/by-name/crt/custom-linux/package.nix` | Custom kernel package |
+| `nix/overlays/by-name/crt/fill-station-linux/package.nix` | Custom kernel package |
 | `nix/overlays/by-name/crt/ti-uboot-r5/package.nix` | R5 U-Boot package |
 | `nix/overlays/by-name/crt/ti-uboot-a53/package.nix` | A53 U-Boot package |
 | `nix/overlays/by-name/crt/ti-arm-trusted-firmware/package.nix` | ARM TF package |
@@ -557,7 +557,7 @@ Benefits:
 ## Customization Guide
 
 ### Change Kernel Config:
-Edit `nix/overlays/by-name/crt/custom-linux/kernel.config`
+Edit `nix/overlays/by-name/crt/fill-station-linux/kernel.config`
 
 ### Change Boot Parameters:
 Edit `nix/mixos-configurations/fill-station/fit/build-fit-image.nix`:

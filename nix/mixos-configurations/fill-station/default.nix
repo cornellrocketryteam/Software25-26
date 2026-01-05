@@ -13,9 +13,14 @@
   nixpkgs.buildPlatform = "aarch64-linux"; # TODO: Replace and sense current build platform
   nixpkgs.hostPlatform.config = "aarch64-unknown-linux-musl";
 
-  boot.kernel = pkgs.crt.custom-linux;
+  boot.kernel = pkgs.crt.fill-station-linux;
 
   etc."dropbear".source = pkgs.emptyDirectory;
+  etc."hosts".source = pkgs.writeText "etc-hosts" ''
+    127.0.0.1      localhost
+    ::1            localhost
+  '';
+
   init = {
     shell = {
       tty = "ttyS2";
@@ -25,12 +30,17 @@
 
     sshd = {
       action = "respawn";
-      process = "${lib.getExe' pkgs.dropbear "dropbear"} -F -R";
+      process = "${lib.getExe' pkgs.crt.dropbear-minimal "dropbear"} -F -R";
     };
 
     fill-station = {
-      action = "once";
+      action = "respawn";
       process = lib.getExe pkgs.crt.fill-station;
+    };
+
+    watchdog = {
+      action = "respawn";
+      process = "/bin/watchdog -F /dev/watchdog"
     };
   };
 
