@@ -53,7 +53,10 @@
     pkgs.wpa_supplicant
   ];
 
-  etc."lib/firmware".source = pkgs.crt.ti-linux-firmware;
+  etc."lib/firmware".source = pkgs.runCommand "wl18xx-firmware" { } ''
+    mkdir -p $out/ti-connectivity
+    ln -s ${pkgs.crt.ti-linux-firmware}/ti-connectivity/wl18xx-fw-4.bin $out/ti-connectivity/wl18xx-fw-4.bin
+  '';
 
   users.root = {
     uid = 0;
