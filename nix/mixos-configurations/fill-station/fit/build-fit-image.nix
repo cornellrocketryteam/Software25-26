@@ -24,6 +24,7 @@ stdenvNoCC.mkDerivation {
       (if debug then "debug" else "quiet")
       "console=ttyS2,115200n8"
       "panic=-1"
+      "firmware_class.path=/etc/lib/firmware"
     ];
 
     # Assuming that the FIT image is loaded to ${addr_fit}, this variable should
