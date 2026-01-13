@@ -12,7 +12,7 @@ let
   inherit (pkgsCross.aarch64-multiplatform.crt) ti-uboot-a53;
 
   gapMiB = 2;
-  firmwareSizeMiB = 60;
+  firmwareSizeMiB = 128;
   # Controls for the second partition
   secondPartitionSizeMiB = 50;
   # Partition type codes for sfdisk: 'c' = W95 FAT32 (LBA), '83' = Linux
