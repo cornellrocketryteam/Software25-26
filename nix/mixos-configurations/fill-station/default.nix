@@ -55,7 +55,7 @@
 
   etc."lib/firmware".source = pkgs.runCommand "wl18xx-firmware" { } ''
     mkdir -p $out/ti-connectivity
-    ln -s ${pkgs.crt.ti-linux-firmware}/ti-connectivity/wl18xx-fw-4.bin $out/ti-connectivity/wl18xx-fw-4.bin
+    cp ${pkgs.crt.ti-linux-firmware}/ti-connectivity/wl18xx-fw-4.bin $out/ti-connectivity/wl18xx-fw-4.bin
   '';
 
   users.root = {
