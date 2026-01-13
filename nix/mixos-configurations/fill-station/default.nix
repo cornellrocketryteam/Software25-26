@@ -40,7 +40,7 @@
 
     watchdog = {
       action = "respawn";
-      process = "/bin/watchdog -F /dev/watchdog"
+      process = "/bin/watchdog -F /dev/watchdog";
     };
   };
 
