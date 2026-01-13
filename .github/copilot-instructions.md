@@ -49,14 +49,14 @@ Goal: Make AI agents productive immediately in this repo by documenting actual a
 
 **Big Picture**
 - Embedded flight firmware in `fsw/` (Rust `#![no_std]`, `embassy` async) targets Cortex‑M; key files: `fsw/src/main.rs`, `fsw/src/module.rs`, `fsw/src/packet.rs`, `fsw/Cargo.toml`, `fsw/memory.x`, `fsw/build.rs`.
-- Ground‑side fill station in `fill-station/` (Rust async via `smol`) exposes a WebSocket server on port 9000; key files: `fill-station/src/main.rs`, `fill-station/src/command.rs`, `fill-station/src/components/`.
+- Ground‑side fill station in `fill-station/` (Rust async via `smol`) exposes a WebSocket server on port 9000; runs on TI AM64x SK board. Key files: `fill-station/src/main.rs`, `fill-station/src/command.rs`, `fill-station/src/components/`, `fill-station/src/hardware.rs`.
 - Hardware/system docs + host C/C++ Pico code in `RATS/` and `RATS/Common/`; see `RATS/SystemDoc.md` for dual‑Pico radio architecture and packet framing.
-- Nix tooling for images and dev shells in `nix/` (`nix/mixos-configurations/fill-station`, `nix/dev-shells`, `nix/overlays`).
+- Nix tooling for images and dev shells in `nix/` (`nix/mixos-configurations/fill-station`, `nix/dev-shells`, `nix/overlays`). Complete build system docs: `fill-station/docs/LINUX_IMAGE_BUILD_PROCESS.md`.
 
 **Data Flow**
 - RFD900x → Radio Pico UART (RX): parse fixed 107‑byte packets, log to SD, publish via MQTT/Wi‑Fi; forward tracking commands to Motor Pico over inter‑Pico UART. See `RATS/SystemDoc.md`, `RATS/Common/packet_parser.*`.
 - Motor Pico drives steppers via GPIO/PIO; init follows `module::init_*` patterns. See `fsw/src/module.rs` for UART/SPI/I2C init and pin roles.
-- Fill station coordinates hardware components (e.g., igniter) and exposes command JSON over WebSocket. See `fill-station/src/components/igniter.rs`, `fill-station/src/command.rs`.
+- Fill station coordinates hardware components (igniters, ADCs, sensors) and exposes command JSON over WebSocket. Includes background ADC monitoring task (10 Hz sampling). See `fill-station/src/components/igniter.rs`, `fill-station/src/components/ads1015.rs`, `fill-station/src/command.rs`.
 
 **Build / Flash / Run**
 - Firmware (`fsw/`):
@@ -64,25 +64,48 @@ Goal: Make AI agents productive immediately in this repo by documenting actual a
   - `cargo build --release`
   - `cargo run --release` (flashes if Pico tooling/USB available).
 - Embedded logging: `defmt` + `panic-probe` (RTT). Avoid `std` and heap in `fsw/`.
-- Fill station (host):
+- Fill station (host dev):
   - `cargo run --manifest-path fill-station/Cargo.toml`
   - `cargo build --manifest-path fill-station/Cargo.toml --release`
-- Nix images/dev env:
+- Fill station (production - TI AM64x):
   - `nix build .#mixosConfigurations.fill-station.config.system.build.sdImage`
-  - Dev shells/toolchains under `nix/dev-shells/`; overlays under `nix/overlays/`.
+  - Result: `./result/fill-station.img` (bootable SD card image)
+  - Flash: `sudo dd if=./result/fill-station.img of=/dev/sdX bs=4M status=progress`
+  - Includes: MixOS init, U-Boot, kernel, FIT image, all binaries
+- Dev shells/toolchains under `nix/dev-shells/`; overlays under `nix/overlays/by-name/crt/`.
 - Pico flashing tools: `brew install picotool`.
 
 **Conventions**
-- Embedded uses `#[embassy_executor::main]` and `#[embassy_executor::task]`; spawn tasks in `fsw/src/main.rs`. Keep hardware setup centralized in `module::init_*`.
+- Fill station uses platform-aware `#[cfg]` for Linux-only hardware code (GPIO, I2C); compiles on macOS for development.
+- Treat `RATS/SystemDoc.md` as the source of truth for pin mappings, serial ports, timings, and protocol specifics.
+- Device tree overlays: Auto-built from SysConfig via `nix/overlays/by-name/crt/fillstation-dtbo/`. Update `src/sysconfig-pinmux.dtsi` and rebuild. See `fill-station/docs/DTBO_BUILDER.md`p hardware setup centralized in `module::init_*`.
 - Packet parsing uses a sync‑word and fixed sizes; do not change framing without coordinated updates in `RATS/SystemDoc.md` and both Pico codebases.
 - Host logging uses `tracing` (rotated to `logs/` if configured in `fill-station/src/main.rs`).
-- Treat `RATS/SystemDoc.md` as the source of truth for pin mappings, serial ports, timings, and protocol specifics.
+- I2C (fill station ADCs): `/dev/i2c-2` on TI AM64x; dual ADS1015 at 0x48/0x49. See `fill-station/src/components/ads1015.rs`.
+- WebSocket commands: JSON schema in `fill-station/src/command.rs`; components in `fill-station/src/components/`; handlers in `main.rs`.
+- Nix build/overlay integration: 
+  - System: `nix/mixos-configurations/fill-station/default.nix` (MixOS config)
+  - FIT image: `nix/mixos-configurations/fill-station/fit/` (kernel+dtb+initrd)
+  - Packages: `nix/overlays/by-name/crt/` (custom-linux, ti-uboot-*, fill-station, fillstation-dtbo)
+  - Device tree: Upstream kernel DTB + auto-built overlay merged at build time via `fdtoverlay`
 
 **Integration Points**
 - UART (RFD900x, inter‑Pico): init and usage in `fsw/src/module.rs`; packet definitions in `RATS/Common/packet_types.h`, `packet_parser.*`, `serial_protocol.h`.
 - SPI (MicroSD logging): pins and setup referenced in `fsw/src/module.rs`; ensure consistency with `RATS` pin assignments.
-- WebSocket commands: JSON schema in `fill-station/src/command.rs`; components implemented in `fill-station/src/components/`.
-- Nix build/overlay integration: `nix/mixos-configurations/fill-station/*`, `nix/overlays/by-name/*` (e.g., custom Linux, U‑Boot, firmware).
+- Fill station server: `fill-station/src/main.rs` (WebSocket + ADC background task); commands in `fill-station/src/command.rs`; components in `fill-station/src/components/`.
+- Hardware aggregation: `fill-station/src/hardware.rs` (collects all components).
+- Kernel config: `nix/overlays/by-name/crt/custom-linux/kernel.config` (edit for kernel options like PWM).
+
+**Fill Station Documentation Hub**
+Comprehensive docs in `fill-station/docs/`:
+- `INDEX.md` - Documentation navigation hub
+- `ADDING_FEATURES.md` - Guide to extending the system (components, commands, tasks)
+- `ADC_STREAMING.md` - Background ADC monitoring and WebSocket protocol
+- `LINUX_IMAGE_BUILD_PROCESS.md` - Complete Nix/FIT/U-Boot build system guide
+- `DTBO_BUILDER.md` - Automated device tree overlay builder
+- `QUICKSTART_ADC.md`, `ADC_MONITOR_GUIDE.md`, `TROUBLESHOOTING.md`
+
+If any area is unclear (pins, packet fields, UART speeds, Nix targets, build process), consult the relevant docs in `fill-station/docs/` or ask for clarification.
 
 **Useful File Examples**
 - Task spawn + main loop: `fsw/src/main.rs`.

@@ -49,7 +49,11 @@
     pkgs.libgpiod
     pkgs.tcpdump
     pkgs.crt.fill-station
+    pkgs.iw
+    pkgs.wpa_supplicant
   ];
+
+  etc."lib/firmware".source = pkgs.crt.ti-linux-firmware;
 
   users.root = {
     uid = 0;

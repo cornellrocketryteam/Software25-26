@@ -9,7 +9,7 @@ The `adc_monitor` executable continuously reads from two ADS1015 12-bit ADCs con
 - **ADC1 Address**: `0x48`
 - **ADC2 Address**: `0x49`
 - **Total Channels**: 8 (4 per ADC)
-- **Voltage Range**: ±6.144V
+- **Voltage Range**: ±4.096V
 - **Sample Rate**: Up to 3300 SPS per channel
 
 ---
@@ -99,7 +99,7 @@ Initializing I2C devices on /dev/i2c-2...
 ✓ ADC2 ready at address 0x49
 
 Configuration:
-  • Gain: ±6.144V range (2/3x)
+  • Gain: ±4.096V range (1x)
   • Sample Rate: 3300 SPS per channel
   • Channels: 4 single-ended inputs per ADC (8 total)
   • Mode: Continuous single-shot conversion

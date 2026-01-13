@@ -25,8 +25,8 @@ impl Hardware {
     #[cfg(any(target_os = "linux", target_os = "android"))]
     pub async fn new() -> Result<Self> {
         let chip = Chip::new(GPIO_CHIP).await?;
-        let ig1 = Igniter::new(&chip, 18, 16).await?;
-        let ig2 = Igniter::new(&chip, 24, 22).await?;
+        let ig1 = Igniter::new(&chip, 39, 38).await?;
+        let ig2 = Igniter::new(&chip, 42, 40).await?;
         
         let adc1 = Ads1015::new(I2C_BUS, ADC1_ADDRESS)?;
         let adc2 = Ads1015::new(I2C_BUS, ADC2_ADDRESS)?;
