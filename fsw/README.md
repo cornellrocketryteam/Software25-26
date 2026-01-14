@@ -13,6 +13,7 @@ See Project Updates [here](https://github.com/orgs/cornellrocketryteam/projects/
 
 * Install the correct toolchain 
 `rustup target add thumbv7em-none-eabihf`
+`rustup target add thumbv8m.main-none-eabihf`
 
 ## Building and Running  
 * To build in release mode, run: `cargo build --release` 
