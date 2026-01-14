@@ -33,6 +33,11 @@ Complete documentation for the Cornell Rocketry Team fill station server.
   - Performance notes
   - Testing instructions
 
+- **[WEBSOCKET_API.md](WEBSOCKET_API.md)** - Full reference of all network commands
+  - Command JSON formats
+  - Response structures
+  - Field descriptions
+
 - **[ADC_MONITOR_GUIDE.md](ADC_MONITOR_GUIDE.md)** - Hardware setup for ADS1015 ADCs
   - Wiring diagrams
   - I2C configuration

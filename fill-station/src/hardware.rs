@@ -4,6 +4,8 @@ use anyhow::Result;
 use async_gpiod::Chip;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use crate::components::igniter::Igniter;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use crate::components::solenoid_valve::{SolenoidValve, LinePull};
 
 use crate::components::ads1015::Ads1015;
 
@@ -20,6 +22,10 @@ pub struct Hardware {
     pub ig2: Igniter,
     pub adc1: Ads1015,
     pub adc2: Ads1015,
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub sv1: SolenoidValve,
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub sv2: SolenoidValve,
 }
 
 impl Hardware {
@@ -32,8 +38,22 @@ impl Hardware {
         
         let adc1 = Ads1015::new(I2C_BUS, ADC1_ADDRESS)?;
         let adc2 = Ads1015::new(I2C_BUS, ADC2_ADDRESS)?;
+
+        // SV1: Control (Chip 1, 51), Signal (Chip 0, 42)
+        let sv1 = SolenoidValve::new(
+            &chip1, 51,
+            &chip0, 42,
+            LinePull::NormallyClosed
+        ).await?;
+
+        // SV2: Control (Chip 0, 34), Signal (Chip 0, 32)
+        let sv2 = SolenoidValve::new(
+            &chip0, 34,
+            &chip0, 32,
+            LinePull::NormallyClosed
+        ).await?;
         
-        Ok(Self { ig1, ig2, adc1, adc2 })
+        Ok(Self { ig1, ig2, adc1, adc2, sv1, sv2 })
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "android")))]

@@ -266,6 +266,37 @@ async fn execute_command(
             }
             CommandResponse::Success
         }
+        Command::ActuateValve { valve, state } => {
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            {
+                let hw = hardware.lock().await;
+                let result = match valve.to_lowercase().as_str() {
+                    "sv1" => hw.sv1.actuate(state).await,
+                    "sv2" => hw.sv2.actuate(state).await,
+                    _ => {
+                        warn!("Unknown valve: {}", valve);
+                        return CommandResponse::Error;
+                    }
+                };
+
+                match result {
+                    Ok(_) => {
+                        info!("Valve {} actuated: {}", valve, state);
+                        CommandResponse::Success
+                    }
+                    Err(e) => {
+                        error!("Failed to actuate valve {}: {}", valve, e);
+                        CommandResponse::Error
+                    }
+                }
+            }
+            #[cfg(not(any(target_os = "linux", target_os = "android")))]
+            {
+                let _ = hardware;
+                warn!("ActuateValve command not supported on this platform: {} -> {}", valve, state);
+                CommandResponse::Success // Maintain consistent response type even if mocked
+            }
+        }
         Command::StartAdcStream => {
             info!("Starting ADC stream for client");
             *streaming_enabled = true;

@@ -17,7 +17,7 @@ from datetime import datetime
 
 
 async def test_adc_stream():
-    uri = "ws://localhost:9000"
+    uri = "ws://192.168.1.127:9000"
     
     print(f"Connecting to {uri}...")
     

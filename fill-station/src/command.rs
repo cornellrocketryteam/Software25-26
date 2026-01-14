@@ -9,6 +9,14 @@ pub enum Command {
     StartAdcStream,
     /// Stop streaming ADC readings to this client
     StopAdcStream,
+    /// Actuate a solenoid valve
+    ActuateValve {
+        /// Name of the valve (e.g. "SV1", "SV2")
+        valve: String,
+        /// True to actuate (open/active), False to deactivate.
+        /// Actual electrical state depends on NO/NC configuration.
+        state: bool,
+    },
 }
 
 /// Response sent back to WebSocket clients after command execution
