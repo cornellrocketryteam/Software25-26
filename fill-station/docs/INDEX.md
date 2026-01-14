@@ -43,6 +43,11 @@ Complete documentation for the Cornell Rocketry Team fill station server.
   - How to update pinmux configuration
   - Integrated into Nix build system
 
+- **[WIFI_SETUP.md](WIFI_SETUP.md)** - Wi-Fi Configuration Guide
+  - Hardware setup (TI WL1837MOD)
+  - Automatic connection configuration
+  - Troubleshooting tips
+
 ## Quick Reference
 
 ### Common Tasks

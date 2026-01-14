@@ -152,6 +152,14 @@ Defines the system configuration:
       action = "once";
       process = lib.getExe pkgs.crt.fill-station;
     };
+    wpa_supplicant = {
+      action = "respawn";
+      process = "${lib.getExe' pkgs.wpa_supplicant "wpa_supplicant"} -i wlan0 -c /etc/wpa_supplicant.conf";
+    };
+    dhcp = {
+      action = "respawn";
+      process = "${lib.getExe' pkgs.busybox "udhcpc"} -f -i wlan0";
+    };
   };
 
   # Binaries included in system image
@@ -160,6 +168,8 @@ Defines the system configuration:
     pkgs.libgpiod              # GPIO control utilities
     pkgs.tcpdump               # Network debugging
     pkgs.crt.fill-station      # Main application
+    pkgs.iw                    # Wi-Fi configuration
+    pkgs.wpa_supplicant        # WPA2 connection tool
   ];
 }
 ```
@@ -301,7 +311,7 @@ Creates a bootable SD card with DOS partition table:
 ┌────────────────────────────────────────────────────────┐
 │  Gap: 2 MiB (unpartitioned space for ROM bootloader)   │
 ├────────────────────────────────────────────────────────┤
-│  Partition 1: FIRMWARE (60 MiB, FAT32, bootable)      │
+│  Partition 1: FIRMWARE (128 MiB, FAT32, bootable)     │
 │  - tiboot3.bin      (R5 U-Boot first stage)           │
 │  - tispl.bin        (A53 U-Boot SPL)                  │
 │  - u-boot.img       (A53 U-Boot main)                 │
@@ -311,7 +321,7 @@ Creates a bootable SD card with DOS partition table:
 │  Partition 2: DATA (50 MiB, FAT32)                    │
 │  - User data / logs / configuration                   │
 └────────────────────────────────────────────────────────┘
-Total: ~112 MiB
+Total: ~180 MiB
 ```
 
 **Build process:**
@@ -322,8 +332,8 @@ Total: ~112 MiB
      label: dos
      label-id: 0x2178694e
      
-     start=2M, size=60M, type=c, bootable
-     start=62M, size=50M, type=c
+     start=2M, size=128M, type=c, bootable
+     start=130M, size=50M, type=c
    EOF
    ```
 
@@ -557,7 +567,14 @@ Benefits:
 ## Customization Guide
 
 ### Change Kernel Config:
-Edit `nix/overlays/by-name/crt/fill-station-linux/kernel.config`
+### Change Kernel Config:
+Edit `nix/overlays/by-name/crt/fill-station-linux/kernel.config`.
+Ensure Wi-Fi drivers are built-in for connectivity:
+```
+CONFIG_WL18XX=y
+CONFIG_WLCORE=y
+CONFIG_MAC80211=y
+```
 
 ### Change Boot Parameters:
 Edit `nix/mixos-configurations/fill-station/fit/build-fit-image.nix`:
@@ -567,6 +584,7 @@ env = {
     "debug"  # or "quiet"
     "console=ttyS2,115200n8"
     "panic=-1"
+    "firmware_class.path=/etc/lib/firmware" # Location of Wi-Fi firmware
     # Add more parameters here
   ];
 };

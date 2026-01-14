@@ -120,4 +120,15 @@ scp target/aarch64-unknown-linux-musl/release/adc_monitor root@<board-ip>:/tmp/
 /tmp/adc_monitor
 ```
 
-## Let me know which of these you want me to fix!
+## Issue 4: Wi-Fi Not Connecting
+
+If the system fails to connect to Wi-Fi:
+1. Check if the interface exists: `iw dev`
+2. Check kernel logs: `dmesg | grep wlcore`
+3. Verify firmware loading (see [WIFI_SETUP.md](WIFI_SETUP.md))
+4. Attempt manual connection:
+   ```bash
+   wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant.conf
+   can be debugged with:
+   wpa_supplicant -i wlan0 -c /etc/wpa_supplicant.conf
+   ```
