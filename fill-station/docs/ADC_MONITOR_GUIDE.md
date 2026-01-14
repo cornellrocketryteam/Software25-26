@@ -110,7 +110,7 @@ Press Ctrl+C to stop
 Sample │ Throughput  │       ADC1 (0x48) - Ch0, Ch1, Ch2, Ch3              │       ADC2 (0x49) - Ch0, Ch1, Ch2, Ch3              
        │             │  Raw / Volts   │  Raw / Volts   │  Raw / Volts   │  Raw / Volts   │  Raw / Volts   │  Raw / Volts   │  Raw / Volts   │  Raw / Volts   
 ────────────────────────────────────────────────────────────────────────────
-     1 │   800.0 SPS │      0  0.000V │      0  0.000V │      0  0.000V │      0  0.000V │ │      0  0.000V │      0  0.000V │      0  0.000V │      0  0.000V │
+     1 │   800.0 SPS │      0  0.000V │      0  0.000V │      0  0.000V │      0  0.000V │      0  0.000V │      0  0.000V │      0  0.000V │      0  0.000V │
 ```
 
 ### 5. Stop the Monitor
@@ -224,7 +224,7 @@ Rebuild and redeploy to see the maximum throughput.
 
 ### Continuous Mode
 
-For even faster operation, consider modifying the ADS1015 driver to use continuous conversion mode instead of single-shot mode.
+The driver has been optimized with microsecond-precision sleeps to achieve higher throughput in single-shot mode. For even higher precision, the driver now supports multi-sample averaging (e.g., `read_raw_averaged`).
 
 ---
 

@@ -176,8 +176,9 @@ main() spawns tasks:
 ```rust
 const ADC_SAMPLE_RATE_HZ: u64 = 10;           // Sampling frequency
 const ADC_GAIN: Gain = Gain::One;             // ±4.096V range
-const ADC_DATA_RATE: DataRate = DataRate::Sps3300;  // Max speed
+const ADC_DATA_RATE: DataRate = DataRate::Sps3300;  // Max speed (optimized)
 const ADC_MAX_RETRIES: u32 = 5;               // Retry attempts
+const ADC_AVG_SAMPLES: usize = 10;            // 10x averaging
 const ADC_RETRY_DELAY_MS: u64 = 10;           // Retry delay
 ```
 

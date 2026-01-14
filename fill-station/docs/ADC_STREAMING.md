@@ -9,6 +9,7 @@ The fill station now includes a background task that continuously monitors two A
 ### Background ADC Monitoring Task
 - Runs continuously at **10 Hz** (configurable via `ADC_SAMPLE_RATE_HZ`)
 - Reads all 8 channels (4 per ADC) every cycle
+- **10x Averaging**: Each channel takes the arithmetic mean of 10 samples per cycle to reduce signal noise
 - Updates shared `AdcReadings` struct with thread-safe `Arc<Mutex<>>`
 - Includes retry logic: up to 5 attempts with 10ms delays between failures
 - Marks readings as invalid if all retries fail
@@ -33,6 +34,7 @@ const ADC_DATA_RATE: DataRate = DataRate::Sps3300;  // Maximum speed
 
 // Retry behavior
 const ADC_MAX_RETRIES: u32 = 5;
+const ADC_AVG_SAMPLES: usize = 10;   // 10x averaging per reading
 const ADC_RETRY_DELAY_MS: u64 = 10;
 
 // Pressure sensor scaling for ADC1 Channel 0
@@ -187,8 +189,9 @@ Just update:
 
 ## Performance Notes
 
-- At 10 Hz with 8 channels: 80 samples/second, very low CPU usage
-- At 100 Hz: 800 samples/second, still manageable
+- At 10 Hz with 8 channels (10x averaging): 800 samples/second total
+- **Optimized Driver Timing**: Uses microsecond-precision sleeps (e.g., 303µs for Sps3300) to ensure the 10x averaging fits within the 100ms cycle budget.
+- Total cycle time for 80 reads: ~50ms (well within the 10Hz/100ms limit)
 - Actual I2C speed limited by `Sps3300` setting (~3300 samples/sec per channel max)
 - WebSocket JSON serialization is negligible overhead
 - Each reading is ~500 bytes JSON, so 10 Hz = ~5 KB/s per client

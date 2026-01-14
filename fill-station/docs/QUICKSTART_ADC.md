@@ -38,7 +38,7 @@ That's it! The monitor will continuously display readings from both ADCs.
 ```
 Sample │ Throughput  │ ADC1 (0x48) Channels      │ ADC2 (0x49) Channels
 ────────────────────────────────────────────────────────────────────
-   123 │   800.0 SPS │ Ch0, Ch1, Ch2, Ch3        │ Ch0, Ch1, Ch2, Ch3
+   123 │   800.0 SPS │ Ch0, Ch1, Ch2, Ch3 (10x Avg) │ Ch0, Ch1, Ch2, Ch3 (10x Avg)
 ```
 
 Real-time voltage and raw ADC values from all 8 channels (4 per ADC).

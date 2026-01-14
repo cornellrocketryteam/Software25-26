@@ -135,6 +135,20 @@ impl DataRate {
             DataRate::Sps3300 => 1,
         }
     }
+
+    /// Get conversion time in microseconds
+    /// This provides higher precision for high sample rates
+    pub fn conversion_time_us(&self) -> u64 {
+        match self {
+            DataRate::Sps128 => 8000,
+            DataRate::Sps250 => 4000,
+            DataRate::Sps490 => 2041, // 1/490s ≈ 2.04ms
+            DataRate::Sps920 => 1087, // 1/920s ≈ 1.08ms
+            DataRate::Sps1600 => 625, // 1/1600s = 0.625ms
+            DataRate::Sps2400 => 417, // 1/2400s ≈ 0.417ms
+            DataRate::Sps3300 => 303, // 1/3300s ≈ 0.303ms
+        }
+    }
 }
 
 /// ADS1015 12-bit ADC driver
@@ -186,7 +200,8 @@ impl Ads1015 {
             .context("Failed to write config register")?;
 
         // Wait for conversion to complete
-        thread::sleep(Duration::from_millis(data_rate.conversion_time_ms()));
+        // Use microsecond precision for higher sampling rates
+        thread::sleep(Duration::from_micros(data_rate.conversion_time_us()));
 
         // Read conversion result as 16-bit word
         // ADS1015 returns MSB first, but smbus_read_word_data expects little-endian
@@ -198,6 +213,31 @@ impl Ads1015 {
         let raw = (raw_word.swap_bytes() as i16) >> 4;
         
         Ok(raw)
+    }
+
+    /// Read raw ADC value with averaging
+    ///
+    /// # Arguments
+    /// * `channel` - ADC channel to read
+    /// * `gain` - Gain setting
+    /// * `data_rate` - Data rate setting
+    /// * `samples` - Number of samples to average
+    ///
+    /// Returns the averaged raw value
+    pub fn read_raw_averaged(&mut self, channel: Channel, gain: Gain, data_rate: DataRate, samples: usize) -> Result<i16> {
+        if samples == 0 {
+            return Ok(0);
+        }
+        if samples == 1 {
+            return self.read_raw(channel, gain, data_rate);
+        }
+
+        let mut sum: i32 = 0;
+        for _ in 0..samples {
+            sum += self.read_raw(channel, gain, data_rate)? as i32;
+        }
+
+        Ok((sum / samples as i32) as i16)
     }
 
     /// Read voltage from the specified channel
@@ -260,6 +300,10 @@ impl Ads1015 {
         anyhow::bail!("ADS1015 is only supported on Linux/Android")
     }
 
+    pub fn read_raw_averaged(&mut self, _channel: Channel, _gain: Gain, _data_rate: DataRate, _samples: usize) -> Result<i16> {
+        anyhow::bail!("ADS1015 is only supported on Linux/Android")
+    }
+
     pub fn is_ready(&mut self) -> Result<bool> {
         anyhow::bail!("ADS1015 is only supported on Linux/Android")
     }
@@ -286,5 +330,8 @@ mod tests {
     fn test_data_rate_timing() {
         assert_eq!(DataRate::Sps128.conversion_time_ms(), 8);
         assert_eq!(DataRate::Sps3300.conversion_time_ms(), 1);
+        
+        assert_eq!(DataRate::Sps128.conversion_time_us(), 8000);
+        assert_eq!(DataRate::Sps3300.conversion_time_us(), 303);
     }
 }
