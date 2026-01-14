@@ -16,7 +16,7 @@ cd /path/to/Software25-26
 nix build .#mixosConfigurations.fill-station.config.system.build.sdImage
 ```
 
-The server listens on `ws://0.0.0.0:9000` for WebSocket connections.
+The server listens on `ws://0.0.0.0:9000` for WebSocket connections. The service starts **automatically on boot**.
 
 ## Architecture
 
@@ -49,7 +49,7 @@ fill-station/
 - Robust error handling (doesn't crash on client errors)
 
 ### ✅ Hardware Control
-- **Igniters**: GPIO-based control with continuity checking
+- **Igniters**: GPIO-based control with continuity checking and concurrent firing
 - **ADC Monitoring**: Dual ADS1015 12-bit ADCs (8 channels total)
 - **Pressure Sensors**: Calibrated scaling for ADC channels
 - Platform-aware: Compiles on macOS for dev, runs on Linux
@@ -70,6 +70,7 @@ fill-station/
 ```json
 {"command": "ignite"}
 ```
+*Note: This command fires both Igniter 1 and Igniter 2 concurrently for 3 seconds.*
 
 ### ADC Streaming
 ```json
@@ -89,8 +90,8 @@ See [`docs/ADC_STREAMING.md`](docs/ADC_STREAMING.md) for detailed protocol speci
 - **Sample Rate**: 10 Hz (configurable)
 
 ### GPIO Pins
-- **Igniter 1**: GPIO 18 (continuity), GPIO 16 (signal)
-- **Igniter 2**: GPIO 24 (continuity), GPIO 22 (signal)
+- **Igniter 1**: GPIO Chip 0, Pin 38 (signal), Pin 39 (continuity)
+- **Igniter 2**: GPIO Chip 0, Pin 40 (signal), GPIO Chip 1, Pin 42 (continuity)
 
 See [`src/hardware.rs`](src/hardware.rs) for pin mappings.
 
@@ -211,7 +212,9 @@ init = {
 };
 ```
 
-**Logs**: Written to both stdout and rotating log files in `logs/`.
+**Logs**:
+- **stdout**: Visible if running manually.
+- **File**: Rotating logs in `/tmp/fill-station/logs/` (Linux) or `logs/` (macOS).
 
 **SD Card Image**: The complete bootable system is built with:
 ```bash

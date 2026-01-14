@@ -78,7 +78,12 @@ impl Default for AdcReadings {
 
 fn main() -> Result<()> {
     // Create a log layer for file output
-    let file_appender = tracing_appender::rolling::hourly("logs", "tracing.log");
+    #[cfg(target_os = "linux")]
+    let log_dir = "/tmp/fill-station/logs";
+    #[cfg(not(target_os = "linux"))]
+    let log_dir = "logs";
+
+    let file_appender = tracing_appender::rolling::hourly(log_dir, "tracing.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
     let file_layer = fmt::layer().with_writer(non_blocking).with_ansi(false); // Disable colors in file
 
@@ -242,8 +247,13 @@ async fn execute_command(
             #[cfg(any(target_os = "linux", target_os = "android"))]
             {
                 let hw = hardware.lock().await;
-                info!("Igniting ig1...");
-                hw.ig1.ignite().await;
+                info!("Igniting both ig1 and ig2...");
+                
+                // Ignite both concurrently so they fire at the same time
+                let ignite_1 = hw.ig1.ignite();
+                let ignite_2 = hw.ig2.ignite();
+                smol::future::zip(ignite_1, ignite_2).await;
+                
                 info!("Ignition complete");
             }
             #[cfg(not(any(target_os = "linux", target_os = "android")))]

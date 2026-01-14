@@ -166,7 +166,7 @@ main() spawns tasks:
 
 | Command | Description | Documentation |
 |---------|-------------|---------------|
-| `ignite` | Fire igniter | Built-in |
+| `ignite` | Fire both igniters concurrently (3s) | Built-in |
 | `start_adc_stream` | Begin ADC data stream | [ADC_STREAMING.md](ADC_STREAMING.md#start-adc-streaming) |
 | `stop_adc_stream` | End ADC data stream | [ADC_STREAMING.md](ADC_STREAMING.md#stop-adc-streaming) |
 
@@ -191,11 +191,12 @@ const ADC1_CH1_OFFSET: f32 = 1.783227975;     // Channel 1 offset
 
 ### Hardware Pins (`src/hardware.rs`)
 ```rust
-const GPIO_CHIP: &str = "gpiochip1";
+const GPIO_CHIP0: &str = "gpiochip1";
+const GPIO_CHIP1: &str = "gpiochip2";
 const I2C_BUS: &str = "/dev/i2c-2";
 const ADC1_ADDRESS: u16 = 0x48;
 const ADC2_ADDRESS: u16 = 0x49;
-// Igniter pins: 18, 16, 24, 22
+// Igniter pins: 38, 39, 40, 42 (across chips)
 ```
 
 ## Testing Tools
@@ -254,5 +255,5 @@ When adding documentation:
 
 ---
 
-**Last Updated**: January 3, 2026  
+**Last Updated**: January 14, 2026 (Updated igniter behavior and pin mappings)  
 **Maintained By**: Cornell Rocketry Team Software Team

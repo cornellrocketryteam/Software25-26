@@ -13,14 +13,19 @@ pub struct Igniter {
 }
 
 impl Igniter {
-    pub async fn new(chip: &Chip, continuity_pin: LineId, signal_pin: LineId) -> Result<Self> {
+    pub async fn new(
+        continuity_chip: &Chip,
+        continuity_pin: LineId,
+        signal_chip: &Chip,
+        signal_pin: LineId,
+    ) -> Result<Self> {
         let continuity_options = Options::input([continuity_pin]).consumer(CONSUMER);
-        let continuity_line = chip.request_lines(continuity_options).await?;
+        let continuity_line = continuity_chip.request_lines(continuity_options).await?;
 
         let signal_options = Options::output([signal_pin])
             .values([false])
             .consumer(CONSUMER);
-        let signal_line = chip.request_lines(signal_options).await?;
+        let signal_line = signal_chip.request_lines(signal_options).await?;
 
         Ok(Self {
             continuity_pin,
@@ -46,7 +51,7 @@ impl Igniter {
             .await
             .expect("The GPIO File Descriptor should not be able to close?");
 
-        Timer::after(Duration::from_secs(1)).await;
+        Timer::after(Duration::from_secs(3)).await;
 
         self.signal_line
             .set_values([false])

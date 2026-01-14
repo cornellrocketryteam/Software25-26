@@ -1,6 +1,34 @@
-# Troubleshooting: adc_monitor not found
+# Troubleshooting
 
-## Quick Fix - Try these commands on the TI board:
+## "Resource busy" (os error 16)
+**Symptoms:**
+When running `fill-station` manually:
+```
+Error: Resource busy (os error 16)
+```
+
+**Cause:**
+The `fill-station` service runs **automatically** on boot. It has already claimed the hardware resources (GPIO, I2C, WebSocket port). Running a second instance manualy conflicts with the background service.
+
+**Fix:**
+You do NOT need to run it manually. The service is already working.
+To verify:
+```bash
+ps | grep fill-station
+```
+
+If you must run manually for debugging:
+```bash
+# 1. Kill the background service
+killall fill-station
+
+# 2. Run manually
+fill-station
+```
+
+## adc_monitor not found
+
+### Quick Fix - Try these commands on the TI board:
 
 ```bash
 # 1. Check if the binary exists and where
