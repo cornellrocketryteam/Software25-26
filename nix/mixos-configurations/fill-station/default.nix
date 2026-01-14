@@ -45,7 +45,7 @@
 
     wpa_supplicant = {
       action = "respawn";
-      process = "${lib.getExe pkgs.wpa_supplicant} -i wlan0 -c /etc/wpa_supplicant.conf";
+      process = "${lib.getExe' pkgs.wpa_supplicant "wpa_supplicant"} -i wlan0 -c /etc/wpa_supplicant.conf";
     };
 
     dhcp = {
