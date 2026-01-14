@@ -42,6 +42,16 @@
       action = "respawn";
       process = "/bin/watchdog -F /dev/watchdog";
     };
+
+    wpa_supplicant = {
+      action = "respawn";
+      process = "${lib.getExe pkgs.wpa_supplicant} -i wlan0 -c /etc/wpa_supplicant.conf";
+    };
+
+    dhcp = {
+      action = "respawn";
+      process = "${lib.getExe' pkgs.busybox "udhcpc"} -f -i wlan0";
+    };
   };
 
   bin = [
@@ -56,6 +66,13 @@
   etc."lib/firmware".source = pkgs.runCommand "wl18xx-firmware" { } ''
     mkdir -p $out/ti-connectivity
     cp ${pkgs.crt.ti-linux-firmware}/ti-connectivity/wl18xx-fw-4.bin $out/ti-connectivity/wl18xx-fw-4.bin
+  '';
+
+  etc."wpa_supplicant.conf".source = pkgs.writeText "wpa_supplicant.conf" ''
+    network={
+      ssid="CornellRocketry"
+      psk="Rocketry2526"
+    }
   '';
 
   users.root = {
