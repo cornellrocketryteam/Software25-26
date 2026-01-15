@@ -113,6 +113,9 @@ See [`docs/ADC_STREAMING.md`](docs/ADC_STREAMING.md) for detailed protocol speci
   - **SV4**: Actuate (Chip 1, 65), Sense (Chip 0, 36) - NC
   - **SV5**: Actuate (Chip 1, 48), Sense (Chip 1, 46) - NO
 - **MAV**: PWM Chip 0, Channel 0 (330 Hz)
+- **Ball Valve**:
+  - **Signal**: Chip 1, Line 62
+  - **ON_OFF**: Chip 1, Line 63
 
 See [`src/hardware.rs`](src/hardware.rs) for pin mappings.
 

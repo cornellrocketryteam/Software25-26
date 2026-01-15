@@ -113,6 +113,10 @@ fill-station/
   - PWM-based servo control
   - Limits and neutral position handling
 
+- **Ball Valve** (`src/components/ball_valve.rs`)
+  - Two-pin GPIO control (Signal + ON_OFF)
+  - Timed sequencing for open/close operations
+
 ### Example Implementations
 
 See [ADDING_FEATURES.md](ADDING_FEATURES.md#example-adding-a-valve-controller) for complete valve controller example including:

@@ -191,3 +191,67 @@ Sets the MAV to its neutral position (1520 µs).
 ```json
 {"type": "success"}
 ```
+
+---
+
+## Ball Valve Commands
+
+### `bv_open`
+Execute the opening sequence for the Ball Valve (Signal HIGH -> ON_OFF HIGH -> 3s wait -> ON_OFF LOW).
+
+**Format:**
+```json
+{"command": "bv_open"}
+```
+
+**Response:**
+```json
+{"type": "ball_valve_state", "state": "success"}
+```
+
+---
+
+### `bv_close`
+Execute the closing sequence for the Ball Valve (Signal LOW -> ON_OFF HIGH -> 3s wait -> ON_OFF LOW).
+
+**Format:**
+```json
+{"command": "bv_close"}
+```
+
+**Response:**
+```json
+{"type": "ball_valve_state", "state": "success"}
+```
+
+---
+
+### `bv_signal`
+Set the Ball Valve signal line state manually. Only allowed if ON_OFF is LOW.
+
+**Format:**
+```json
+{"command": "bv_signal", "state": "high"}
+```
+* `state`: "high", "low", "open", "close", "true", "false"
+
+**Response:**
+```json
+{"type": "ball_valve_state", "state": "success"}
+```
+
+---
+
+### `bv_on_off`
+Set the Ball Valve ON_OFF line state manually.
+
+**Format:**
+```json
+{"command": "bv_on_off", "state": "high"}
+```
+* `state`: "high", "low", "on", "off", "true", "false"
+
+**Response:**
+```json
+{"type": "ball_valve_state", "state": "success"}
+```
