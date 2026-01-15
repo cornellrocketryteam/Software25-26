@@ -109,6 +109,10 @@ fill-station/
   - Configurable Line Pull (NO/NC)
   - SV1 & SV2 configured by default
 
+- **MAV** (`src/components/mav.rs`)
+  - PWM-based servo control
+  - Limits and neutral position handling
+
 ### Example Implementations
 
 See [ADDING_FEATURES.md](ADDING_FEATURES.md#example-adding-a-valve-controller) for complete valve controller example including:
@@ -180,6 +184,7 @@ main() spawns tasks:
 | `start_adc_stream` | Begin ADC data stream | [ADC_STREAMING.md](ADC_STREAMING.md#start-adc-streaming) |
 | `stop_adc_stream` | End ADC data stream | [ADC_STREAMING.md](ADC_STREAMING.md#stop-adc-streaming) |
 | `actuate_valve` | Open/Close solenoid valve | [WEBSOCKET_API.md](WEBSOCKET_API.md#actuate_valve) |
+| `set_mav_angle` | Set MAV servo angle | [WEBSOCKET_API.md](WEBSOCKET_API.md#set_mav_angle) |
 
 ## Configuration Reference
 
@@ -215,6 +220,7 @@ const ADC2_ADDRESS: u16 = 0x49;
 //   SV3: C1-44 / C0-37 (NC)
 //   SV4: C1-65 / C0-36 (NC)
 //   SV5: C1-48 / C1-46 (NO)
+// MAV: PWM Chip 0, Channel 0
 ```
 
 ## Testing Tools

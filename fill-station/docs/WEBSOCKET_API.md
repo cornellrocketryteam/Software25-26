@@ -127,3 +127,67 @@ An error occurred during command parsing or execution.
 ```json
 {"type": "error"}
 ```
+
+---
+
+## MAV Commands
+
+### `set_mav_angle`
+Sets the angle of the Mechanically Actuated Valve (MAV) servo.
+
+**Format:**
+```json
+{"command": "set_mav_angle", "valve": "MAV", "angle": 45.0}
+```
+*   `valve`: Valve identifier (currently "MAV").
+*   `angle`: Target angle in degrees (0.0 to 90.0).
+
+**Response:**
+```json
+{"type": "success"}
+```
+
+---
+
+### `mav_open`
+Opens the MAV to its maximum position (90 degrees).
+
+**Format:**
+```json
+{"command": "mav_open", "valve": "MAV"}
+```
+
+**Response:**
+```json
+{"type": "success"}
+```
+
+---
+
+### `mav_close`
+Closes the MAV to its minimum position (0 degrees).
+
+**Format:**
+```json
+{"command": "mav_close", "valve": "MAV"}
+```
+
+**Response:**
+```json
+{"type": "success"}
+```
+
+---
+
+### `mav_neutral`
+Sets the MAV to its neutral position (1520 µs).
+
+**Format:**
+```json
+{"command": "mav_neutral", "valve": "MAV"}
+```
+
+**Response:**
+```json
+{"type": "success"}
+```

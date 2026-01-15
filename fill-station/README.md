@@ -51,6 +51,7 @@ fill-station/
 ### ✅ Hardware Control
 - **Igniters**: GPIO-based control with continuity checking and concurrent firing
 - **Solenoid Valves**: 5x GPIO control (SV1-SV5) with NO/NC logic
+- **MAV**: Servo control (PWM) for Mechanically Actuated Valve
 - **ADC Monitoring**: Dual ADS1015 12-bit ADCs (8 channels total)
 - **Pressure Sensors**: Calibrated scaling for ADC channels
 - Platform-aware: Compiles on macOS for dev, runs on Linux
@@ -84,6 +85,12 @@ fill-station/
 {"command": "stop_adc_stream"}
 ```
 
+### MAV Control
+```json
+{"command": "set_mav_angle", "valve": "MAV", "angle": 45.0}
+{"command": "mav_open", "valve": "MAV"}
+```
+
 See [`docs/ADC_STREAMING.md`](docs/ADC_STREAMING.md) for detailed protocol specification.
 
 ## Hardware Configuration
@@ -105,6 +112,7 @@ See [`docs/ADC_STREAMING.md`](docs/ADC_STREAMING.md) for detailed protocol speci
   - **SV3**: Actuate (Chip 1, 44), Sense (Chip 0, 37) - NC
   - **SV4**: Actuate (Chip 1, 65), Sense (Chip 0, 36) - NC
   - **SV5**: Actuate (Chip 1, 48), Sense (Chip 1, 46) - NO
+- **MAV**: PWM Chip 0, Channel 0 (330 Hz)
 
 See [`src/hardware.rs`](src/hardware.rs) for pin mappings.
 
