@@ -99,12 +99,7 @@ See [`docs/ADC_STREAMING.md`](docs/ADC_STREAMING.md) for detailed protocol speci
 - **Igniter 1**: GPIO Chip 0, Pin 38 (signal), Pin 39 (continuity)
 - **Igniter 1**: GPIO Chip 0, Pin 38 (signal), Pin 39 (continuity)
 - **Igniter 2**: GPIO Chip 0, Pin 40 (signal), GPIO Chip 1, Pin 42 (continuity)
-- **Valves**: 
-  - **SV1** (NC): Actuate on Chip 0/42, Continuity on Chip 1/51
-  - **SV2** (NC): Actuate on Chip 0/32, Continuity on Chip 0/34
-  - **SV3** (NC): Actuate on Chip 1/44, Continuity on Chip 0/37
-  - **SV4** (NC): Actuate on Chip 1/65, Continuity on Chip 0/36
-  - **SV5** (NO): Actuate on Chip 1/48, Continuity on Chip 1/46
+- **Valves**: SV1 (Chip 1/51, Chip 0/42), SV2 (Chip 0/34, Chip 0/32)
 
 See [`src/hardware.rs`](src/hardware.rs) for pin mappings.
 

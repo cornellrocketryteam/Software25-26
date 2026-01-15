@@ -210,11 +210,8 @@ const ADC1_ADDRESS: u16 = 0x48;
 const ADC2_ADDRESS: u16 = 0x49;
 // Igniter pins: 38, 39, 40, 42 (across chips)
 // Valve pins:
-//   SV1 (NC): Actuate (Chip 0/42), Check (Chip 1/51)
-//   SV2 (NC): Actuate (Chip 0/32), Check (Chip 0/34)
-//   SV3 (NC): Actuate (Chip 1/44), Check (Chip 0/37)
-//   SV4 (NC): Actuate (Chip 1/65), Check (Chip 0/36)
-//   SV5 (NO): Actuate (Chip 1/48), Check (Chip 1/46)
+//   SV1: Control (Chip 1, 51), Signal (Chip 0, 42)
+//   SV2: Control (Chip 0, 34), Signal (Chip 0, 32)
 ```
 
 ## Testing Tools

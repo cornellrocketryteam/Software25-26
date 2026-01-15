@@ -271,11 +271,8 @@ async fn execute_command(
             {
                 let hw = hardware.lock().await;
                 let result = match valve.to_lowercase().as_str() {
-                    "sv1" => hw.sv1.actuate(state).await,
+                    // "sv1" => hw.sv1.actuate(state).await,
                     "sv2" => hw.sv2.actuate(state).await,
-                    "sv3" => hw.sv3.actuate(state).await,
-                    "sv4" => hw.sv4.actuate(state).await,
-                    "sv5" => hw.sv5.actuate(state).await,
                     _ => {
                         warn!("Unknown valve: {}", valve);
                         return CommandResponse::Error;
