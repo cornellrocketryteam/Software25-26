@@ -25,7 +25,14 @@ pub struct Hardware {
     #[cfg(any(target_os = "linux", target_os = "android"))]
     pub sv1: SolenoidValve,
     #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     pub sv2: SolenoidValve,
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub sv3: SolenoidValve,
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub sv4: SolenoidValve,
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub sv5: SolenoidValve,
 }
 
 impl Hardware {
@@ -39,21 +46,42 @@ impl Hardware {
         let adc1 = Ads1015::new(I2C_BUS, ADC1_ADDRESS)?;
         let adc2 = Ads1015::new(I2C_BUS, ADC2_ADDRESS)?;
 
-        // SV1: Control (Chip 1, 51), Signal (Chip 0, 42)
+        // SV1: Actuate aka "Control" (Signal Pin/42), Check aka "Signal" (GPIO Pin/51)
         let sv1 = SolenoidValve::new(
-            &chip1, 51,
             &chip0, 42,
+            &chip1, 51,
             LinePull::NormallyClosed
         ).await?;
 
-        // SV2: Control (Chip 0, 34), Signal (Chip 0, 32)
+        // SV2: Actuate (Signal/32), Check (GPIO/34)
         let sv2 = SolenoidValve::new(
-            &chip0, 34,
             &chip0, 32,
+            &chip0, 34,
             LinePull::NormallyClosed
         ).await?;
+
+        // SV3: Actuate (Signal/44), Check (GPIO/37) -- Signal=Chip1, GPIO=Chip0
+        let sv3 = SolenoidValve::new(
+            &chip1, 44,
+            &chip0, 37,
+            LinePull::NormallyClosed
+        ).await?;
+
+        // SV4: Actuate (Signal/65), Check (GPIO/36) -- Signal=Chip1, GPIO=Chip0
+        let sv4 = SolenoidValve::new(
+            &chip1, 65,
+            &chip0, 36,
+            LinePull::NormallyClosed
+        ).await?;
+
+        // SV5: Actuate (Signal/48), Check (GPIO/46) -- Signal=Chip1, GPIO=Chip1 -- NO
+        let sv5 = SolenoidValve::new(
+            &chip1, 48,
+            &chip1, 46,
+            LinePull::NormallyOpen
+        ).await?;
         
-        Ok(Self { ig1, ig2, adc1, adc2, sv1, sv2 })
+        Ok(Self { ig1, ig2, adc1, adc2, sv1, sv2, sv3, sv4, sv5 })
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "android")))]

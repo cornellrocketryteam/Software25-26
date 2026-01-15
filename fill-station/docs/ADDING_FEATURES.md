@@ -472,6 +472,9 @@ mod tests {
 
 Let's walk through a complete example of adding a solenoid valve controller.
 
+> [!NOTE]
+> **Update**: A production-ready `SolenoidValve` component has been implemented (as of Jan 2026) in `src/components/solenoid_valve.rs`. The guide below serves as an educational example of how you *would* build such a component from scratch.
+
 ### 1. Create Component (`src/components/valve.rs`)
 
 ```rust

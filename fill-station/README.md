@@ -50,6 +50,7 @@ fill-station/
 
 ### ✅ Hardware Control
 - **Igniters**: GPIO-based control with continuity checking and concurrent firing
+- **Solenoid Valves**: SV1/SV2 GPIO control with NO/NC logic
 - **ADC Monitoring**: Dual ADS1015 12-bit ADCs (8 channels total)
 - **Pressure Sensors**: Calibrated scaling for ADC channels
 - Platform-aware: Compiles on macOS for dev, runs on Linux
@@ -72,6 +73,11 @@ fill-station/
 ```
 *Note: This command fires both Igniter 1 and Igniter 2 concurrently for 3 seconds.*
 
+### Solenoid Valve Control
+```json
+{"command": "actuate_valve", "valve": "SV1", "state": true}
+```
+
 ### ADC Streaming
 ```json
 {"command": "start_adc_stream"}
@@ -91,7 +97,14 @@ See [`docs/ADC_STREAMING.md`](docs/ADC_STREAMING.md) for detailed protocol speci
 
 ### GPIO Pins
 - **Igniter 1**: GPIO Chip 0, Pin 38 (signal), Pin 39 (continuity)
+- **Igniter 1**: GPIO Chip 0, Pin 38 (signal), Pin 39 (continuity)
 - **Igniter 2**: GPIO Chip 0, Pin 40 (signal), GPIO Chip 1, Pin 42 (continuity)
+- **Valves**: 
+  - **SV1** (NC): Actuate on Chip 0/42, Continuity on Chip 1/51
+  - **SV2** (NC): Actuate on Chip 0/32, Continuity on Chip 0/34
+  - **SV3** (NC): Actuate on Chip 1/44, Continuity on Chip 0/37
+  - **SV4** (NC): Actuate on Chip 1/65, Continuity on Chip 0/36
+  - **SV5** (NO): Actuate on Chip 1/48, Continuity on Chip 1/46
 
 See [`src/hardware.rs`](src/hardware.rs) for pin mappings.
 

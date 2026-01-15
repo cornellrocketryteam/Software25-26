@@ -104,6 +104,11 @@ fill-station/
   - Configurable gain and data rate
   - Platform-aware (Linux/non-Linux)
 
+- **SolenoidValve** (`src/components/solenoid_valve.rs`)
+  - GPIO-based control (Control + Signal lines)
+  - Configurable Line Pull (NO/NC)
+  - SV1 & SV2 configured by default
+
 ### Example Implementations
 
 See [ADDING_FEATURES.md](ADDING_FEATURES.md#example-adding-a-valve-controller) for complete valve controller example including:
@@ -174,6 +179,7 @@ main() spawns tasks:
 | `ignite` | Fire both igniters concurrently (3s) | Built-in |
 | `start_adc_stream` | Begin ADC data stream | [ADC_STREAMING.md](ADC_STREAMING.md#start-adc-streaming) |
 | `stop_adc_stream` | End ADC data stream | [ADC_STREAMING.md](ADC_STREAMING.md#stop-adc-streaming) |
+| `actuate_valve` | Open/Close solenoid valve | [WEBSOCKET_API.md](WEBSOCKET_API.md#actuate_valve) |
 
 ## Configuration Reference
 
@@ -203,6 +209,12 @@ const I2C_BUS: &str = "/dev/i2c-2";
 const ADC1_ADDRESS: u16 = 0x48;
 const ADC2_ADDRESS: u16 = 0x49;
 // Igniter pins: 38, 39, 40, 42 (across chips)
+// Valve pins:
+//   SV1 (NC): Actuate (Chip 0/42), Check (Chip 1/51)
+//   SV2 (NC): Actuate (Chip 0/32), Check (Chip 0/34)
+//   SV3 (NC): Actuate (Chip 1/44), Check (Chip 0/37)
+//   SV4 (NC): Actuate (Chip 1/65), Check (Chip 0/36)
+//   SV5 (NO): Actuate (Chip 1/48), Check (Chip 1/46)
 ```
 
 ## Testing Tools
