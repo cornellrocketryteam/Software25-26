@@ -31,9 +31,13 @@ pub enum Command {
     MavNeutral { valve: String },
 
     // Ball Valve Commands
+    #[serde(rename = "bv_open")]
     BVOpen,
+    #[serde(rename = "bv_close")]
     BVClose,
+    #[serde(rename = "bv_signal")]
     BVSignal { state: String }, // "high" or "low"
+    #[serde(rename = "bv_on_off")]
     BVOnOff { state: String },  // "high" or "low"
 }
 

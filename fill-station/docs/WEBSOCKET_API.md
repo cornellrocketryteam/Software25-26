@@ -56,24 +56,6 @@ Stops the ADC data stream for the current client.
 {"type": "success"}
 ```
 
----
-
-### `actuate_valve`
-Actuates (opens/energizes) or de-actuates (closes/de-energizes) a specific solenoid valve.
-
-**Format:**
-```json
-{"command": "actuate_valve", "valve": "SV1", "state": true}
-```
-*   `valve`: Valve identifier ("SV1" through "SV5", case-insensitive).
-    *   *Note: For Normally Closed (NC) valves (SV1-SV4), `true` = HIGH (Open). For Normally Open (SV5), `true` = LOW (Open).*
-
-**Response:**
-```json
-{"type": "success"}
-```
-
----
 
 ## Server Push Messages
 
@@ -126,6 +108,25 @@ Command was received and executed successfully.
 An error occurred during command parsing or execution.
 ```json
 {"type": "error"}
+```
+
+---
+
+## Solenoid Valve Commands
+
+### `actuate_valve`
+Actuates (opens/energizes) or de-actuates (closes/de-energizes) a specific solenoid valve.
+
+**Format:**
+```json
+{"command": "actuate_valve", "valve": "SV1", "state": true}
+```
+*   `valve`: Valve identifier ("SV1" through "SV5", case-insensitive).
+    *   *Note: For Normally Closed (NC) valves (SV1-SV4), `true` = HIGH (Open). For Normally Open (SV5), `true` = LOW (Open).*
+
+**Response:**
+```json
+{"type": "success"}
 ```
 
 ---
@@ -197,7 +198,7 @@ Sets the MAV to its neutral position (1520 µs).
 ## Ball Valve Commands
 
 ### `bv_open`
-Execute the opening sequence for the Ball Valve (Signal HIGH -> ON_OFF HIGH -> 3s wait -> ON_OFF LOW).
+Execute the opening sequence for the Ball Valve (Signal HIGH & ON_OFF HIGH -> 3s wait -> ON_OFF LOW).
 
 **Format:**
 ```json
@@ -206,13 +207,13 @@ Execute the opening sequence for the Ball Valve (Signal HIGH -> ON_OFF HIGH -> 3
 
 **Response:**
 ```json
-{"type": "ball_valve_state", "state": "success"}
+{"type": "success"}
 ```
 
 ---
 
 ### `bv_close`
-Execute the closing sequence for the Ball Valve (Signal LOW -> ON_OFF HIGH -> 3s wait -> ON_OFF LOW).
+Execute the closing sequence for the Ball Valve (Signal LOW & ON_OFF HIGH -> 3s wait -> ON_OFF LOW).
 
 **Format:**
 ```json
@@ -221,7 +222,7 @@ Execute the closing sequence for the Ball Valve (Signal LOW -> ON_OFF HIGH -> 3s
 
 **Response:**
 ```json
-{"type": "ball_valve_state", "state": "success"}
+{"type": "success"}
 ```
 
 ---
@@ -237,7 +238,7 @@ Set the Ball Valve signal line state manually. Only allowed if ON_OFF is LOW.
 
 **Response:**
 ```json
-{"type": "ball_valve_state", "state": "success"}
+{"type": "success"}
 ```
 
 ---
@@ -253,5 +254,5 @@ Set the Ball Valve ON_OFF line state manually.
 
 **Response:**
 ```json
-{"type": "ball_valve_state", "state": "success"}
+{"type": "success"}
 ```
