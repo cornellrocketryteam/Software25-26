@@ -350,6 +350,65 @@ async fn execute_command(
                 CommandResponse::Success
             }
         }
+        Command::BVOpen => {
+            let hw = hardware.lock().await;
+            info!("Executing BallValve Open Sequence");
+            if let Err(e) = hw.ball_valve.open_sequence().await {
+                error!("Failed to open ball valve: {}", e);
+                CommandResponse::Error
+            } else {
+                CommandResponse::Success
+            }
+        }
+        Command::BVClose => {
+            let hw = hardware.lock().await;
+            info!("Executing BallValve Close Sequence");
+            if let Err(e) = hw.ball_valve.close_sequence().await {
+                error!("Failed to close ball valve: {}", e);
+                CommandResponse::Error
+            } else {
+                CommandResponse::Success
+            }
+        }
+        Command::BVSignal { state } => {
+             let hw = hardware.lock().await;
+             let high = match state.to_lowercase().as_str() {
+                 "high" | "open" | "true" => true,
+                 "low" | "close" | "false" => false,
+                 _ => {
+                     warn!("Invalid signal state: {}", state);
+                     return CommandResponse::Error;
+                 }
+             };
+             info!("Setting BallValve Signal to {}", if high { "HIGH" } else { "LOW" });
+             
+             if let Err(e) = hw.ball_valve.set_signal_safe(high).await {
+                 error!("Failed to set ball valve signal: {}", e);
+                 // If error is due to ON_OFF being high, it will be caught here
+                 CommandResponse::Error
+             } else {
+                 CommandResponse::Success
+             }
+        }
+        Command::BVOnOff { state } => {
+             let hw = hardware.lock().await;
+             let high = match state.to_lowercase().as_str() {
+                 "high" | "on" | "true" => true,
+                 "low" | "off" | "false" => false,
+                 _ => {
+                     warn!("Invalid ON/OFF state: {}", state);
+                     return CommandResponse::Error;
+                 }
+             };
+             info!("Setting BallValve ON_OFF to {}", if high { "HIGH" } else { "LOW" });
+             
+             if let Err(e) = hw.ball_valve.set_on_off(high).await {
+                 error!("Failed to set ball valve ON_OFF: {}", e);
+                 CommandResponse::Error
+             } else {
+                 CommandResponse::Success
+             }
+        }
     }
 }
 

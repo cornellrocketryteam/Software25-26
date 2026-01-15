@@ -29,6 +29,12 @@ pub enum Command {
     MavClose { valve: String },
     /// Set MAV to neutral (1520us)
     MavNeutral { valve: String },
+
+    // Ball Valve Commands
+    BVOpen,
+    BVClose,
+    BVSignal { state: String }, // "high" or "low"
+    BVOnOff { state: String },  // "high" or "low"
 }
 
 /// Response sent back to WebSocket clients after command execution

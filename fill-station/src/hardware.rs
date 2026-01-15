@@ -9,6 +9,7 @@ use crate::components::solenoid_valve::{SolenoidValve, LinePull};
 
 use crate::components::ads1015::Ads1015;
 use crate::components::mav::Mav;
+use crate::components::ball_valve::BallValve;
 
 const GPIO_CHIP0: &str = "gpiochip1";
 const GPIO_CHIP1: &str = "gpiochip2";
@@ -34,6 +35,7 @@ pub struct Hardware {
     #[cfg(any(target_os = "linux", target_os = "android"))]
     pub sv5: SolenoidValve,
     pub mav: Mav,
+    pub ball_valve: BallValve,
 }
 
 impl Hardware {
@@ -85,7 +87,16 @@ impl Hardware {
         // MAV (Chip 0, Channel 0)
         let mav = Mav::new(0, 0, "MAV").await?;
 
-        Ok(Self { ig1, ig2, adc1, adc2, sv1, sv2, sv3, sv4, sv5, mav })
+        // Ball Valve
+        // Signal: Chip 1, Line 62
+        // ON_OFF: Chip 1, Line 63
+        let ball_valve = BallValve::new(
+            &chip1, 63, // ON_OFF Pin
+            &chip1, 62, // Signal Pin
+            "BallValve"
+        ).await?;
+
+        Ok(Self { ig1, ig2, adc1, adc2, sv1, sv2, sv3, sv4, sv5, mav, ball_valve })
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
@@ -93,7 +104,8 @@ impl Hardware {
         let adc1 = Ads1015::new(I2C_BUS, ADC1_ADDRESS)?;
         let adc2 = Ads1015::new(I2C_BUS, ADC2_ADDRESS)?;
         let mav = Mav::new(0, 0, "MAV").await?;
+        let ball_valve = BallValve::new(&(), 0, &(), 0, "BallValve").await?;
         
-        Ok(Self { adc1, adc2, mav })
+        Ok(Self { adc1, adc2, mav, ball_valve })
     }
 }

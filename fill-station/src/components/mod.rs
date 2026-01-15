@@ -5,3 +5,4 @@ pub mod solenoid_valve;
 
 pub mod ads1015;
 pub mod mav;
+pub mod ball_valve;
