@@ -271,8 +271,11 @@ async fn execute_command(
             {
                 let hw = hardware.lock().await;
                 let result = match valve.to_lowercase().as_str() {
-                    // "sv1" => hw.sv1.actuate(state).await,
+                    "sv1" => hw.sv1.actuate(state).await,
                     "sv2" => hw.sv2.actuate(state).await,
+                    "sv3" => hw.sv3.actuate(state).await,
+                    "sv4" => hw.sv4.actuate(state).await,
+                    "sv5" => hw.sv5.actuate(state).await,
                     _ => {
                         warn!("Unknown valve: {}", valve);
                         return CommandResponse::Error;
@@ -306,6 +309,46 @@ async fn execute_command(
             info!("Stopping ADC stream for client");
             *streaming_enabled = false;
             CommandResponse::Success
+        }
+        Command::SetMavAngle { valve, angle } => {
+            let hw = hardware.lock().await;
+            info!("Setting MAV angle to {}", angle);
+            if let Err(e) = hw.mav.set_angle(angle).await {
+                error!("Failed to set MAV angle: {}", e);
+                CommandResponse::Error
+            } else {
+                CommandResponse::Success
+            }
+        }
+        Command::MavOpen { valve } => {
+            let hw = hardware.lock().await;
+            info!("Opening MAV");
+            if let Err(e) = hw.mav.open().await {
+                error!("Failed to open MAV: {}", e);
+                CommandResponse::Error
+            } else {
+                CommandResponse::Success
+            }
+        }
+        Command::MavClose { valve } => {
+            let hw = hardware.lock().await;
+            info!("Closing MAV");
+            if let Err(e) = hw.mav.close().await {
+                error!("Failed to close MAV: {}", e);
+                CommandResponse::Error
+            } else {
+                CommandResponse::Success
+            }
+        }
+        Command::MavNeutral { valve } => {
+            let hw = hardware.lock().await;
+            info!("Setting MAV to neutral");
+            if let Err(e) = hw.mav.neutral().await {
+                error!("Failed to set MAV neutral: {}", e);
+                CommandResponse::Error
+            } else {
+                CommandResponse::Success
+            }
         }
     }
 }

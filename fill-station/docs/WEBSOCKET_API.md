@@ -65,9 +65,8 @@ Actuates (opens/energizes) or de-actuates (closes/de-energizes) a specific solen
 ```json
 {"command": "actuate_valve", "valve": "SV1", "state": true}
 ```
-*   `valve`: Valve identifier ("SV1" or "SV2", case-insensitive).
-*   `state`: `true` to actuate (open), `false` to de-actuate (close).
-    *   *Note: For Normally Closed (NC) valves, `true` = HIGH (Open), `false` = LOW (Closed).*
+*   `valve`: Valve identifier ("SV1" through "SV5", case-insensitive).
+    *   *Note: For Normally Closed (NC) valves (SV1-SV4), `true` = HIGH (Open). For Normally Open (SV5), `true` = LOW (Open).*
 
 **Response:**
 ```json

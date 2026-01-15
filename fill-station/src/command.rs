@@ -17,6 +17,18 @@ pub enum Command {
         /// Actual electrical state depends on NO/NC configuration.
         state: bool,
     },
+    /// Set MAV angle in degrees (0-90)
+    SetMavAngle {
+        /// Name of valve (usually "MAV", but just for logging context if needed)
+        valve: String,
+        angle: f32,
+    },
+    /// Open MAV (90 degrees)
+    MavOpen { valve: String },
+    /// Close MAV (0 degrees)
+    MavClose { valve: String },
+    /// Set MAV to neutral (1520us)
+    MavNeutral { valve: String },
 }
 
 /// Response sent back to WebSocket clients after command execution

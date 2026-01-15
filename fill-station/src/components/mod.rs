@@ -4,3 +4,4 @@ pub mod igniter;
 pub mod solenoid_valve;
 
 pub mod ads1015;
+pub mod mav;

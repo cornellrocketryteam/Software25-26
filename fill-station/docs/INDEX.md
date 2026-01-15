@@ -209,9 +209,12 @@ const I2C_BUS: &str = "/dev/i2c-2";
 const ADC1_ADDRESS: u16 = 0x48;
 const ADC2_ADDRESS: u16 = 0x49;
 // Igniter pins: 38, 39, 40, 42 (across chips)
-// Valve pins:
-//   SV1: Control (Chip 1, 51), Signal (Chip 0, 42)
-//   SV2: Control (Chip 0, 34), Signal (Chip 0, 32)
+// Valve pins (Actuate / Sense):
+//   SV1: C0-42 / C1-51 (NC)
+//   SV2: C0-32 / C0-34 (NC)
+//   SV3: C1-44 / C0-37 (NC)
+//   SV4: C1-65 / C0-36 (NC)
+//   SV5: C1-48 / C1-46 (NO)
 ```
 
 ## Testing Tools
