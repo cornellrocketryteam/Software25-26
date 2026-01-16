@@ -8,6 +8,7 @@ static constexpr double PI = M_PI;
 static inline double deg_to_rad(double d) { return d * PI / 180.0; }
 static inline double rad_to_deg(double r) { return r * 180.0 / PI; }
 
+// Converts Longitude Latitude Altitude (LLA) to Earth Centered Earth Fixed coords
 static void to_ECEF(double lat, double lon, double alt, double& x, double& y, double& z) {
         double sinLat = sin(lat), cosLat = cos(lat);
         double sinLon = sin(lon), cosLon = cos(lon);
@@ -17,6 +18,7 @@ static void to_ECEF(double lat, double lon, double alt, double& x, double& y, do
         z = ((1 - eccentSqr) * N + alt) * sinLat;
     };
 
+// Converts LLA to East North Up Coords
 Vec3 GeoMath::llatoENU(const LLA &rats, const LLA &rocket) {
     double lat0 = deg_to_rad(rats.lat);
     double lon0 = deg_to_rad(rats.lon);
@@ -39,21 +41,37 @@ Vec3 GeoMath::llatoENU(const LLA &rats, const LLA &rocket) {
     return enu;
 }
 
+// Converts ENU to Azimuth and Elevation angles
 AzEl GeoMath::enuToAzEl(const Vec3 &enu) {
     AzEl result;
+
     double east = enu.x;
     double north = enu.y;
     double up = enu.z;
-    double range = sqrt(pow(east, 2) + pow(north, 2) + pow(up, 2));
-    double horizontal = sqrt(pow(east, 2) + pow(north, 2));
+
+    double range = sqrt(east*east + north*north + up*up);
+    double horizontal = sqrt(east*east + north*north);
+
     double azimuth = atan2(east, north);
     double elevation = atan2(up, horizontal);
-    result.azimuth = rad_to_deg(azimuth);
-    result.elevation = rad_to_deg(elevation);
+
+    // Convert to degrees
+    double azDeg = rad_to_deg(azimuth);
+    double elDeg = rad_to_deg(elevation);
+
+    // Normalize azimuth to [0, 360)
+    if (azDeg < 0) azDeg += 360.0;
+
+    if (elDeg < 0) elDeg = 0;
+    if (elDeg > 90) elDeg = 90;
+
+    result.azimuth = azDeg;
+    result.elevation = elDeg;
     result.range = range;
     return result;
 }
 
+// Converts LLA to AzEl
 AzEl GeoMath::computeAzEl(const LLA &rats, const LLA &rocket) {
     Vec3 enu = llatoENU(rats, rocket);
     return enuToAzEl(enu);
