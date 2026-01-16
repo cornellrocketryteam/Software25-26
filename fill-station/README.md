@@ -77,6 +77,7 @@ fill-station/
 ### Solenoid Valve Control
 ```json
 {"command": "actuate_valve", "valve": "SV1", "state": true}
+{"command": "get_valve_state", "valve": "SV1"}
 ```
 
 ### ADC Streaming

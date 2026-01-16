@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "command", rename_all = "snake_case")]
 pub enum Command {
     Ignite,
+    /// Query continuity for a specific igniter (1 or 2)
+    GetIgniterContinuity { id: u8 },
     /// Start streaming ADC readings to this client
     StartAdcStream,
     /// Stop streaming ADC readings to this client
@@ -29,6 +31,8 @@ pub enum Command {
     MavClose { valve: String },
     /// Set MAV to neutral (1520us)
     MavNeutral { valve: String },
+    /// Get current MAV state
+    GetMavState { valve: String },
 
     // Ball Valve Commands
     #[serde(rename = "bv_open")]
@@ -39,6 +43,12 @@ pub enum Command {
     BVSignal { state: String }, // "high" or "low"
     #[serde(rename = "bv_on_off")]
     BVOnOff { state: String },  // "high" or "low"
+
+    /// Get state of a solenoid valve (actuation and continuity)
+    GetValveState {
+        /// Name of the valve (e.g. "SV1")
+        valve: String,
+    },
 }
 
 /// Response sent back to WebSocket clients after command execution
@@ -53,6 +63,21 @@ pub enum CommandResponse {
         valid: bool,
         adc1: [ChannelReading; 4],
         adc2: [ChannelReading; 4],
+    },
+    /// Solenoid valve state
+    ValveState {
+        actuated: bool,
+        continuity: bool,
+    },
+    /// Igniter continuity state
+    IgniterContinuity {
+        id: u8,
+        continuity: bool,
+    },
+    /// MAV state response
+    MavState {
+        angle: f32,
+        pulse_width_us: u32,
     },
 }
 

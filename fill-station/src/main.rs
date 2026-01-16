@@ -266,6 +266,30 @@ async fn execute_command(
             }
             CommandResponse::Success
         }
+        Command::GetIgniterContinuity { id } => {
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            {
+                let hw = hardware.lock().await;
+                let continuity = match id {
+                    1 => Some(hw.ig1.has_continuity().await),
+                    2 => Some(hw.ig2.has_continuity().await),
+                    _ => None,
+                };
+                
+                if let Some(c) = continuity {
+                    CommandResponse::IgniterContinuity { id, continuity: c }
+                } else {
+                    warn!("Invalid igniter ID requested: {}", id);
+                    CommandResponse::Error
+                }
+            }
+            #[cfg(not(any(target_os = "linux", target_os = "android")))]
+            {
+                let _ = hardware;
+                warn!("GetIgniterContinuity command not supported on this platform: {}", id);
+                CommandResponse::IgniterContinuity { id, continuity: false }
+            }
+        }
         Command::ActuateValve { valve, state } => {
             #[cfg(any(target_os = "linux", target_os = "android"))]
             {
@@ -298,6 +322,44 @@ async fn execute_command(
                 let _ = hardware;
                 warn!("ActuateValve command not supported on this platform: {} -> {}", valve, state);
                 CommandResponse::Success // Maintain consistent response type even if mocked
+            }
+        }
+        Command::GetValveState { valve } => {
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            {
+                let hw = hardware.lock().await;
+                let result = match valve.to_lowercase().as_str() {
+                    "sv1" => Some((hw.sv1.is_actuated().await, hw.sv1.check_continuity().await)),
+                    "sv2" => Some((hw.sv2.is_actuated().await, hw.sv2.check_continuity().await)),
+                    "sv3" => Some((hw.sv3.is_actuated().await, hw.sv3.check_continuity().await)),
+                    "sv4" => Some((hw.sv4.is_actuated().await, hw.sv4.check_continuity().await)),
+                    "sv5" => Some((hw.sv5.is_actuated().await, hw.sv5.check_continuity().await)),
+                    _ => None,
+                };
+
+                match result {
+                    Some((Ok(actuated), Ok(continuity))) => {
+                        CommandResponse::ValveState { actuated, continuity }
+                    }
+                    Some((Err(e), _)) => {
+                        error!("Failed to get valve actuation state: {}", e);
+                        CommandResponse::Error
+                    }
+                    Some((_, Err(e))) => {
+                        error!("Failed to get valve continuity: {}", e);
+                        CommandResponse::Error
+                    }
+                    None => {
+                        warn!("Unknown valve: {}", valve);
+                        CommandResponse::Error
+                    }
+                }
+            }
+            #[cfg(not(any(target_os = "linux", target_os = "android")))]
+            {
+                let _ = hardware;
+                warn!("GetValveState command not supported on this platform: {}", valve);
+                CommandResponse::ValveState { actuated: false, continuity: false }
             }
         }
         Command::StartAdcStream => {
@@ -348,6 +410,19 @@ async fn execute_command(
                 CommandResponse::Error
             } else {
                 CommandResponse::Success
+            }
+        }
+        Command::GetMavState { valve } => {
+            let hw = hardware.lock().await;
+            match hw.mav.get_pulse_width_us().await {
+                Ok(us) => {
+                    let angle = hw.mav.get_angle().await.unwrap_or(0.0);
+                    CommandResponse::MavState { angle, pulse_width_us: us }
+                }
+                Err(e) => {
+                    error!("Failed to get MAV state: {}", e);
+                    CommandResponse::Error
+                }
             }
         }
         Command::BVOpen => {

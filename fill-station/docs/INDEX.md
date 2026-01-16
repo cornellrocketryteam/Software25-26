@@ -188,6 +188,7 @@ main() spawns tasks:
 | `start_adc_stream` | Begin ADC data stream | [ADC_STREAMING.md](ADC_STREAMING.md#start-adc-streaming) |
 | `stop_adc_stream` | End ADC data stream | [ADC_STREAMING.md](ADC_STREAMING.md#stop-adc-streaming) |
 | `actuate_valve` | Open/Close solenoid valve | [WEBSOCKET_API.md](WEBSOCKET_API.md#actuate_valve) |
+| `get_valve_state` | Query valve state | [WEBSOCKET_API.md](WEBSOCKET_API.md#get_valve_state) |
 | `set_mav_angle` | Set MAV servo angle | [WEBSOCKET_API.md](WEBSOCKET_API.md#set_mav_angle) |
 
 ## Configuration Reference

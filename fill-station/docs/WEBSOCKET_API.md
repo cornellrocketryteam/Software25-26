@@ -11,6 +11,25 @@ This document provides a reference for all supported WebSocket commands for the 
 
 ## Commands
 
+### `get_igniter_continuity`
+Query the continuity of a specific igniter.
+
+**Format:**
+```json
+{"command": "get_igniter_continuity", "id": 1}
+```
+
+**Response:**
+```json
+{
+  "type": "igniter_continuity",
+  "id": 1,
+  "continuity": true
+}
+```
+*   `id`: 1 for Igniter 1, 2 for Igniter 2.
+*   `continuity`: `true` if circuit is closed (continuity present), `false` otherwise.
+
 ### `ignite`
 Fires both igniters concurrently for 3 seconds.
 
@@ -107,8 +126,24 @@ Command was received and executed successfully.
 ### `error`
 An error occurred during command parsing or execution.
 ```json
-{"type": "error"}
+### `get_valve_state`
+Query the current state of a solenoid valve (actuation status and continuity).
+
+**Format:**
+```json
+{"command": "get_valve_state", "valve": "SV1"}
 ```
+
+**Response:**
+```json
+{
+  "type": "valve_state",
+  "actuated": true,
+  "continuity": false
+}
+```
+*   `actuated`: `true` if logically actuated (open).
+*   `continuity`: `true` if continuity detected (signal high).
 
 ---
 
@@ -132,6 +167,25 @@ Actuates (opens/energizes) or de-actuates (closes/de-energizes) a specific solen
 ---
 
 ## MAV Commands
+
+### `get_mav_state`
+Query the current state of the MAV (angle and pulse width).
+
+**Format:**
+```json
+{"command": "get_mav_state", "valve": "MAV"}
+```
+
+**Response:**
+```json
+{
+  "type": "mav_state",
+  "angle": 45.0,
+  "pulse_width_us": 1300
+}
+```
+
+---
 
 ### `set_mav_angle`
 Sets the angle of the Mechanically Actuated Valve (MAV) servo.
@@ -181,7 +235,7 @@ Closes the MAV to its minimum position (0 degrees).
 ---
 
 ### `mav_neutral`
-Sets the MAV to its neutral position (1520 µs).
+Sets the MAV to its neutral position (1300 µs).
 
 **Format:**
 ```json

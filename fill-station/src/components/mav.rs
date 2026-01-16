@@ -3,6 +3,24 @@ use std::fs;
 use std::path::PathBuf;
 use tracing::{info, warn};
 
+// Motor Configuration Constants (DS2685BLHV)
+#[allow(dead_code)]
+const FREQUENCY_HZ: u32 = 330;
+#[allow(dead_code)]
+const NEUTRAL_US: u32 = 1520;
+#[allow(dead_code)]
+const OPEN_90_US: u32 = 2000;
+#[allow(dead_code)]
+const CLOSE_0_US: u32 = 1000;
+#[allow(dead_code)]
+const MAX_US: u32 = 2200;
+#[allow(dead_code)]
+const MIN_US: u32 = 800;
+
+// Calculated Period in Nanoseconds
+#[allow(dead_code)]
+const PERIOD_NS: u32 = 1_000_000_000 / FREQUENCY_HZ;
+
 /// MAV (Mechanically Actuated Valve) component controlling a servo via PWM
 pub struct Mav {
     name: String,
@@ -44,26 +62,24 @@ impl Mav {
             pwm_path: pwm_path.clone(),
         };
 
-        // 2. Set Period to 330 Hz (3,030,303 ns)
-        // Note: Period must be set before duty cycle if current duty_cycle > new period? 
-        // Best practice: Disable, set period, set duty, enable.
+        // 2. Set Period
         mav.set_enable(false).await?;
-        mav.write_file("period", "3030303").await.context("Failed to set period")?;
+        mav.write_file("period", &PERIOD_NS.to_string()).await.context("Failed to set period")?;
         
-        // 3. Initialize to Neutral (1500 us -> 1,500,000 ns)
-        mav.set_pulse_width_us(1500).await?;
+        // 3. Initialize to Neutral
+        mav.set_pulse_width_us(NEUTRAL_US).await?;
 
         // 4. Enable
         mav.set_enable(true).await?;
         
-        info!("MAV '{}' initialized on PWM {}/{}", name, chip_nr, channel_nr);
+        info!("MAV '{}' initialized on PWM {}/{} (Freq: {} Hz)", name, chip_nr, channel_nr, FREQUENCY_HZ);
 
         Ok(mav)
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
     pub async fn new(chip_nr: u32, channel_nr: u32, name: &str) -> Result<Self> {
-        info!("MAV '{}' mocked for non-Linux platform", name);
+        info!("MAV '{}' mocked for non-Linux platform (Freq: {} Hz)", name, FREQUENCY_HZ);
         Ok(Self {
             name: name.to_string(),
             chip_nr,
@@ -72,53 +88,12 @@ impl Mav {
         })
     }
 
-    #[allow(dead_code)] // Internal use for ramping
-    async fn get_current_pulse_width_us(&self) -> Result<u32> {
-        #[cfg(any(target_os = "linux", target_os = "android"))]
-        {
-             let content = fs::read_to_string(self.pwm_path.join("duty_cycle")).context("Failed to read duty cycle")?;
-             let ns: u32 = content.trim().parse().context("Failed to parse duty cycle")?;
-             Ok(ns / 1000)
-        }
-        #[cfg(not(any(target_os = "linux", target_os = "android")))]
-        {
-            Ok(1500) // Mock default
-        }
-    }
-
-    /// Set pulse width with safe ramping
-    async fn set_pulse_width_ramped(&self, target_us: u32) -> Result<()> {
-         let current_us = self.get_current_pulse_width_us().await.unwrap_or(1500); // Default to neutral if read fails
-         
-         // If difference is large, ramp
-         if (current_us as i32 - target_us as i32).abs() > 100 {
-             let step = 50; // Microseconds per step
-             let delay = std::time::Duration::from_millis(20); // 20ms per step
-             
-             let mut current = current_us as i32;
-             let target = target_us as i32;
-             
-             while (current - target).abs() > step {
-                 if current < target {
-                     current += step;
-                 } else {
-                     current -= step;
-                 }
-                 self.set_pulse_width_us(current as u32).await?;
-                 smol::Timer::after(delay).await;
-             }
-         }
-         
-         // Set final target
-         self.set_pulse_width_us(target_us).await
-    }
-
     /// Set pulse width in microseconds
-    /// Limits: 800us to 2200us
     pub async fn set_pulse_width_us(&self, us: u32) -> Result<()> {
-        if us < 800 || us > 2200 {
-            warn!("MAV '{}' requested pulse width {} us out of safe range (800-2200)", self.name, us);
-            return Ok(()); // Ignore unsafe commands
+        if us < MIN_US || us > MAX_US {
+            warn!("MAV '{}' requested pulse width {} us out of safe range ({}-{})", 
+                  self.name, us, MIN_US, MAX_US);
+            return Ok(()); 
         }
 
         let ns = us * 1000;
@@ -136,33 +111,65 @@ impl Mav {
         Ok(())
     }
 
-    /// Open valve (90 degrees, 2000 us)
+    /// Open valve (90 degrees)
     pub async fn open(&self) -> Result<()> {
-        // 90 degrees -> 2000 us
-        self.set_pulse_width_ramped(2000).await
+        self.set_pulse_width_us(OPEN_90_US).await
     }
 
-    /// Close valve (0 degrees, 1000 us)
+    /// Close valve (0 degrees)
     pub async fn close(&self) -> Result<()> {
-        // 0 degrees -> 1000 us
-        self.set_pulse_width_ramped(1000).await
+        self.set_pulse_width_us(CLOSE_0_US).await
     }
 
-    /// Set valve to neutral position (1500 us)
+    /// Set valve to neutral position
     pub async fn neutral(&self) -> Result<()> {
-        self.set_pulse_width_ramped(1500).await
+        self.set_pulse_width_us(NEUTRAL_US).await
     }
 
     /// Set specific angle (0-90 degrees)
-    /// Maps 0-90 to 1000-2000 us
     pub async fn set_angle(&self, angle: f32) -> Result<()> {
         // Clamp angle to 0-90
         let angle = angle.max(0.0).min(90.0);
         
-        // Map 0-90 -> 1000-2000
-        let us = 1000.0 + (angle * (1000.0 / 90.0));
+        // Map 0-90 -> CLOSE_0_US - OPEN_90_US
+        let range_us = (OPEN_90_US as f32) - (CLOSE_0_US as f32);
+        let us = (CLOSE_0_US as f32) + (angle * (range_us / 90.0));
         
-        self.set_pulse_width_ramped(us as u32).await
+        self.set_pulse_width_us(us as u32).await
+    }
+
+    /// Get current pulse width in microseconds
+    pub async fn get_pulse_width_us(&self) -> Result<u32> {
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        {
+            let content = self.read_file("duty_cycle").await.context("Failed to read duty cycle")?;
+            let ns: u32 = content.trim().parse().context("Failed to parse duty cycle")?;
+            Ok(ns / 1000)
+        }
+        
+        #[cfg(not(any(target_os = "linux", target_os = "android")))]
+        {
+            // Return a dummy value for mock
+            Ok(NEUTRAL_US)
+        }
+    }
+
+    /// Get current angle in degrees
+    pub async fn get_angle(&self) -> Result<f32> {
+        let us = self.get_pulse_width_us().await?;
+        
+        let close_0 = CLOSE_0_US as f32;
+        let open_90 = OPEN_90_US as f32;
+        let range_us = open_90 - close_0;
+
+        if us <= CLOSE_0_US {
+            Ok(0.0)
+        } else if us >= OPEN_90_US {
+            Ok(90.0)
+        } else {
+            // Angle = (us - close_0) * (90 / range)
+            Ok((us as f32 - close_0) * (90.0 / range_us))
+        }
     }
 
     #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -176,5 +183,12 @@ impl Mav {
         let content = content.to_string();
         smol::unblock(move || fs::write(path, content)).await?;
         Ok(())
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    async fn read_file(&self, file: &str) -> Result<String> {
+        let path = self.pwm_path.join(file);
+        let content = smol::unblock(move || fs::read_to_string(path)).await?;
+        Ok(content)
     }
 }
