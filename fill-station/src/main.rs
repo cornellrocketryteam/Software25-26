@@ -249,15 +249,15 @@ async fn execute_command(
         Command::Ignite => {
             #[cfg(any(target_os = "linux", target_os = "android"))]
             {
-                let _hw = hardware.lock().await;
-                info!("Igniting IG1 and IG2 - DISABLED FOR TESTING");
+                let hw = hardware.lock().await;
+                info!("Igniting both ig1 and ig2...");
                 
                 // Ignite both concurrently so they fire at the same time
-                // let ignite_1 = hw.ig1.ignite();
-                // let ignite_2 = hw.ig2.ignite();
-                // smol::future::zip(ignite_1, ignite_2).await;
+                let ignite_1 = hw.ig1.ignite();
+                let ignite_2 = hw.ig2.ignite();
+                smol::future::zip(ignite_1, ignite_2).await;
                 
-                // info!("Ignition complete");
+                info!("Ignition complete");
             }
             #[cfg(not(any(target_os = "linux", target_os = "android")))]
             {
