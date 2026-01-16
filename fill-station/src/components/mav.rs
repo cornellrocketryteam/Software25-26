@@ -7,11 +7,11 @@ use tracing::{info, warn};
 #[allow(dead_code)]
 const FREQUENCY_HZ: u32 = 330;
 #[allow(dead_code)]
-const NEUTRAL_US: u32 = 1520;
+const NEUTRAL_US: u32 = 1300;
 #[allow(dead_code)]
-const OPEN_90_US: u32 = 2000;
+const OPEN_90_US: u32 = 1800;
 #[allow(dead_code)]
-const CLOSE_0_US: u32 = 1000;
+const CLOSE_0_US: u32 = 800;
 #[allow(dead_code)]
 const MAX_US: u32 = 2200;
 #[allow(dead_code)]

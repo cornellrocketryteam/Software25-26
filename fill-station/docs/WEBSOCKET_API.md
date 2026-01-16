@@ -31,7 +31,7 @@ Query the continuity of a specific igniter.
 *   `continuity`: `true` if circuit is closed (continuity present), `false` otherwise.
 
 ### `ignite`
-Fires both igniters concurrently for 3 seconds.
+Initiates a **non-blocking** ignition sequence. Fires both igniters concurrently for 3 seconds in a background task. 
 
 **Format:**
 ```json
@@ -42,7 +42,9 @@ Fires both igniters concurrently for 3 seconds.
 ```json
 {"type": "success"}
 ```
-*Returns `{"type": "error"}` if the command fails (e.g., non-Linux platform).*
+*   Returns `{"type": "success"}` **immediately** upon starting the sequence.
+*   The ADC stream and other commands will continue to function normally during the 3-second ignition window.
+*   Returns `{"type": "error"}` if the command fails to start (e.g., non-Linux platform).
 
 ---
 
@@ -75,6 +77,7 @@ Stops the ADC data stream for the current client.
 {"type": "success"}
 ```
 
+---
 
 ## Server Push Messages
 
@@ -126,6 +129,13 @@ Command was received and executed successfully.
 ### `error`
 An error occurred during command parsing or execution.
 ```json
+{"type": "error", "message": "Description of what went wrong"}
+```
+
+---
+
+## Solenoid Valve Commands
+
 ### `get_valve_state`
 Query the current state of a solenoid valve (actuation status and continuity).
 
@@ -146,8 +156,6 @@ Query the current state of a solenoid valve (actuation status and continuity).
 *   `continuity`: `true` if continuity detected (signal high).
 
 ---
-
-## Solenoid Valve Commands
 
 ### `actuate_valve`
 Actuates (opens/energizes) or de-actuates (closes/de-energizes) a specific solenoid valve.

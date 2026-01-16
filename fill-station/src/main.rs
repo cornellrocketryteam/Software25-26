@@ -47,8 +47,8 @@ const ADC_RETRY_DELAY_MS: u64 = 10;
 
 /// Pressure sensor scaling for ADC1 Channel 0
 /// Formula: scaled = raw * SCALE_A + OFFSET_A
-const ADC1_CH0_SCALE: f32 = 0.9365126677;
-const ADC1_CH0_OFFSET: f32 = 3.719970194;
+// const ADC1_CH0_SCALE: f32 = 0.9365126677;
+// const ADC1_CH0_OFFSET: f32 = 3.719970194;
 
 /// Pressure sensor scaling for ADC1 Channel 1
 /// Formula: scaled = raw * SCALE_B + OFFSET_B
@@ -247,23 +247,50 @@ async fn execute_command(
 ) -> CommandResponse {
     match command {
         Command::Ignite => {
-            #[cfg(any(target_os = "linux", target_os = "android"))]
-            {
-                let hw = hardware.lock().await;
-                info!("Igniting both ig1 and ig2...");
+            let hw_bg = hardware.clone();
+            smol::spawn(async move {
+                info!("Ignition sequence started (background)...");
+
+                #[cfg(any(target_os = "linux", target_os = "android"))]
+                {
+                    // 1. Lock and Turn ON
+                    {
+                        let hw = hw_bg.lock().await;
+                        // Use join to set both simultaneously if possible, or just sequential is fine generally 
+                        // as await won't block long for GPIO
+                        if let Err(e) = hw.ig1.set_actuated(true).await {
+                             error!("Failed to actuate igniter 1: {}", e);
+                        }
+                        if let Err(e) = hw.ig2.set_actuated(true).await {
+                             error!("Failed to actuate igniter 2: {}", e);
+                        }
+                    }
+
+                    // 2. Wait 3 seconds (without lock)
+                    Timer::after(Duration::from_secs(3)).await;
+
+                    // 3. Lock and Turn OFF
+                    {
+                        let hw = hw_bg.lock().await;
+                        if let Err(e) = hw.ig1.set_actuated(false).await {
+                             error!("Failed to turn off igniter 1: {}", e);
+                        }
+                        if let Err(e) = hw.ig2.set_actuated(false).await {
+                             error!("Failed to turn off igniter 2: {}", e);
+                        }
+                    }
+                }
+                #[cfg(not(any(target_os = "linux", target_os = "android")))]
+                {
+                    let _ = hw_bg;
+                    warn!("Ignite command not supported on this platform");
+                     // Simulate delay for mock
+                    Timer::after(Duration::from_secs(3)).await;
+                }
                 
-                // Ignite both concurrently so they fire at the same time
-                let ignite_1 = hw.ig1.ignite();
-                let ignite_2 = hw.ig2.ignite();
-                smol::future::zip(ignite_1, ignite_2).await;
-                
-                info!("Ignition complete");
-            }
-            #[cfg(not(any(target_os = "linux", target_os = "android")))]
-            {
-                let _ = hardware; // Suppress unused warning on non-Linux platforms
-                warn!("Ignite command not supported on this platform");
-            }
+                info!("Ignition sequence completed");
+            }).detach();
+
             CommandResponse::Success
         }
         Command::GetIgniterContinuity { id } => {
@@ -598,12 +625,8 @@ async fn try_read_all_adcs(
         let raw = hw.adc1.read_raw_averaged(channel, ADC_GAIN, ADC_DATA_RATE, ADC_AVG_SAMPLES)?;
         let voltage = (raw as f32) * ADC_GAIN.lsb_size();
         
-        // Apply scaling for pressure sensors on channels 0 and 1
-        let scaled = match i {
-            0 => Some(raw as f32 * ADC1_CH0_SCALE + ADC1_CH0_OFFSET),
-            1 => Some(raw as f32 * ADC1_CH1_SCALE + ADC1_CH1_OFFSET),
-            _ => None, // Channels 2 and 3 have no scaling
-        };
+        // Apply ADC1 Channel 1 scaling to all channels
+        let scaled = Some(raw as f32 * ADC1_CH1_SCALE + ADC1_CH1_OFFSET);
         
         adc1_readings[i] = ChannelReading { raw, voltage, scaled };
     }
@@ -613,7 +636,10 @@ async fn try_read_all_adcs(
         let raw = hw.adc2.read_raw_averaged(channel, ADC_GAIN, ADC_DATA_RATE, ADC_AVG_SAMPLES)?;
         let voltage = (raw as f32) * ADC_GAIN.lsb_size();
         
-        adc2_readings[i] = ChannelReading { raw, voltage, scaled: None };
+        // Apply ADC1 Channel 1 scaling to all channels
+        let scaled = Some(raw as f32 * ADC1_CH1_SCALE + ADC1_CH1_OFFSET);
+        
+        adc2_readings[i] = ChannelReading { raw, voltage, scaled };
     }
     
     Ok((adc1_readings, adc2_readings))

@@ -45,18 +45,12 @@ impl Igniter {
             .expect("We know one value exists since we are requesting one value")
     }
 
-    pub async fn ignite(&self) {
+    /// Set the ignition state (true = firing, false = off)
+    pub async fn set_actuated(&self, enable: bool) -> Result<()> {
         self.signal_line
-            .set_values([true])
-            .await
-            .expect("The GPIO File Descriptor should not be able to close?");
-
-        Timer::after(Duration::from_secs(3)).await;
-
-        self.signal_line
-            .set_values([false])
-            .await
-            .expect("The GPIO File Descriptor should not be able to close?");
+            .set_values([enable])
+            .await?;
+        Ok(())
     }
 
     pub async fn is_igniting(&self) -> bool {
