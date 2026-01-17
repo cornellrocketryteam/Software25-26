@@ -129,7 +129,7 @@ impl Mav {
     /// Set specific angle (0-90 degrees)
     pub async fn set_angle(&self, angle: f32) -> Result<()> {
         // Clamp angle to 0-90
-        let angle = angle.max(0.0).min(90.0);
+        let angle = angle.max(0.0).min(123.0);
         
         // Map 0-90 -> CLOSE_0_US - OPEN_90_US
         let range_us = (OPEN_90_US as f32) - (CLOSE_0_US as f32);
