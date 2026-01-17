@@ -93,26 +93,54 @@ void pollRealRadio() {
 }
 
 void loop() {
-    // Move to 90 degrees
-    azMotor.moveAngleTo(90.0);
-    elMotor.moveAngleTo(30.0);
+    unsigned long now = millis();
 
-    // Wait until motors finish
-    while (azMotor.isRunning() || elMotor.isRunning()) {
-        azMotor.run();
-        elMotor.run();
+    // Use GPS coords if using module, else default to (0,0,0)
+    if (USE_GPS) {
+        if (gps.checkUblox() && gps.getPVT()) {
+            ratsLLA.lat = gps.getLatitude() / 1e7;
+            ratsLLA.lon = gps.getLongitude() / 1e7;
+            ratsLLA.alt = gps.getAltitude() / 1000.0;
+        }
     }
-    delay(1000);
 
-    // Move back to 0 degrees
-    azMotor.moveAngleTo(0.0);
-    elMotor.moveAngleTo(0.0);
+    // either use packet sim data or real data from radio
+    if (now - lastPacketTimeMs >= PACKET_PERIOD_MS) {
+        lastPacketTimeMs = now;
 
-    while (azMotor.isRunning() || elMotor.isRunning()) {
-        azMotor.run();
-        elMotor.run();
+        if (USE_PACKET_SIMULATOR) {
+            pollPacketSimulator();
+            newPacketAvailable = true;
+        } else {
+            pollRealRadio();
+        }
     }
-    delay(1000);
+
+    // Update Kalman when packet arrives
+    static AzEl targetAzEl; // stores last target
+    if (newPacketAvailable) {
+        newPacketAvailable = false;
+
+        Vec3 enuPos = GeoMath::llatoENU(ratsLLA, rocketLLA);
+        kalmanRocket.updatePosition(now * 0.001, enuPos, 25.0);
+
+        // Predict slightly ahead to account for motion
+        State6 futureState = kalmanRocket.predictFuture(0.05);
+        Vec3 filteredPos = {futureState.d[0], futureState.d[1], futureState.d[2]};
+
+        targetAzEl = GeoMath::enuToAzEl(filteredPos);
+
+        // restrict elevation
+        if (targetAzEl.elevation < EL_MIN) targetAzEl.elevation = EL_MIN;
+        if (targetAzEl.elevation > EL_MAX) targetAzEl.elevation = EL_MAX;
+    }
+
+    azMotor.moveAngleTo(targetAzEl.azimuth);
+    elMotor.moveAngleTo(targetAzEl.elevation);
+
+    // Run motors
+    azMotor.run();
+    elMotor.run();
 }
 
 
