@@ -49,7 +49,7 @@ Initiates a **non-blocking** ignition sequence. Fires both igniters concurrently
 ---
 
 ### `start_adc_stream`
-Begins pushing real-time, 10x averaged ADC data to the connecting client at 10 Hz.
+Begins pushing real-time ADC data to the connecting client at 10 Hz.
 
 **Format:**
 ```json
@@ -82,7 +82,7 @@ Stops the ADC data stream for the current client.
 ## Server Push Messages
 
 ### `adc_data`
-Sent periodically (at 10 Hz) after a `start_adc_stream` command. Note that each reading is an **arithmetic average of 10 samples** to reduce signal noise.
+Sent periodically (at 10 Hz) after a `start_adc_stream` command.
 
 **Format:**
 ```json
@@ -112,7 +112,7 @@ Sent periodically (at 10 Hz) after a `start_adc_stream` command. Note that each 
 **Field Descriptions:**
 - `timestamp_ms`: Unix timestamp in milliseconds when readings were taken.
 - `valid`: `true` if readings are fresh, `false` if ADC read failed.
-- `raw`: Raw 12-bit ADC value (-2048 to 2047), averaged over 10 samples.
+- `raw`: Raw 12-bit ADC value (-2048 to 2047).
 - `voltage`: Calculated voltage based on gain setting.
 - `scaled`: Pressure sensor value (only for ADC1 Ch0 and Ch1, `null` otherwise).
 

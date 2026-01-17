@@ -210,46 +210,11 @@ impl Ads1015 {
         
         // Swap bytes back to big-endian and shift right by 4 
         // (ADS1015 is 12-bit, left-aligned in 16 bits)
-        let mut raw = (raw_word.swap_bytes() as i16) >> 4;
-
-        // Clamp negative values to 0 for single-ended channels to avoid confusing users
-        // Differential measurements (e.g. Diff0_1) can still be negative
-        match channel {
-            Channel::Ain0 | Channel::Ain1 | Channel::Ain2 | Channel::Ain3 => {
-                if raw < 0 {
-                    raw = 0;
-                }
-            }
-            _ => {}
-        }
+        let raw = (raw_word.swap_bytes() as i16) >> 4;
         
         Ok(raw)
     }
 
-    /// Read raw ADC value with averaging
-    ///
-    /// # Arguments
-    /// * `channel` - ADC channel to read
-    /// * `gain` - Gain setting
-    /// * `data_rate` - Data rate setting
-    /// * `samples` - Number of samples to average
-    ///
-    /// Returns the averaged raw value
-    pub fn read_raw_averaged(&mut self, channel: Channel, gain: Gain, data_rate: DataRate, samples: usize) -> Result<i16> {
-        if samples == 0 {
-            return Ok(0);
-        }
-        if samples == 1 {
-            return self.read_raw(channel, gain, data_rate);
-        }
-
-        let mut sum: i32 = 0;
-        for _ in 0..samples {
-            sum += self.read_raw(channel, gain, data_rate)? as i32;
-        }
-
-        Ok((sum / samples as i32) as i16)
-    }
 
     /// Read voltage from the specified channel
     ///
@@ -311,9 +276,7 @@ impl Ads1015 {
         anyhow::bail!("ADS1015 is only supported on Linux/Android")
     }
 
-    pub fn read_raw_averaged(&mut self, _channel: Channel, _gain: Gain, _data_rate: DataRate, _samples: usize) -> Result<i16> {
-        anyhow::bail!("ADS1015 is only supported on Linux/Android")
-    }
+
 
     pub fn is_ready(&mut self) -> Result<bool> {
         anyhow::bail!("ADS1015 is only supported on Linux/Android")

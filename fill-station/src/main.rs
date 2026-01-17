@@ -39,8 +39,7 @@ const ADC_DATA_RATE: DataRate = DataRate::Sps3300; // Maximum speed
 /// Maximum retry attempts for failed ADC reads before logging error
 const ADC_MAX_RETRIES: u32 = 5;
 
-/// Number of samples to average for each reading
-const ADC_AVG_SAMPLES: usize = 1;
+
 
 /// Delay between retry attempts (milliseconds)
 const ADC_RETRY_DELAY_MS: u64 = 10;
@@ -622,10 +621,10 @@ async fn try_read_all_adcs(
     
     // Read ADC1 channels
     for (i, &channel) in channels.iter().enumerate() {
-        let raw = hw.adc1.read_raw_averaged(channel, ADC_GAIN, ADC_DATA_RATE, ADC_AVG_SAMPLES)?;
+        let raw = hw.adc1.read_raw(channel, ADC_GAIN, ADC_DATA_RATE)?;
         let voltage = (raw as f32) * ADC_GAIN.lsb_size();
         
-        // Apply ADC1 Channel 1 scaling to all channels
+        // Apply ADC1 Channel 1 scaling to all channels (INTENTIONAL BY DESIGN)
         let scaled = Some(raw as f32 * ADC1_CH1_SCALE + ADC1_CH1_OFFSET);
         
         adc1_readings[i] = ChannelReading { raw, voltage, scaled };
@@ -633,10 +632,10 @@ async fn try_read_all_adcs(
     
     // Read ADC2 channels
     for (i, &channel) in channels.iter().enumerate() {
-        let raw = hw.adc2.read_raw_averaged(channel, ADC_GAIN, ADC_DATA_RATE, ADC_AVG_SAMPLES)?;
+        let raw = hw.adc2.read_raw(channel, ADC_GAIN, ADC_DATA_RATE)?;
         let voltage = (raw as f32) * ADC_GAIN.lsb_size();
         
-        // Apply ADC1 Channel 1 scaling to all channels
+        // Apply ADC1 Channel 1 scaling to all channels (INTENTIONAL BY DESIGN)
         let scaled = Some(raw as f32 * ADC1_CH1_SCALE + ADC1_CH1_OFFSET);
         
         adc2_readings[i] = ChannelReading { raw, voltage, scaled };
