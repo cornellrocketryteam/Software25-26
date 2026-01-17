@@ -40,7 +40,7 @@ const ADC_DATA_RATE: DataRate = DataRate::Sps3300; // Maximum speed
 const ADC_MAX_RETRIES: u32 = 5;
 
 /// Number of samples to average for each reading
-const ADC_AVG_SAMPLES: usize = 10;
+const ADC_AVG_SAMPLES: usize = 1;
 
 /// Delay between retry attempts (milliseconds)
 const ADC_RETRY_DELAY_MS: u64 = 10;

@@ -210,7 +210,18 @@ impl Ads1015 {
         
         // Swap bytes back to big-endian and shift right by 4 
         // (ADS1015 is 12-bit, left-aligned in 16 bits)
-        let raw = (raw_word.swap_bytes() as i16) >> 4;
+        let mut raw = (raw_word.swap_bytes() as i16) >> 4;
+
+        // Clamp negative values to 0 for single-ended channels to avoid confusing users
+        // Differential measurements (e.g. Diff0_1) can still be negative
+        match channel {
+            Channel::Ain0 | Channel::Ain1 | Channel::Ain2 | Channel::Ain3 => {
+                if raw < 0 {
+                    raw = 0;
+                }
+            }
+            _ => {}
+        }
         
         Ok(raw)
     }
