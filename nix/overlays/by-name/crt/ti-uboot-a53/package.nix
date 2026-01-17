@@ -13,6 +13,10 @@ buildUBoot {
   defconfig = defconfigName;
   preConfigure = ''
     cp ${defconfigFile} configs/${defconfigName}
+    for f in $(find arch/arm/dts -name "k3-am642-sk.dts" -o -name "k3-am642-r5-sk.dts"); do
+      echo "" >> $f
+      echo "&epwm5 { status = \"disabled\"; };" >> $f
+    done
   '';
   extraPatches = [
     ./patches/ti-board-detect-fixes.patch
