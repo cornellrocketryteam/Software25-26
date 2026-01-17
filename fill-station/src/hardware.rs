@@ -81,7 +81,7 @@ impl Hardware {
         let sv5 = SolenoidValve::new(
             &chip1, 48,
             &chip1, 46,
-            LinePull::NormallyOpen
+            LinePull::NormallyClosed
         ).await?;
 
         // MAV (Chip 0, Channel 0)
