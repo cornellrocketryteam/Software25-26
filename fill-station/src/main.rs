@@ -9,8 +9,9 @@ use smol::stream::StreamExt;
 use smol::Timer;
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use smol::lock::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tracing::{Instrument, Level, debug, error, info, span, warn};
 use tracing_subscriber::fmt;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -44,15 +45,20 @@ const ADC_MAX_RETRIES: u32 = 5;
 /// Delay between retry attempts (milliseconds)
 const ADC_RETRY_DELAY_MS: u64 = 10;
 
-/// Pressure sensor scaling for ADC1 Channel 0
+/// Pressure sensor scaling for a PT with range to 1500
 /// Formula: scaled = raw * SCALE_A + OFFSET_A
-// const ADC1_CH0_SCALE: f32 = 0.9365126677;
-// const ADC1_CH0_OFFSET: f32 = 3.719970194;
+const PT1500_SCALE: f32 = 0.909754;
+const PT1500_OFFSET: f32 = 5.08926;
 
-/// Pressure sensor scaling for ADC1 Channel 1
+/// Pressure sensor scaling for a PT with range to 2000
 /// Formula: scaled = raw * SCALE_B + OFFSET_B
-const ADC1_CH1_SCALE: f32 = 0.6285508522;
-const ADC1_CH1_OFFSET: f32 = 1.783227975;
+const PT2000_SCALE: f32 = 1.22124;
+const PT2000_OFFSET: f32 = 5.37052;
+
+/// Pressure sensor scaling for a LoadCell
+/// Formula: scaled = raw * SCALE_C + OFFSET_C
+const LOADCELL_SCALE: f32 = 1.69661;
+const LOADCELL_OFFSET: f32 = 75.37882;
 
 // ============================================================================
 // SHARED ADC STATE
@@ -105,6 +111,15 @@ fn main() -> Result<()> {
         // Create shared ADC readings state
         let adc_readings = Arc::new(Mutex::new(AdcReadings::default()));
 
+        // Active client tracker
+        let active_client_count = Arc::new(AtomicUsize::new(0));
+
+        // Spawn Safety Monitor Task
+        info!("Starting Safety Monitor task...");
+        let safety_hw = hardware.clone();
+        let safety_counts = active_client_count.clone();
+        smol::spawn(safety_monitor_task(safety_hw, safety_counts)).detach();
+
         // Spawn background ADC monitoring task
         info!("Starting ADC monitoring task at {} Hz...", ADC_SAMPLE_RATE_HZ);
         let adc_task_hw = hardware.clone();
@@ -140,7 +155,8 @@ fn main() -> Result<()> {
             let span = span!(Level::INFO, "websocket", client_ip);
             let hw = hardware.clone();
             let adc = adc_readings.clone();
-            smol::spawn(handle_socket(stream, hw, adc).instrument(span)).detach();
+            let active_clients = active_client_count.clone();
+            smol::spawn(handle_socket(stream, hw, adc, active_clients).instrument(span)).detach();
         }
     })
 }
@@ -150,17 +166,26 @@ async fn handle_socket(
     mut stream: WebSocketStream<Async<TcpStream>>, 
     hardware: Arc<Mutex<Hardware>>,
     adc_readings: Arc<Mutex<AdcReadings>>,
+    active_client_count: Arc<AtomicUsize>,
 ) {
     info!("Client connected");
+    active_client_count.fetch_add(1, Ordering::SeqCst);
     
     // Track streaming state and last sent timestamp
     let mut streaming_enabled = false;
     let mut last_sent_timestamp = 0u64;
+    let mut last_heartbeat = Instant::now();
     
     // Small timeout for non-blocking message receive
     let poll_interval = Duration::from_millis(50);
     
     loop {
+        // specific check for 15s timeout
+        if last_heartbeat.elapsed() > Duration::from_secs(15) {
+             error!("Client timed out (no heartbeat for 15s) - disconnecting");
+             break;
+        }
+
         // Try to receive a message with timeout
         let msg_future = stream.next();
         let timeout_future = Timer::after(poll_interval);
@@ -178,6 +203,8 @@ async fn handle_socket(
             }
         ).await {
             Some(Ok(Message::Text(message))) => {
+                // Reset heartbeat timer on any valid message
+                last_heartbeat = Instant::now();
                 let response = process_message(&message, &hardware, &adc_readings, &mut streaming_enabled).await;
                 if let Err(e) = send_response(&mut stream, response).await {
                     error!("Error sending message: {}", e);
@@ -216,7 +243,8 @@ async fn handle_socket(
         }
     }
     
-    info!("Client disconnected")
+    info!("Client disconnected");
+    active_client_count.fetch_sub(1, Ordering::SeqCst);
 }
 
 async fn process_message(
@@ -359,7 +387,7 @@ async fn execute_command(
                     "sv2" => Some((hw.sv2.is_actuated().await, hw.sv2.check_continuity().await)),
                     "sv3" => Some((hw.sv3.is_actuated().await, hw.sv3.check_continuity().await)),
                     "sv4" => Some((hw.sv4.is_actuated().await, hw.sv4.check_continuity().await)),
-                    "sv5" => Some((hw.sv5.is_actuated().await, hw.sv5.check_continuity().await)),
+                    "sv5" => Some((hw.sv5.is_actuated().await.map(|b| !b), hw.sv5.check_continuity().await)), // using NOT operator for a external reason
                     _ => None,
                 };
 
@@ -510,6 +538,10 @@ async fn execute_command(
                  CommandResponse::Success
              }
         }
+        Command::Heartbeat => {
+            // Heartbeat command just keeps the connection alive
+            CommandResponse::Success
+        }
     }
 }
 
@@ -521,6 +553,74 @@ async fn send_response(
     let json = serde_json::to_string(&response)?;
     socket.send(Message::Text(json.into())).await?;
     Ok(())
+}
+
+// ============================================================================
+// SAFETY MONITOR
+// ============================================================================
+
+async fn safety_monitor_task(
+    hardware: Arc<Mutex<Hardware>>, 
+    active_client_count: Arc<AtomicUsize>
+) {
+    let mut disconnect_start: Option<Instant> = None;
+    let mut safety_triggered = false;
+
+    loop {
+        let count = active_client_count.load(Ordering::SeqCst);
+        
+        if count == 0 {
+            // If no clients, verify how long we've been disconnected
+            if disconnect_start.is_none() {
+                info!("No active clients. Starting safety timer.");
+                disconnect_start = Some(Instant::now());
+                safety_triggered = false;
+            }
+
+            if let Some(start) = disconnect_start {
+                if !safety_triggered && start.elapsed() > Duration::from_secs(15) {
+                    warn!("SAFETY TIMEOUT (15s) - Executing Emergency Shutdown");
+                    perform_emergency_shutdown(&hardware).await;
+                    safety_triggered = true;
+                }
+            }
+        } else {
+            // Client(s) connected
+            if disconnect_start.is_some() {
+                info!("Client connected. Safety timer cancelled.");
+                disconnect_start = None;
+                safety_triggered = false;
+            }
+        }
+
+        Timer::after(Duration::from_millis(500)).await;
+    }
+}
+
+async fn perform_emergency_shutdown(hardware: &Arc<Mutex<Hardware>>) {
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        let hw = hardware.lock().await;
+        info!("EMERGENCY SHUTDOWN: Closing all Valves");
+        
+        // Close all SVs (Signal Low)
+        // Note: We use actuate(false) which sets standard "de-actuated" state.
+        // If NormallyClosed (default), this sets pin false (Low).
+        let _ = hw.sv1.actuate(false).await;
+        let _ = hw.sv2.actuate(false).await;
+        let _ = hw.sv3.actuate(false).await;
+        let _ = hw.sv4.actuate(false).await;
+        let _ = hw.sv5.actuate(false).await;
+        
+        // Close MAV
+        let _ = hw.mav.close().await;
+    }
+    
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    {
+        let _ = hardware;
+        warn!("MOCK EMERGENCY SHUTDOWN triggered");
+    }
 }
 
 // ============================================================================
@@ -624,8 +724,12 @@ async fn try_read_all_adcs(
         let raw = hw.adc1.read_raw(channel, ADC_GAIN, ADC_DATA_RATE)?;
         let voltage = (raw as f32) * ADC_GAIN.lsb_size();
         
-        // Apply ADC1 Channel 1 scaling to all channels (INTENTIONAL BY DESIGN)
-        let scaled = Some(raw as f32 * ADC1_CH1_SCALE + ADC1_CH1_OFFSET);
+        // Apply PT1500 scaling to channel 0 on ADC 1 and PT2000 scaling on other channels
+        let scaled = if i == 0 {
+            Some(raw as f32 * PT1500_SCALE + PT1500_OFFSET)
+        } else {
+            Some(raw as f32 * PT2000_SCALE + PT2000_OFFSET)
+        };
         
         adc1_readings[i] = ChannelReading { raw, voltage, scaled };
     }
@@ -635,8 +739,12 @@ async fn try_read_all_adcs(
         let raw = hw.adc2.read_raw(channel, ADC_GAIN, ADC_DATA_RATE)?;
         let voltage = (raw as f32) * ADC_GAIN.lsb_size();
         
-        // Apply ADC1 Channel 1 scaling to all channels (INTENTIONAL BY DESIGN)
-        let scaled = Some(raw as f32 * ADC1_CH1_SCALE + ADC1_CH1_OFFSET);
+        // Apply Loadcell Scaling to channel 1 on ADC 2 and PT2000 scaling on other channels
+        let scaled = if i == 1 {
+            Some(raw as f32 * LOADCELL_SCALE + LOADCELL_OFFSET)
+        } else {
+            Some(raw as f32 * PT2000_SCALE + PT2000_OFFSET)
+        };
         
         adc2_readings[i] = ChannelReading { raw, voltage, scaled };
     }

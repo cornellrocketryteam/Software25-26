@@ -205,10 +205,14 @@ const ADC_RETRY_DELAY_MS: u64 = 10;           // Retry delay
 
 ### Pressure Sensor Calibration (`src/main.rs`)
 ```rust
-const ADC1_CH0_SCALE: f32 = 0.9365126677;     // Channel 0 slope
-const ADC1_CH0_OFFSET: f32 = 3.719970194;     // Channel 0 offset
-const ADC1_CH1_SCALE: f32 = 0.6285508522;     // Channel 1 slope
-const ADC1_CH1_OFFSET: f32 = 1.783227975;     // Channel 1 offset
+const PT1500_SCALE: f32 = 0.909754;      // PT1500 Scale (ADC1 Ch0)
+const PT1500_OFFSET: f32 = 5.08926;      // PT1500 Offset
+
+const PT2000_SCALE: f32 = 1.22124;       // PT2000 Scale (Other PTs)
+const PT2000_OFFSET: f32 = 5.37052;      // PT2000 Offset
+
+const LOADCELL_SCALE: f32 = 1.69661;     // LoadCell Scale (ADC2 Ch1)
+const LOADCELL_OFFSET: f32 = 75.37882;   // LoadCell Offset
 ```
 
 ### Hardware Pins (`src/hardware.rs`)

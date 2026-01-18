@@ -49,6 +49,8 @@ pub enum Command {
         /// Name of the valve (e.g. "SV1")
         valve: String,
     },
+    /// Client heartbeat to indicate connection is alive
+    Heartbeat,
 }
 
 /// Response sent back to WebSocket clients after command execution

@@ -9,13 +9,13 @@ const FREQUENCY_HZ: u32 = 330;
 #[allow(dead_code)]
 const NEUTRAL_US: u32 = 1300;
 #[allow(dead_code)]
-const OPEN_90_US: u32 = 1800;
+const OPEN_90_US: u32 = 922;
 #[allow(dead_code)]
-const CLOSE_0_US: u32 = 800;
+const CLOSE_0_US: u32 = 1922;
 #[allow(dead_code)]
 const MAX_US: u32 = 2200;
 #[allow(dead_code)]
-const MIN_US: u32 = 800;
+const MIN_US: u32 = 800; 
 
 // Calculated Period in Nanoseconds
 #[allow(dead_code)]
@@ -126,14 +126,24 @@ impl Mav {
         self.set_pulse_width_us(NEUTRAL_US).await
     }
 
-    /// Set specific angle (0-90 degrees)
+    /// Set specific angle (0-Max degrees)
     pub async fn set_angle(&self, angle: f32) -> Result<()> {
-        // Clamp angle to 0-90
-        let angle = angle.max(0.0).min(123.0);
+        let close_0 = CLOSE_0_US as f32;
+        let open_90 = OPEN_90_US as f32;
+        let min_us = MIN_US as f32;
+        let max_us = MAX_US as f32;
         
-        // Map 0-90 -> CLOSE_0_US - OPEN_90_US
-        let range_us = (OPEN_90_US as f32) - (CLOSE_0_US as f32);
-        let us = (CLOSE_0_US as f32) + (angle * (range_us / 90.0));
+        let range_90 = open_90 - close_0;
+        
+        // Calculate max logical angle based on which direction is "open"
+        let limit_us = if range_90 < 0.0 { min_us } else { max_us };
+        let max_angle = (limit_us - close_0) * (90.0 / range_90);
+
+        // Clamp angle to 0-Max
+        let angle = angle.max(0.0).min(max_angle);
+        
+        // Map Angle -> US
+        let us = close_0 + (angle * (range_90 / 90.0));
         
         self.set_pulse_width_us(us as u32).await
     }
@@ -156,19 +166,23 @@ impl Mav {
 
     /// Get current angle in degrees
     pub async fn get_angle(&self) -> Result<f32> {
-        let us = self.get_pulse_width_us().await?;
+        let us = self.get_pulse_width_us().await? as f32;
         
         let close_0 = CLOSE_0_US as f32;
         let open_90 = OPEN_90_US as f32;
-        let range_us = open_90 - close_0;
+        let range_90 = open_90 - close_0;
 
-        if us <= CLOSE_0_US {
-            Ok(0.0)
-        } else if us >= OPEN_90_US {
-            Ok(90.0)
+        // Check if "over closed" (past logical 0 in the closed direction)
+        let is_over_closed = if range_90 < 0.0 {
+            us > close_0
         } else {
-            // Angle = (us - close_0) * (90 / range)
-            Ok((us as f32 - close_0) * (90.0 / range_us))
+            us < close_0
+        };
+
+        if is_over_closed {
+            Ok(0.0)
+        } else {
+            Ok((us - close_0) * (90.0 / range_90))
         }
     }
 

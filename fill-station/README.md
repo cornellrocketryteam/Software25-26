@@ -129,12 +129,31 @@ All configuration constants are at the top of `src/main.rs`:
 const ADC_SAMPLE_RATE_HZ: u64 = 10;  // Change to 20, 50, 100...
 
 // Pressure sensor calibration
-const ADC1_CH0_SCALE: f32 = 0.9365126677;
-const ADC1_CH0_OFFSET: f32 = 3.719970194;
-// ... etc
+// Pressure sensor scaling for PT1500
+const PT1500_SCALE: f32 = 0.909754;
+const PT1500_OFFSET: f32 = 5.08926;
+
+// Pressure sensor scaling for PT2000
+const PT2000_SCALE: f32 = 1.22124;
+const PT2000_OFFSET: f32 = 5.37052;
+
+// Load Cell scaling
+const LOADCELL_SCALE: f32 = 1.69661;
+const LOADCELL_OFFSET: f32 = 75.37882;
 ```
 
 Easy to modify without diving into code logic.
+
+## Safety Features
+
+### Connection Monitoring
+The system implements a **deadman switch** safety feature:
+- If a client is connected but sends no messages for **15 seconds** (connection timeout):
+  - All Solenoid Valves (SV1-SV5) are closed.
+  - The MAV is closed.
+  - The client is disconnected.
+- Clients should send a `{"command": "heartbeat"}` message periodically (e.g., every 5-10 seconds) if they are not sending other commands.
+
 
 ## Testing
 

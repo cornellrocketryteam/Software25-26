@@ -37,20 +37,24 @@ const ADC_MAX_RETRIES: u32 = 5;
 const ADC_AVG_SAMPLES: usize = 10;   // 10x averaging per reading
 const ADC_RETRY_DELAY_MS: u64 = 10;
 
-// Pressure sensor scaling for ADC1 Channel 0
-const ADC1_CH0_SCALE: f32 = 0.9365126677;
-const ADC1_CH0_OFFSET: f32 = 3.719970194;
+// Pressure sensor scaling for PT1500
+const PT1500_SCALE: f32 = 0.909754;
+const PT1500_OFFSET: f32 = 5.08926;
 
-// Pressure sensor scaling for ADC1 Channel 1
-const ADC1_CH1_SCALE: f32 = 0.6285508522;
-const ADC1_CH1_OFFSET: f32 = 1.783227975;
+// Pressure sensor scaling for PT2000
+const PT2000_SCALE: f32 = 1.22124;
+const PT2000_OFFSET: f32 = 5.37052;
+
+// Load Cell scaling
+const LOADCELL_SCALE: f32 = 1.69661;
+const LOADCELL_OFFSET: f32 = 75.37882;
 ```
 
 ### To Change Sampling Rate:
 Just modify `ADC_SAMPLE_RATE_HZ`. Example: `const ADC_SAMPLE_RATE_HZ: u64 = 20;` for 20 Hz.
 
 ### To Update Pressure Sensor Calibration:
-Modify the `ADC1_CH0_*` and `ADC1_CH1_*` constants with your new calibration values.
+Modify the `PT1500_*`, `PT2000_*`, and `LOADCELL_*` constants with your new calibration values.
 
 ## WebSocket Protocol
 

@@ -8,8 +8,35 @@ This document provides a reference for all supported WebSocket commands for the 
 - **URL**: `ws://[board-ip]:9000`
 
 ---
+## Safety & Heartbeat
+
+### Connection Monitoring
+The server enforces a **15-second timeout** on idle connections to ensure safety. 
+- If no message is received from a connected client for 15 seconds, the server will:
+  1. **Close all Solenoid Valves** (SV1-SV5).
+  2. **Close the MAV**.
+  3. **Disconnect the client**.
+
+To prevent this, clients must send any valid JSON command at least once every 15 seconds. If no other command is needed, use the `heartbeat` command.
+
+---
 
 ## Commands
+
+### `heartbeat`
+Keep the connection alive without performing any action.
+
+**Format:**
+```json
+{"command": "heartbeat"}
+```
+
+**Response:**
+```json
+{"type": "success"}
+```
+
+---
 
 ### `get_igniter_continuity`
 Query the continuity of a specific igniter.
@@ -189,7 +216,7 @@ Query the current state of the MAV (angle and pulse width).
 {
   "type": "mav_state",
   "angle": 45.0,
-  "pulse_width_us": 1300
+  "pulse_width_us": 1422
 }
 ```
 
@@ -203,7 +230,7 @@ Sets the angle of the Mechanically Actuated Valve (MAV) servo.
 {"command": "set_mav_angle", "valve": "MAV", "angle": 45.0}
 ```
 *   `valve`: Valve identifier (currently "MAV").
-*   `angle`: Target angle in degrees (0.0 to 90.0).
+*   `angle`: Target angle in degrees (0.0 to 126.0).
 
 **Response:**
 ```json
