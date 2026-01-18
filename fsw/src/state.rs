@@ -4,12 +4,12 @@ use crate::packet::Packet;
 
 use crate::driver::ak09915::Ak09915Sensor;
 use crate::driver::bmp390::Bmp390Sensor;
-use crate::driver::fram::Fram;
+use crate::driver::main_fram::Fram;
 use crate::driver::icm42688::Icm42688Sensor;
 use crate::driver::rfd900x::Rfd900x;
 use crate::driver::ublox_max_m10s::UbloxMaxM10s;
 
-use embassy_rp::gpio::Output;
+use embassy_rp::gpio::{Input, Output};
 use embassy_rp::peripherals::SPI0;
 use embassy_rp::spi::Spi;
 use embassy_rp::uart::{Async, Uart};
@@ -54,9 +54,16 @@ pub struct FlightState {
     // state variables
     pub flight_mode: FlightMode,
     pub cycle_count: u32,
+    pub key_armed: bool,
+    pub umbilical_connected: bool,
 
     // altimeter
     altimeter: Bmp390Sensor,
+    pub altimeter_state: SensorState,
+    pub reference_pressure: f32,
+    
+    // storage status
+    pub sd_logging_enabled: bool,
 
     // fram
     fram: Fram<'static>,
@@ -71,6 +78,9 @@ pub struct FlightState {
     imu: Icm42688Sensor,
 
     // actuators
+    arming_switch: Input<'static>,
+    umbilical_sense: Input<'static>,
+    pub arming_altitude: f32,
 
     // telemetry
     radio: Rfd900x<'static>,
@@ -81,6 +91,8 @@ impl FlightState {
         i2c_bus: &'static SharedI2c,
         spi: Spi<'static, SPI0, embassy_rp::spi::Async>,
         cs: Output<'static>,
+        arming_switch: Input<'static>,
+        umbilical_sense: Input<'static>,
         uart: Uart<'static, Async>,
     ) -> Self {
         let packet = Packet::default();
@@ -101,18 +113,41 @@ impl FlightState {
             packet: packet,
             flight_mode: FlightMode::Startup,
             cycle_count: 0,
+            key_armed: false,
+            umbilical_connected: false,
             altimeter: altimeter,
+            altimeter_state: SensorState::OFF,
+            sd_logging_enabled: false, // Default to false (SD failure assumed for now)
             fram: fram,
             gps: gps,
             magnetometer: magnetometer,
             imu: imu,
+            arming_switch: arming_switch,
+            umbilical_sense: umbilical_sense,
+            arming_altitude: 0.0,
             radio: radio,
+            reference_pressure: 0.0,
         }
+    }
+
+    pub fn read_altimeter(&mut self) -> f32{
+        return self.packet.altitude;
+    }
+
+    pub fn read_barometer(&mut self) -> f32{
+        return self.packet.pressure;
     }
 
     pub async fn read_sensors(&mut self) {
         // Update packet flight mode
         self.packet.flight_mode = self.flight_mode as u32;
+
+        // Update key armed status
+        self.key_armed = self.arming_switch.is_high();
+        self.umbilical_connected = self.umbilical_sense.is_high();
+
+        // Note: Umbilical state reading will be handled directly in flight_loop for strict logic,
+        // or we can add a field to FlightState if needed globally.
 
         // Read from FRAM
         match self.fram.read_u32(0).await {
@@ -132,6 +167,7 @@ impl FlightState {
         // Read altimeter and update packet
         match self.altimeter.read_into_packet(&mut self.packet).await {
             Ok(_) => {
+                self.altimeter_state = SensorState::VALID;
                 log::info!(
                     "BMP | Pressure = {:.2} Pa, Temp = {:.2} °C, Alt = {:.2} m",
                     self.packet.pressure,
@@ -140,6 +176,7 @@ impl FlightState {
                 );
             }
             Err(e) => {
+                self.altimeter_state = SensorState::INVALID;
                 log::error!("Failed to read BMP390: {:?}", e);
             }
         }
@@ -224,7 +261,7 @@ impl FlightState {
             }
         }
     }
-
+    /*
     pub async fn transition(&mut self) {
         self.flight_mode = match self.flight_mode {
             FlightMode::Startup => FlightMode::Standby,
@@ -236,6 +273,7 @@ impl FlightState {
             FlightMode::Fault => FlightMode::Startup,
         }
     }
+    */
 
     pub async fn execute(&mut self) {
         // Read sensors and update packet
@@ -254,6 +292,20 @@ impl FlightState {
             FlightMode::DrogueDeployed => "DrogueDeployed",
             FlightMode::MainDeployed => "MainDeployed",
             FlightMode::Fault => "Fault",
+        }
+    }
+
+    /// Logs critical PT (Pressure/Temperature/Altitude) data to FRAM
+    /// This is a fallback if SD logging fails.
+    pub async fn log_to_fram(&mut self) {
+        // Simple ring buffer or sequential write could be implemented here.
+        // For now, we just overwrite a scratchpad area (e.g., address 100) 
+        // with the latest Altitude (as u32 representation).
+        // Real implementation would manage addresses.
+        
+        let alt_bits = self.packet.altitude.to_bits();
+        if let Err(_) = self.fram.write_u32(100, alt_bits).await {
+             log::warn!("Failed to write PT data to FRAM");
         }
     }
 }
