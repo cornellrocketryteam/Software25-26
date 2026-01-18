@@ -385,7 +385,7 @@ async fn execute_command(
 
                 match result {
                     Some((Ok(actuated), Ok(continuity))) => {
-                        CommandResponse::ValveState { actuated, continuity }
+                        CommandResponse::ValveState { valve, actuated, continuity }
                     }
                     Some((Err(e), _)) => {
                         error!("Failed to get valve actuation state: {}", e);
@@ -405,7 +405,7 @@ async fn execute_command(
             {
                 let _ = hardware;
                 warn!("GetValveState command not supported on this platform: {}", valve);
-                CommandResponse::ValveState { actuated: false, continuity: false }
+                CommandResponse::ValveState { valve: valve.to_string(), actuated: false, continuity: false }
             }
         }
         Command::StartAdcStream => {
