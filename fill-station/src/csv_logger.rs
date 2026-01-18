@@ -1,11 +1,10 @@
-
 use smol::Timer;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use smol::lock::Mutex;
 use tracing::{info, error};
-use std::fs::OpenOptions;
-use std::io::Write;
+use smol::fs::{self, OpenOptions};
+use smol::io::AsyncWriteExt;
 
 use crate::hardware::Hardware;
 use crate::command::AdcReadings;
@@ -22,7 +21,7 @@ pub async fn start_logging(
     #[cfg(not(target_os = "linux"))]
     let log_dir = "logs";
 
-    std::fs::create_dir_all(log_dir).ok();
+    fs::create_dir_all(log_dir).await.ok();
 
     // Create filename with timestamp
     let timestamp = SystemTime::now()
@@ -36,6 +35,7 @@ pub async fn start_logging(
         .write(true)
         .append(true)
         .open(&filename)
+        .await
     {
         Ok(f) => {
             info!("Created log file: {}", filename);
@@ -54,7 +54,7 @@ SV1_Actuated,SV1_Cont,SV2_Actuated,SV2_Cont,SV3_Actuated,SV3_Cont,SV4_Actuated,S
 ADC1_0_Raw,ADC1_0_Scaled,ADC1_1_Raw,ADC1_1_Scaled,ADC1_2_Raw,ADC1_2_Scaled,ADC1_3_Raw,ADC1_3_Scaled,\
 ADC2_0_Raw,ADC2_0_Scaled,ADC2_1_Raw,ADC2_1_Scaled,ADC2_2_Raw,ADC2_2_Scaled,ADC2_3_Raw,ADC2_3_Scaled\n";
     
-    if let Err(e) = file.write_all(header.as_bytes()) {
+    if let Err(e) = file.write_all(header.as_bytes()).await {
         error!("Failed to write header to log file: {}", e);
         return;
     }
@@ -140,7 +140,7 @@ ADC2_0_Raw,ADC2_0_Scaled,ADC2_1_Raw,ADC2_1_Scaled,ADC2_2_Raw,ADC2_2_Scaled,ADC2_
         line.push('\n');
 
         // Write to file
-        if let Err(e) = file.write_all(line.as_bytes()) {
+        if let Err(e) = file.write_all(line.as_bytes()).await {
             error!("Failed to write to log file: {}", e);
         }
 
