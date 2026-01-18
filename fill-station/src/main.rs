@@ -414,7 +414,7 @@ async fn execute_command(
             *streaming_enabled = false;
             CommandResponse::Success
         }
-        Command::SetMavAngle { valve, angle } => {
+        Command::SetMavAngle { valve: _valve, angle } => {
             let hw = hardware.lock().await;
             info!("Setting MAV angle to {}", angle);
             if let Err(e) = hw.mav.set_angle(angle).await {
@@ -424,7 +424,7 @@ async fn execute_command(
                 CommandResponse::Success
             }
         }
-        Command::MavOpen { valve } => {
+        Command::MavOpen { valve: _valve } => {
             let hw = hardware.lock().await;
             info!("Opening MAV");
             if let Err(e) = hw.mav.open().await {
@@ -434,7 +434,7 @@ async fn execute_command(
                 CommandResponse::Success
             }
         }
-        Command::MavClose { valve } => {
+        Command::MavClose { valve: _valve } => {
             let hw = hardware.lock().await;
             info!("Closing MAV");
             if let Err(e) = hw.mav.close().await {
@@ -444,7 +444,7 @@ async fn execute_command(
                 CommandResponse::Success
             }
         }
-        Command::MavNeutral { valve } => {
+        Command::MavNeutral { valve: _valve } => {
             let hw = hardware.lock().await;
             info!("Setting MAV to neutral");
             if let Err(e) = hw.mav.neutral().await {
@@ -454,7 +454,7 @@ async fn execute_command(
                 CommandResponse::Success
             }
         }
-        Command::GetMavState { valve } => {
+        Command::GetMavState { valve: _valve } => {
             let hw = hardware.lock().await;
             match hw.mav.get_pulse_width_us().await {
                 Ok(us) => {
