@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use tracing::{info, warn};
 
-// Motor Configuration Constants (DS2685BLHV)
+// Motor Configuration Constants
 #[allow(dead_code)]
 const FREQUENCY_HZ: u32 = 330;
 #[allow(dead_code)]
@@ -66,8 +66,8 @@ impl Mav {
         mav.set_enable(false).await?;
         mav.write_file("period", &PERIOD_NS.to_string()).await.context("Failed to set period")?;
         
-        // 3. Initialize to Neutral
-        mav.set_pulse_width_us(NEUTRAL_US).await?;
+        // 3. Initialize to close
+        mav.set_pulse_width_us(CLOSE_0_US).await?;
 
         // 4. Enable
         mav.set_enable(true).await?;
@@ -96,10 +96,9 @@ impl Mav {
             return Ok(()); 
         }
 
-        let ns = us * 1000;
-        
         #[cfg(any(target_os = "linux", target_os = "android"))]
         {
+            let ns = us * 1000;
             self.write_file("duty_cycle", &ns.to_string()).await.context("Failed to set duty cycle")?;
         }
         

@@ -9,7 +9,9 @@ use smol::stream::StreamExt;
 use smol::Timer;
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use std::time::{SystemTime, UNIX_EPOCH};
 use smol::lock::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tracing::{Instrument, Level, debug, error, info, span, warn};
@@ -17,7 +19,9 @@ use tracing_subscriber::fmt;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tungstenite::Message;
 
-use crate::command::{AdcReadings, ChannelReading, Command, CommandResponse};
+use crate::command::{AdcReadings, Command, CommandResponse};
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use crate::command::ChannelReading;
 use crate::hardware::Hardware;
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -401,7 +405,7 @@ async fn execute_command(
             {
                 let _ = hardware;
                 warn!("GetValveState command not supported on this platform: {}", valve);
-                CommandResponse::ValveState { valve, actuated: false, continuity: false }
+                CommandResponse::ValveState { actuated: false, continuity: false }
             }
         }
         Command::StartAdcStream => {
@@ -414,7 +418,7 @@ async fn execute_command(
             *streaming_enabled = false;
             CommandResponse::Success
         }
-        Command::SetMavAngle { valve, angle } => {
+        Command::SetMavAngle { valve: _, angle } => {
             let hw = hardware.lock().await;
             info!("Setting MAV angle to {}", angle);
             if let Err(e) = hw.mav.set_angle(angle).await {
@@ -424,7 +428,7 @@ async fn execute_command(
                 CommandResponse::Success
             }
         }
-        Command::MavOpen { valve } => {
+        Command::MavOpen { valve: _ } => {
             let hw = hardware.lock().await;
             info!("Opening MAV");
             if let Err(e) = hw.mav.open().await {
@@ -434,7 +438,7 @@ async fn execute_command(
                 CommandResponse::Success
             }
         }
-        Command::MavClose { valve } => {
+        Command::MavClose { valve: _ } => {
             let hw = hardware.lock().await;
             info!("Closing MAV");
             if let Err(e) = hw.mav.close().await {
@@ -444,7 +448,7 @@ async fn execute_command(
                 CommandResponse::Success
             }
         }
-        Command::MavNeutral { valve } => {
+        Command::MavNeutral { valve: _ } => {
             let hw = hardware.lock().await;
             info!("Setting MAV to neutral");
             if let Err(e) = hw.mav.neutral().await {
@@ -454,7 +458,7 @@ async fn execute_command(
                 CommandResponse::Success
             }
         }
-        Command::GetMavState { valve } => {
+        Command::GetMavState { valve: _ } => {
             let hw = hardware.lock().await;
             match hw.mav.get_pulse_width_us().await {
                 Ok(us) => {
