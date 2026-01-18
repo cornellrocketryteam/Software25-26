@@ -14,7 +14,7 @@ let
   gapMiB = 2;
   firmwareSizeMiB = 128;
   # Controls for the second partition
-  secondPartitionSizeMiB = 50;
+  secondPartitionSizeMiB = 1024;
   # Partition type codes for sfdisk: 'c' = W95 FAT32 (LBA), '83' = Linux
   secondPartitionType = "c";
   # Name of the second partition

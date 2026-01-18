@@ -76,7 +76,7 @@
 
   etc."wpa_supplicant.conf".source = pkgs.writeText "wpa_supplicant.conf" ''
     network={
-      ssid="CornellRocketry"
+      ssid="CornellRocketry-Fill"
       psk="Rocketry2526"
     }
   '';

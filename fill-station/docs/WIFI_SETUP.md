@@ -12,7 +12,7 @@ This document details the Wi-Fi configuration for the TI SK-AM64B fill station s
 The system is configured to **automatically connect** to the configured network on boot.
 
 ### Current Configuration
-- **SSID**: `CornellRocketry`
+- **SSID**: `CornellRocketry-Fill`
 - **Password**: `Rocketry2526`
 - **Configuration File**: `/etc/wpa_supplicant.conf` (generated at build time)
 
