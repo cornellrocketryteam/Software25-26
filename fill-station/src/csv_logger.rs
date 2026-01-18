@@ -79,7 +79,7 @@ ADC2_0_Raw,ADC2_0_Scaled,ADC2_1_Raw,ADC2_1_Scaled,ADC2_2_Raw,ADC2_2_Scaled,ADC2_
         let (mav_angle, mav_pulse, ig1_active, ig2_active, sv_states) = {
             #[cfg(any(target_os = "linux", target_os = "android"))]
             {
-                let hw = _hardware.lock().await;
+                let hw = hardware.lock().await;
                 
                 // MAV
                 let mav_pulse = hw.mav.get_pulse_width_us().await.unwrap_or(0);
