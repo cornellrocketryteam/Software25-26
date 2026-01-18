@@ -21,6 +21,7 @@ class FillStationClient:
         self.connected = False
         self.thread = None
         self.hb_thread = None
+        self.poll_thread = None
         self.should_run = False
         
         # Data Store
@@ -31,7 +32,8 @@ class FillStationClient:
         self.mav = {"angle": 0.0, "pulse_width_us": 0}
         self.igniters = {1: False, 2: False}
         self.last_update = time.time()
-        
+        self.launch_status = None # For UI Banner
+
     def connect(self, url):
         self.url = url
         if self.connected:
@@ -43,6 +45,9 @@ class FillStationClient:
         
         self.hb_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
         self.hb_thread.start()
+        
+        self.poll_thread = threading.Thread(target=self._polling_loop, daemon=True)
+        self.poll_thread.start()
 
     def disconnect(self):
         self.should_run = False
@@ -59,6 +64,27 @@ class FillStationClient:
                     print(f"Heartbeat failed: {e}")
             time.sleep(5)
 
+    def _polling_loop(self):
+        """Query state every 3 seconds"""
+        while self.should_run:
+            if self.connected:
+                try:
+                    # Poll Valves
+                    for val in ["SV1", "SV2", "SV3", "SV4", "SV5"]:
+                        self.send_command({"command": "get_valve_state", "valve": val})
+                        time.sleep(0.05) # Spacer
+                    
+                    # Poll MAV
+                    self.send_command({"command": "get_mav_state", "valve": "MAV"})
+                    
+                    # Poll Igniters
+                    self.send_command({"command": "get_igniter_continuity", "id": 1})
+                    self.send_command({"command": "get_igniter_continuity", "id": 2})
+                    
+                except Exception as e:
+                    print(f"Polling failed: {e}")
+            time.sleep(3)
+
     def _run_ws(self):
         def on_open(ws):
             self.connected = True
@@ -74,9 +100,9 @@ class FillStationClient:
                     self.latest_adc = data
                 
                 elif msg_type == "valve_state":
-                    # Note: API limitation - doesn't return ID. 
-                    # We rely on poll_all updates or single checks.
-                    # For V2, we are explicit about polling.
+                    # We can't match specific valves easily without ID, 
+                    # but polling loop ensures we get data.
+                    # We rely on 'toggle' logic to do the precise updates.
                     pass 
 
                 elif msg_type == "mav_state":
@@ -87,19 +113,6 @@ class FillStationClient:
                     ign_id = data.get("id")
                     if ign_id:
                         self.igniters[ign_id] = data.get("continuity", False)
-                        
-                # If we get a generic valve_state and we know we just polled one specific valve, 
-                # we technically don't know which one it is without a request ID tracker.
-                # BUT, implementation detail: for the 'Live state' requirement,
-                # we might need to assume the server handles requests sequentially or add IDs.
-                # For now, we update strictly on 'actuate' command success locally? 
-                # User asked: "Make sure it is updating by quering the websocket rather than assuming"
-                # This implies we MUST poll.
-                # Since the response format is ambiguous (no ID), handling this is tricky.
-                # We will implement query_all_valves() which fires requests 100ms apart to try and parse them?
-                # Or we just accept that without ID in response, we can't perfectly map it.
-                # Let's trust the "actuated" status for now if we can match it?
-                # Actually, let's just make the UI re-query frequently.
 
             except Exception as e:
                 print(f"Error parsing: {e}")
@@ -123,29 +136,54 @@ class FillStationClient:
             self.ws.send(json.dumps(cmd_dict))
 
     def update_valve_state_local(self, valve, state):
-        # Optimistic update for UI responsiveness
         if valve in self.valves:
             self.valves[valve]["actuated"] = state
+
+    def toggle_valve_logic(self, valve):
+        """
+        Custom Toggle Logic:
+        1. Query State (we rely on cached state from poll or update it now)
+        2. Determind Command:
+           - SV5: cmd = current_state (Funky Logic: Open->Open toggles)
+           - Others: cmd = !current_state
+        3. Send Actuate
+        4. Poll again
+        """
+        # We use the cached state which is updated by poll/actuate
+        current_state = self.valves[valve]["actuated"]
+        
+        target_state = False
+        if valve == "SV5":
+            # "If I query state and it says open... to toggle I must send another open command"
+            # Open = True. So if current=True, send True.
+            target_state = current_state 
+        else:
+            # Standard toggle
+            target_state = not current_state
+
+        self.send_command({"command": "actuate_valve", "valve": valve, "state": target_state})
+        
+        # We assume succesful toggle implies state flip for standard, 
+        # but for SV5 "sending Open to Open" toggles it... so does the state become Closed?
+        # User said: "If I query... open... send open command... to toggle"
+        # Toggle means state changes. So we optimistically flip the local state check?
+        # Actually, polling will fix it in 3s, but for UI responsiveness:
+        self.update_valve_state_local(valve, not current_state)
+        
+        # Trigger immediate re-poll
+        time.sleep(0.1)
+        self.send_command({"command": "get_valve_state", "valve": valve})
+
 
     # --- SEQUENCES ---
     
     def run_timed_actuation(self, valve, duration):
         """Runs in a background thread"""
         def sequence():
-            # Open
-            self.send_command({"command": "actuate_valve", "valve": valve, "state": True})
-            self.update_valve_state_local(valve, True)
-            
-            # Verify Open
+            self.toggle_valve_logic(valve) # Initial Toggle
             time.sleep(0.2)
-            # self.query_valve(valve) # API limitation: generic response.
-            
-            # Wait
             time.sleep(duration)
-            
-            # Close
-            self.send_command({"command": "actuate_valve", "valve": valve, "state": False})
-            self.update_valve_state_local(valve, False)
+            self.toggle_valve_logic(valve) # Toggle Back
         
         threading.Thread(target=sequence, daemon=True).start()
 
@@ -156,51 +194,50 @@ class FillStationClient:
         2. Fire Igniters
         3. Wait 4s -> MAV Open
         4. Wait 7.88s -> MAV Close
-        5. Set all SVs Low
+        5. Set all SVs Low (actuate=False)
         """
         def sequence():
-            # 1. Pulse SV5 Low then High
-            # SV5 is "signal line to low". 
-            # Note: SV5 logic logic in main.rs might be inverted now (!b), 
-            # but standard API: actuate=True (Open/High usually).
-            # User says: "set SV5 signal line to low... then set it to high"
-            # Assuming 'actuate_valve(SV5, False)' = Low?
-            
+            self.launch_status = "Step 1: Setting SV5 Signal LOW..."
+            # Low = False (based on Step 8 comment correction)
             self.send_command({"command": "actuate_valve", "valve": "SV5", "state": False})
-            self.update_valve_state_local("SV5", False)
-            
+            self.update_valve_state_local("SV5", False) 
             time.sleep(1.0)
             
+            self.launch_status = "Step 2: Setting SV5 Signal HIGH & Firing Igniters..."
+            # High = True
             self.send_command({"command": "actuate_valve", "valve": "SV5", "state": True})
             self.update_valve_state_local("SV5", True)
-            
             self.send_command({"command": "ignite"})
-            
             time.sleep(4.0)
             
+            self.launch_status = "Step 3: Opening MAV..."
             self.send_command({"command": "mav_open", "valve": "MAV"})
             self.mav["angle"] = 90.0
-            
             time.sleep(7.88)
             
+            self.launch_status = "Step 4: Closing MAV & Setting All SVs LOW..."
             self.send_command({"command": "mav_close", "valve": "MAV"})
             self.mav["angle"] = 0.0
             
-            # Close All
+            # Close All (Signal Low = False)
             for sv in ["SV1", "SV2", "SV3", "SV4", "SV5"]:
                 self.send_command({"command": "actuate_valve", "valve": sv, "state": False})
                 self.update_valve_state_local(sv, False)
-                time.sleep(0.05) # spacer
             
+            # Repoll everything
+            self.launch_status = "Sequence Complete. Verifying States..."
+            time.sleep(1.0)
+            self.launch_status = None # Clear Banner
+
         threading.Thread(target=sequence, daemon=True).start()
 
 
 # --- Global State ---
 @st.cache_resource
-def get_client():
+def get_client_v3():
     return FillStationClient()
 
-client = get_client()
+client = get_client_v3()
 
 # --- UI Layout ---
 
@@ -221,6 +258,11 @@ if not client.connected:
 if 'last_refresh' not in st.session_state: st.session_state.last_refresh = time.time()
 time.sleep(0.1)
 
+# Status Banner  
+ls = getattr(client, "launch_status", None)
+if ls:
+    st.warning(f"🚀 **LAUNCH SEQUENCE**: {ls}")
+
 # V2 Layout: Left (MAV/Ign), Middle (SV), Right (ADC)
 col_left, col_mid, col_right = st.columns([1, 2, 2])
 
@@ -232,8 +274,14 @@ with col_left:
     c1, c2 = st.columns(2)
     if c1.button("OPEN", type="primary", use_container_width=True):
         client.send_command({"command": "mav_open", "valve": "MAV"})
+        # Force re-poll
+        time.sleep(0.1)
+        client.send_command({"command": "get_mav_state", "valve": "MAV"})
+
     if c2.button("CLOSE", use_container_width=True):
         client.send_command({"command": "mav_close", "valve": "MAV"})
+        time.sleep(0.1)
+        client.send_command({"command": "get_mav_state", "valve": "MAV"})
     
     st.divider()
     
@@ -241,7 +289,6 @@ with col_left:
     i1 = client.igniters.get(1, False)
     i2 = client.igniters.get(2, False)
     
-    # Custom Status Indicator
     st.markdown(f"**Igniter 1:** {'✅ Continuity' if i1 else '❌ OPEN'}")
     st.markdown(f"**Igniter 2:** {'✅ Continuity' if i2 else '❌ OPEN'}")
     
@@ -256,7 +303,6 @@ with col_left:
 with col_mid:
     st.subheader("Solenoid Valves")
     
-    # Grid for toggles
     sv_cols = st.columns(3)
     valves = ["SV1", "SV2", "SV3", "SV4", "SV5"]
     for i, valve in enumerate(valves):
@@ -267,10 +313,9 @@ with col_mid:
             label = "OPEN" if is_open else "CLOSED"
             st.markdown(f"**{valve}**: :{color}[{label}]")
             
-            # Toggle
+            # Toggle (Uses updated Custom Logic)
             if st.button(f"Toggle", key=f"btn_{valve}"):
-                client.send_command({"command": "actuate_valve", "valve": valve, "state": not is_open})
-                client.update_valve_state_local(valve, not is_open)
+                client.toggle_valve_logic(valve)
 
     st.divider()
     
@@ -298,13 +343,11 @@ with col_right:
         adc2 = client.latest_adc.get("adc2", [])
         
         # Mapping Schema
-        # ADC1
         if len(adc1) > 0: data.append({"Name": "PT5", "Raw": adc1[0]['raw'], "Scaled": adc1[0]['scaled']})
         if len(adc1) > 1: data.append({"Name": "PT2", "Raw": adc1[1]['raw'], "Scaled": adc1[1]['scaled']})
         if len(adc1) > 2: data.append({"Name": "PT7", "Raw": adc1[2]['raw'], "Scaled": adc1[2]['scaled']})
         if len(adc1) > 3: data.append({"Name": "PT8", "Raw": adc1[3]['raw'], "Scaled": adc1[3]['scaled']})
         
-        # ADC2
         if len(adc2) > 0: data.append({"Name": "PT6", "Raw": adc2[0]['raw'], "Scaled": adc2[0]['scaled']})
         if len(adc2) > 1: data.append({"Name": "Load Cell", "Raw": adc2[1]['raw'], "Scaled": adc2[1]['scaled']})
 

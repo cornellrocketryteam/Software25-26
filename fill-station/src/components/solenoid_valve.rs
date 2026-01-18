@@ -1,6 +1,7 @@
 use anyhow::Result;
 use async_gpiod::{Chip, Input, LineId, Lines, Options, Output};
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const CONSUMER: &str = "fill-station-solenoid";
 
@@ -16,6 +17,7 @@ pub struct SolenoidValve {
     signal_line: Lines<Input>,
     signal_pin: LineId,
     line_pull: LinePull,
+    current_level: AtomicBool,
 }
 
 impl SolenoidValve {
@@ -45,6 +47,7 @@ impl SolenoidValve {
             signal_line,
             signal_pin,
             line_pull,
+            current_level: AtomicBool::new(default_level),
         })
     }
 
@@ -60,6 +63,7 @@ impl SolenoidValve {
         };
 
         self.control_line.set_values([level]).await?;
+        self.current_level.store(level, Ordering::Relaxed);
         Ok(())
     }
 
@@ -72,8 +76,9 @@ impl SolenoidValve {
     
     // Helper to get current actuation state (logical)
     pub async fn is_actuated(&self) -> Result<bool> {
-        let values = self.control_line.get_values([false]).await?;
-        let level = *values.get(0).unwrap_or(&false);
+        // Use software tracked state instead of reading back hardware register
+        // which can be unreliable for output pins on some platforms
+        let level = self.current_level.load(Ordering::Relaxed);
         
         match self.line_pull {
              LinePull::NormallyClosed => Ok(level),     // HIGH == Actuated
