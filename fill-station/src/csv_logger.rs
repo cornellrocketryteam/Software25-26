@@ -17,7 +17,7 @@ pub async fn start_logging(
 
     // Create logs directory if it doesn't exist
     #[cfg(target_os = "linux")]
-    let log_dir = "/tmp/fill-station/logs";
+    let log_dir = "/tmp/data";
     #[cfg(not(target_os = "linux"))]
     let log_dir = "logs";
 

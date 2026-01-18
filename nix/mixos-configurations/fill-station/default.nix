@@ -48,6 +48,11 @@
       process = "${lib.getExe' pkgs.wpa_supplicant "wpa_supplicant"} -i wlan0 -c /etc/wpa_supplicant.conf";
     };
 
+    mount_data = {
+      action = "wait";
+      process = "sh -c 'mkdir -p /tmp/data && mount -t vfat -L DATA /tmp/data'";
+    };
+
     dhcp = {
       action = "respawn";
       process = "${lib.getExe' pkgs.busybox "udhcpc"} -f -i wlan0";
