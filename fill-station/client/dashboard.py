@@ -89,13 +89,6 @@ class FillStationClient:
         def on_open(ws):
             self.connected = True
             ws.send(json.dumps({"command": "start_adc_stream"}))
-            # Initial Poll
-            for val in ["SV1", "SV2", "SV3", "SV4", "SV5"]:
-                self.send_command({"command": "get_valve_state", "valve": val})
-                time.sleep(0.02)
-            self.send_command({"command": "get_mav_state", "valve": "MAV"})
-            self.send_command({"command": "get_igniter_continuity", "id": 1})
-            self.send_command({"command": "get_igniter_continuity", "id": 2})
 
         def on_message(ws, message):
             self.last_update = time.time()
@@ -107,11 +100,10 @@ class FillStationClient:
                     self.latest_adc = data
                 
                 elif msg_type == "valve_state":
-                    # Now utilizing the 'valve' identifier from updated API
-                    valve_name = data.get("valve")
-                    if valve_name and valve_name in self.valves:
-                        self.valves[valve_name]["actuated"] = data.get("actuated", False)
-                        self.valves[valve_name]["continuity"] = data.get("continuity", False) 
+                    # We can't match specific valves easily without ID, 
+                    # but polling loop ensures we get data.
+                    # We rely on 'toggle' logic to do the precise updates.
+                    pass 
 
                 elif msg_type == "mav_state":
                     self.mav["angle"] = data.get("angle", 0)

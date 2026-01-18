@@ -68,7 +68,6 @@ pub enum CommandResponse {
     },
     /// Solenoid valve state
     ValveState {
-        valve: String,
         actuated: bool,
         continuity: bool,
     },

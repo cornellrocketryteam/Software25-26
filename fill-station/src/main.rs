@@ -381,7 +381,7 @@ async fn execute_command(
 
                 match result {
                     Some((Ok(actuated), Ok(continuity))) => {
-                        CommandResponse::ValveState { valve, actuated, continuity }
+                        CommandResponse::ValveState { actuated, continuity }
                     }
                     Some((Err(e), _)) => {
                         error!("Failed to get valve actuation state: {}", e);

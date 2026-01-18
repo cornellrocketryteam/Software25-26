@@ -40,7 +40,6 @@ async def handler(websocket):
                 if valve in state["sv"]:
                     response = {
                         "type": "valve_state",
-                        "valve": valve,
                         "actuated": state["sv"][valve]["actuated"],
                         "continuity": state["sv"][valve]["continuity"]
                     }
