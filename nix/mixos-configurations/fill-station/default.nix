@@ -50,7 +50,7 @@
 
     mount_data = {
       action = "wait";
-      process = "sh -c 'mkdir -p /tmp/data && mount -t vfat -L DATA /tmp/data'";
+      process = "sh -c 'mkdir -p /tmp/data && (mount -t vfat -L DATA /tmp/data || mount -t vfat /dev/mmcblk1p2 /tmp/data || mount -t vfat /dev/mmcblk0p2 /tmp/data)'";
     };
 
     dhcp = {
@@ -66,6 +66,7 @@
     pkgs.crt.fill-station
     pkgs.iw
     pkgs.wpa_supplicant
+    pkgs.util-linux
   ];
 
   etc."lib/firmware".source = pkgs.runCommand "wl18xx-firmware" { } ''
