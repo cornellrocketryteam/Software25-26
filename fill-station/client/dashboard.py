@@ -229,8 +229,12 @@ class FillStationClient:
             
             # Close All (Signal Low = False)
             for sv in ["SV1", "SV2", "SV3", "SV4", "SV5"]:
-                self.send_command({"command": "actuate_valve", "valve": sv, "state": False})
-                self.update_valve_state_local(sv, False)
+                if sv=="SV1":
+                    self.send_command({"command": "actuate_valve", "valve": sv, "state": True})
+                    self.update_valve_state_local(sv, True)
+                else:
+                    self.send_command({"command": "actuate_valve", "valve": sv, "state": False})
+                    self.update_valve_state_local(sv, False)
             
             # Repoll everything
             self.launch_status = "Sequence Complete. Verifying States..."
