@@ -91,3 +91,23 @@ pub struct ChannelReading {
     pub voltage: f32,
     pub scaled: Option<f32>, // Some channels have pressure sensor scaling
 }
+
+/// Shared ADC readings accessible across tasks
+#[derive(Debug, Clone)]
+pub struct AdcReadings {
+    pub timestamp_ms: u64,
+    pub valid: bool,
+    pub adc1: [ChannelReading; 4],
+    pub adc2: [ChannelReading; 4],
+}
+
+impl Default for AdcReadings {
+    fn default() -> Self {
+        Self {
+            timestamp_ms: 0,
+            valid: false,
+            adc1: [ChannelReading { raw: 0, voltage: 0.0, scaled: None }; 4],
+            adc2: [ChannelReading { raw: 0, voltage: 0.0, scaled: None }; 4],
+        }
+    }
+}

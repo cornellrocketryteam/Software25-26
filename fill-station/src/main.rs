@@ -1,7 +1,7 @@
 mod command;
 mod hardware;
 mod components;
-
+mod csv_logger;
 use anyhow::Result;
 use async_tungstenite::{WebSocketStream, tungstenite};
 use smol::Async;
@@ -17,7 +17,7 @@ use tracing_subscriber::fmt;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tungstenite::Message;
 
-use crate::command::{ChannelReading, Command, CommandResponse};
+use crate::command::{AdcReadings, ChannelReading, Command, CommandResponse};
 use crate::hardware::Hardware;
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -64,25 +64,7 @@ const LOADCELL_OFFSET: f32 = 75.37882;
 // SHARED ADC STATE
 // ============================================================================
 
-/// Shared ADC readings accessible across tasks
-#[derive(Debug, Clone)]
-pub struct AdcReadings {
-    pub timestamp_ms: u64,
-    pub valid: bool,
-    pub adc1: [ChannelReading; 4],
-    pub adc2: [ChannelReading; 4],
-}
 
-impl Default for AdcReadings {
-    fn default() -> Self {
-        Self {
-            timestamp_ms: 0,
-            valid: false,
-            adc1: [ChannelReading { raw: 0, voltage: 0.0, scaled: None }; 4],
-            adc2: [ChannelReading { raw: 0, voltage: 0.0, scaled: None }; 4],
-        }
-    }
-}
 
 fn main() -> Result<()> {
     // Create a log layer for file output
@@ -124,7 +106,13 @@ fn main() -> Result<()> {
         info!("Starting ADC monitoring task at {} Hz...", ADC_SAMPLE_RATE_HZ);
         let adc_task_hw = hardware.clone();
         let adc_task_readings = adc_readings.clone();
+
         smol::spawn(adc_monitoring_task(adc_task_hw, adc_task_readings)).detach();
+
+        // Spawn CSV Logger Task
+        let log_hw = hardware.clone();
+        let log_adc = adc_readings.clone();
+        smol::spawn(csv_logger::start_logging(log_hw, log_adc)).detach();
 
         info!("Initializing web socket server...");
         let listener = Async::<TcpListener>::bind(([0, 0, 0, 0], 9000))?;
@@ -413,7 +401,7 @@ async fn execute_command(
             {
                 let _ = hardware;
                 warn!("GetValveState command not supported on this platform: {}", valve);
-                CommandResponse::ValveState { actuated: false, continuity: false }
+                CommandResponse::ValveState { valve, actuated: false, continuity: false }
             }
         }
         Command::StartAdcStream => {
