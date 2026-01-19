@@ -144,8 +144,8 @@ ADC2_0_Raw,ADC2_0_Scaled,ADC2_1_Raw,ADC2_1_Scaled,ADC2_2_Raw,ADC2_2_Scaled,ADC2_
             error!("Failed to write to log file: {}", e);
         }
 
-        // Sync to disk every second (10 samples) to prevent data loss on power cycle
-        if loop_count % 10 == 0 {
+        // Sync to disk every 10 seconds (100 samples) to prevent data loss on power cycle
+        if loop_count % 100 == 0 {
             if let Err(e) = file.sync_all().await {
                  error!("Failed to sync log file: {}", e);
             }

@@ -127,17 +127,18 @@ class FillStationClient:
 
         def on_close(ws, close_status_code, close_msg):
             self.connected = False
+            # No recursive call here
+            
+        while self.should_run:
+            self.ws = websocket.WebSocketApp(
+                self.url,
+                on_open=on_open,
+                on_message=on_message,
+                on_close=on_close
+            )
+            self.ws.run_forever()
             if self.should_run:
                 time.sleep(2)
-                self._run_ws()
-
-        self.ws = websocket.WebSocketApp(
-            self.url,
-            on_open=on_open,
-            on_message=on_message,
-            on_close=on_close
-        )
-        self.ws.run_forever()
 
     def send_command(self, cmd_dict):
         if self.ws and self.connected:
