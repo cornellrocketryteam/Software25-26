@@ -34,7 +34,7 @@
     };
 
     fill-station = {
-      action = "respawn";
+      action = "once";
       process = lib.getExe pkgs.crt.fill-station;
     };
 
