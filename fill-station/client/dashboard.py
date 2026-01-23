@@ -126,8 +126,11 @@ class FillStationClient:
                 print(f"Error parsing: {e}")
 
         def on_close(ws, close_status_code, close_msg):
+            print("WebSocket Closed")
             self.connected = False
-            # No recursive call here
+            # self.ws = None # Don't do this here race condition with run_forever? 
+            # Actually, run_forever returns after this.
+            # We can leave it, but connected=False should prevent usage.
             
         while self.should_run:
             self.ws = websocket.WebSocketApp(
@@ -142,7 +145,13 @@ class FillStationClient:
 
     def send_command(self, cmd_dict):
         if self.ws and self.connected:
-            self.ws.send(json.dumps(cmd_dict))
+            try:
+                self.ws.send(json.dumps(cmd_dict))
+            except (websocket.WebSocketConnectionClosedException, BrokenPipeError, ConnectionResetError) as e:
+                print(f"Send failed (socket closed): {e}")
+                self.connected = False
+            except Exception as e:
+                print(f"Send failed: {e}")
 
     def update_valve_state_local(self, valve, state):
         if valve in self.valves:
@@ -220,12 +229,12 @@ class FillStationClient:
             time.sleep(4.0)
             
             self.launch_status = "Step 3: Opening MAV..."
-            self.send_command({"command": "mav_open", "valve": "MAV"})
-            self.mav["angle"] = 90.0
+            self.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 95.0})
+            self.mav["angle"] = 95.0
             time.sleep(7.88)
             
             self.launch_status = "Step 4: Closing MAV & Setting All SVs LOW..."
-            self.send_command({"command": "mav_close", "valve": "MAV"})
+            self.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 0.0})
             self.mav["angle"] = 0.0
             
             # Close All (Signal Low = False)
@@ -286,13 +295,13 @@ with col_left:
     
     c1, c2 = st.columns(2)
     if c1.button("OPEN", type="primary", use_container_width=True):
-        client.send_command({"command": "mav_open", "valve": "MAV"})
+        client.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 95.0})
         # Force re-poll
         time.sleep(0.1)
         client.send_command({"command": "get_mav_state", "valve": "MAV"})
 
     if c2.button("CLOSE", use_container_width=True):
-        client.send_command({"command": "mav_close", "valve": "MAV"})
+        client.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 0.0})
         time.sleep(0.1)
         client.send_command({"command": "get_mav_state", "valve": "MAV"})
     
