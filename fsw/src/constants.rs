@@ -6,10 +6,11 @@ pub const I2C_FREQUENCY: u32 = 400_000;
 // I2C Pin Assignments
 
 /// I2C0 SDA (Data) pin
-pub const I2C_SDA_PIN: u8 = 0;
+pub const I2C_SDA_PIN: u8 = 20;
 
 /// I2C0 SCL (Clock) pin
-pub const I2C_SCL_PIN: u8 = 1;
+pub const I2C_SCL_PIN: u8 = 21;
+
 
 // SPI Configuration
 

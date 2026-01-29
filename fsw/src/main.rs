@@ -16,22 +16,30 @@ mod state;
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
+    
     let p = embassy_rp::init(Default::default());
+    
 
     // Initialize USB driver for logger
     let driver = module::init_usb_driver(p.USB);
+
 
     // Spawn USB logger task
     spawner.spawn(logger_task(driver).unwrap());
 
     let i2c_bus = module::init_shared_i2c(p.I2C0, p.PIN_0, p.PIN_1);
+    
+
     let (spi, cs) = module::init_spi(
         p.SPI0, p.PIN_16, p.PIN_19, p.PIN_18, p.PIN_17, p.DMA_CH2, p.DMA_CH3,
     );
     let uart = module::init_uart1(p.UART1, p.PIN_4, p.PIN_5, p.DMA_CH0, p.DMA_CH1);
 
     // Onboard LED
-    let mut led = Output::new(p.PIN_25, Level::Low);
+    let mut led = Output::new(p.PIN_25, Level::Low); 
+
+    Timer::after_secs(10).await;
+
 
     let mut flight_state = state::FlightState::new(i2c_bus, spi, cs, uart).await;
     loop {

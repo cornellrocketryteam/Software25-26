@@ -2,7 +2,7 @@ use crate::module::*;
 
 use crate::packet::Packet;
 
-use crate::driver::ak09915::Ak09915Sensor;
+use crate::driver::mmc56x3::Mmc56x3Sensor;
 use crate::driver::bmp390::Bmp390Sensor;
 use crate::driver::fram::Fram;
 use crate::driver::icm42688::Icm42688Sensor;
@@ -65,7 +65,7 @@ pub struct FlightState {
     gps: UbloxMaxM10s<'static, I2cDevice<'static>>,
 
     // magnetometer
-    magnetometer: Ak09915Sensor,
+    magnetometer: Mmc56x3Sensor,
 
     // imu
     imu: Icm42688Sensor,
@@ -93,7 +93,7 @@ impl FlightState {
             log::error!("Failed to configure GPS: {:?}", e);
         }
 
-        let magnetometer = Ak09915Sensor::new(i2c_bus).await;
+        let magnetometer = Mmc56x3Sensor::new(i2c_bus).await;
         let imu = Icm42688Sensor::new(i2c_bus).await;
         let radio = Rfd900x::new(uart);
 
@@ -171,7 +171,7 @@ impl FlightState {
                 );
             }
             Err(e) => {
-                log::error!("Failed to read AK09915 magnetometer: {:?}", e);
+                log::error!("Failed to read MMC56X3 magnetometer: {:?}", e);
             }
         }
 
