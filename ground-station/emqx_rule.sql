@@ -56,7 +56,7 @@ SELECT
     payload.ignition as ignition,
 
     -- === Unit ID (from topic) ===
-    nth(3, split(topic, '/')) as unit_id
+    int(nth(3, split(topic, '/'))) as unit_id
   
 FROM
     "rats/raw/+"
