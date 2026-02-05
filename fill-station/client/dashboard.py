@@ -17,7 +17,7 @@ st.set_page_config(
 class FillStationClient:
     def __init__(self):
         self.ws = None
-        self.url = "ws://localhost:9000"
+        self.url = "ws://192.168.1.248:9000"
         self.connected = False
         self.thread = None
         self.hb_thread = None
@@ -29,7 +29,7 @@ class FillStationClient:
         self.valves = {
             f"SV{i}": {"actuated": False, "continuity": False} for i in range(1, 6)
         }
-        self.mav = {"angle": 0.0, "pulse_width_us": 0}
+        self.mav = {"angle": 95.0, "pulse_width_us": 0}
         self.igniters = {1: False, 2: False}
         self.last_update = time.time()
         self.launch_status = None # For UI Banner
@@ -114,7 +114,7 @@ class FillStationClient:
                         self.valves[valve_name]["continuity"] = data.get("continuity", False) 
 
                 elif msg_type == "mav_state":
-                    self.mav["angle"] = data.get("angle", 0)
+                    self.mav["angle"] = data.get("angle", 95)
                     self.mav["pulse_width_us"] = data.get("pulse_width_us", 0)
 
                 elif msg_type == "igniter_continuity":
@@ -229,13 +229,13 @@ class FillStationClient:
             time.sleep(4.0)
             
             self.launch_status = "Step 3: Opening MAV..."
-            self.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 95.0})
-            self.mav["angle"] = 95.0
+            self.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 0.0})
+            self.mav["angle"] = 0.0
             time.sleep(7.88)
             
             self.launch_status = "Step 4: Closing MAV & Setting All SVs LOW..."
-            self.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 0.0})
-            self.mav["angle"] = 0.0
+            self.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 95.0})
+            self.mav["angle"] = 95.0
             
             # Close All (Signal Low = False)
             for sv in ["SV1", "SV2", "SV3", "SV4", "SV5"]:
@@ -291,17 +291,17 @@ col_left, col_mid, col_right = st.columns([1, 2, 2])
 # --- LEFT: MAV & Igniters ---
 with col_left:
     st.subheader("MAV Control")
-    st.metric("Angle", f"{client.mav.get('angle', 0):.1f}°")
+    st.metric("Angle", f"{client.mav.get('angle', 95.0):.1f}°")
     
     c1, c2 = st.columns(2)
     if c1.button("OPEN", type="primary", use_container_width=True):
-        client.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 95.0})
+        client.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 0.0})
         # Force re-poll
         time.sleep(0.1)
         client.send_command({"command": "get_mav_state", "valve": "MAV"})
 
     if c2.button("CLOSE", use_container_width=True):
-        client.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 0.0})
+        client.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 95.0})
         time.sleep(0.1)
         client.send_command({"command": "get_mav_state", "valve": "MAV"})
     
