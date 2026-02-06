@@ -17,7 +17,7 @@ st.set_page_config(
 class FillStationClient:
     def __init__(self):
         self.ws = None
-        self.url = "ws://192.168.1.248:9000"
+        self.url = "ws://localhost:9000"
         self.connected = False
         self.thread = None
         self.hb_thread = None
@@ -226,7 +226,7 @@ class FillStationClient:
             self.send_command({"command": "actuate_valve", "valve": "SV5", "state": True})
             self.update_valve_state_local("SV5", True)
             self.send_command({"command": "ignite"})
-            time.sleep(3.0)
+            time.sleep(4.0)
             
             self.launch_status = "Step 3: Opening MAV..."
             self.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 95.0})
@@ -291,7 +291,7 @@ col_left, col_mid, col_right = st.columns([1, 2, 2])
 # --- LEFT: MAV & Igniters ---
 with col_left:
     st.subheader("MAV Control")
-    st.metric("Angle", f"{client.mav.get('angle', 0.0):.1f}°")
+    st.metric("Angle", f"{client.mav.get('angle', 0):.1f}°")
     
     c1, c2 = st.columns(2)
     if c1.button("OPEN", type="primary", use_container_width=True):

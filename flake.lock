@@ -43,11 +43,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1770356962,
-        "narHash": "sha256-zfyHIYYnZsVnA2YU/D/TdfhiiYqyaeMYX879IUfxuNQ=",
+        "lastModified": 1764808777,
+        "narHash": "sha256-ZOdvsYqu3dE0Fi849sTyFEzE2Ze2qE+LPAnqzzFk5PM=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "ce8d7e361f2a0555e8454ebad45018f675f0724d",
+        "rev": "a0f9c25704f22036c2e64b6ff62709fad7ed5e33",
         "type": "github"
       },
       "original": {
@@ -57,28 +57,11 @@
         "type": "github"
       }
     },
-    "nixpkgs-2411": {
-      "locked": {
-        "lastModified": 1751290243,
-        "narHash": "sha256-kNf+obkpJZWar7HZymXZbW+Rlk3HTEIMlpc6FCNz0Ds=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "5ab036a8d97cb9476fbe81b09076e6e91d15e1b6",
-        "type": "github"
-      },
-      "original": {
-        "owner": "NixOS",
-        "ref": "release-24.11",
-        "repo": "nixpkgs",
-        "type": "github"
-      }
-    },
     "root": {
       "inputs": {
         "fenix": "fenix",
         "mixos": "mixos",
-        "nixpkgs": "nixpkgs",
-        "nixpkgs-2411": "nixpkgs-2411"
+        "nixpkgs": "nixpkgs"
       }
     },
     "rust-analyzer-src": {

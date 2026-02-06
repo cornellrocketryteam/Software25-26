@@ -50,16 +50,14 @@ const ADC_MAX_RETRIES: u32 = 5;
 const ADC_RETRY_DELAY_MS: u64 = 10;
 
 /// Pressure sensor scaling for a PT with range to 1500
-/// Formula: scaled = A*raw^2 + B*raw + C
-const PT1500_A: f32 = 0.000388347;
-const PT1500_B: f32 = 0.996275;
-const PT1500_C: f32 = -1.90096;
+/// Formula: scaled = raw * SCALE_A + OFFSET_A
+const PT1500_SCALE: f32 = 0.909754;
+const PT1500_OFFSET: f32 = 5.08926;
 
 /// Pressure sensor scaling for a PT with range to 2000
-/// Formula: scaled = A*raw^2 + B*raw + C
-const PT2000_A: f32 = 0.000546958;
-const PT2000_B: f32 = 0.676834;
-const PT2000_C: f32 = -0.112593;
+/// Formula: scaled = raw * SCALE_B + OFFSET_B
+const PT2000_SCALE: f32 = 1.22124;
+const PT2000_OFFSET: f32 = 5.37052;
 
 /// Pressure sensor scaling for a LoadCell
 /// Formula: scaled = raw * SCALE_C + OFFSET_C
@@ -720,11 +718,9 @@ async fn try_read_all_adcs(
         
         // Apply PT1500 scaling to channel 0 on ADC 1 and PT2000 scaling on other channels
         let scaled = if i == 0 {
-            let x = raw as f32;
-            Some(PT1500_A * x * x + PT1500_B * x + PT1500_C)
+            Some(raw as f32 * PT1500_SCALE + PT1500_OFFSET)
         } else {
-            let x = raw as f32;
-            Some(PT2000_A * x * x + PT2000_B * x + PT2000_C)
+            Some(raw as f32 * PT2000_SCALE + PT2000_OFFSET)
         };
         
         adc1_readings[i] = ChannelReading { raw, voltage, scaled };
@@ -739,8 +735,7 @@ async fn try_read_all_adcs(
         let scaled = if i == 1 {
             Some(raw as f32 * LOADCELL_SCALE + LOADCELL_OFFSET)
         } else {
-            let x = raw as f32;
-            Some(PT2000_A * x * x + PT2000_B * x + PT2000_C)
+            Some(raw as f32 * PT2000_SCALE + PT2000_OFFSET)
         };
         
         adc2_readings[i] = ChannelReading { raw, voltage, scaled };
