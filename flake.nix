@@ -3,6 +3,7 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/release-25.11";
+    nixpkgs-2411.url = "github:NixOS/nixpkgs/release-24.11";
     mixos = {
       url = "github:jmbaur/mixos";
       inputs.nixpkgs.follows = "nixpkgs";
