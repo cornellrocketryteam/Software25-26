@@ -5,7 +5,7 @@ use crate::packet::Packet;
 use crate::driver::mmc56x3::Mmc56x3Sensor;
 use crate::driver::bmp390::Bmp390Sensor;
 use crate::driver::fram::Fram;
-use crate::driver::icm42688::Icm42688Sensor;
+use crate::driver::lsm6dsox::Lsm6dsoxSensor;
 use crate::driver::rfd900x::Rfd900x;
 use crate::driver::ublox_max_m10s::UbloxMaxM10s;
 
@@ -68,7 +68,7 @@ pub struct FlightState {
     magnetometer: Mmc56x3Sensor,
 
     // imu
-    imu: Icm42688Sensor,
+    imu: Lsm6dsoxSensor,
 
     // actuators
 
@@ -94,7 +94,7 @@ impl FlightState {
         }
 
         let magnetometer = Mmc56x3Sensor::new(i2c_bus).await;
-        let imu = Icm42688Sensor::new(i2c_bus).await;
+        let imu = Lsm6dsoxSensor::new(i2c_bus).await;
         let radio = Rfd900x::new(uart);
 
         Self {

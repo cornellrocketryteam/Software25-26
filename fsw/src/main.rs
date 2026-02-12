@@ -6,6 +6,7 @@
 use embassy_executor::Spawner;
 use embassy_rp::gpio::{Level, Output};
 use embassy_time::Timer;
+use embedded_hal_async::i2c::I2c;
 use {defmt_rtt as _, panic_probe as _};
 
 mod constants;
@@ -14,10 +15,29 @@ mod module;
 mod packet;
 mod state;
 
+// debugging to find the addresses, but not needed to be run all the time 
+async fn scan_i2c_bus(i2c_bus: &'static module::SharedI2c) {
+    log::info!("Scanning I2C bus...");
+    
+    for addr in 0x08..=0x77 {
+        let mut i2c = embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice::new(i2c_bus);
+        let mut buf = [0u8; 1];
+        
+        match i2c.write_read(addr, &[], &mut buf).await {
+            Ok(_) => log::info!("Found device at address 0x{:02X}", addr),
+            Err(_) => {} // No device at this address
+        }
+    }
+    
+    log::info!("I2C scan complete");
+}
+
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     
     let p = embassy_rp::init(Default::default());
+       
+
     
 
     // Initialize USB driver for logger
@@ -26,8 +46,13 @@ async fn main(spawner: Spawner) {
 
     // Spawn USB logger task
     spawner.spawn(logger_task(driver).unwrap());
+    
 
-    let i2c_bus = module::init_shared_i2c(p.I2C0, p.PIN_0, p.PIN_1);
+    let i2c_bus = module::init_shared_i2c(p.I2C0, p.PIN_20, p.PIN_21);
+
+    Timer::after_secs(10).await;
+
+     scan_i2c_bus(i2c_bus).await;
     
 
     let (spi, cs) = module::init_spi(
@@ -35,11 +60,9 @@ async fn main(spawner: Spawner) {
     );
     let uart = module::init_uart1(p.UART1, p.PIN_4, p.PIN_5, p.DMA_CH0, p.DMA_CH1);
 
+
     // Onboard LED
     let mut led = Output::new(p.PIN_25, Level::Low); 
-
-    Timer::after_secs(10).await;
-
 
     let mut flight_state = state::FlightState::new(i2c_bus, spi, cs, uart).await;
     loop {
