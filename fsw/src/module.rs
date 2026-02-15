@@ -3,16 +3,20 @@ use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice as SharedI2cDevice;
 use embassy_rp::gpio::Output;
 use embassy_rp::i2c::{Config as I2cConfig, I2c, InterruptHandler as I2cInterruptHandler};
 use embassy_rp::peripherals::{
-    DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, I2C0, PIN_0, PIN_1, PIN_16, PIN_17, PIN_18, PIN_19, PIN_4, PIN_5, SPI0,
-    UART1, USB,
+    DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, I2C0, PIN_0, PIN_1, PIN_4, PIN_5, PIN_16, PIN_17, PIN_18,
+    PIN_19, SPI0, UART1, USB,
 };
 use embassy_rp::spi::{Config as SpiConfig, Spi};
 use embassy_rp::uart::{Config as UartConfig, InterruptHandler as UartInterruptHandler, Uart};
 use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
-use embassy_rp::{bind_interrupts, i2c, spi, uart, Peri};
+use embassy_rp::{Peri, bind_interrupts, i2c, spi, uart};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
+use embassy_usb::UsbDevice;
+use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
+use static_cell::StaticCell;
 
+pub type UsbDriver = Driver<'static, USB>;
 pub type SharedI2c = Mutex<NoopRawMutex, I2c<'static, I2C0, i2c::Async>>;
 pub type I2cDevice<'a> = SharedI2cDevice<'a, NoopRawMutex, I2c<'static, I2C0, i2c::Async>>;
 
@@ -23,8 +27,50 @@ bind_interrupts!(pub struct Irqs {
 });
 
 /// Initialize USB driver for logger
-pub fn init_usb_driver(usb: Peri<'static, USB>) -> Driver<'static, USB> {
+pub fn init_usb_driver(usb: Peri<'static, USB>) -> UsbDriver  {
     Driver::new(usb, Irqs)
+}
+
+// Initialize USB device to use for umbilical
+pub fn init_usb_device(driver: UsbDriver) -> (UsbDevice<'static, UsbDriver>, CdcAcmClass<'static, UsbDriver>) {
+    // Create embassy-usb Config
+    let config = {
+        let mut config = embassy_usb::Config::new(0xc0de, 0xcafe);
+        config.manufacturer = Some("Cornell Rocketry Team");
+        config.product = Some("Umbilical");
+        config.serial_number = Some("12345678");
+        config.max_power = 100;
+        config.max_packet_size_0 = 64;
+        config
+    };
+
+    // Create embassy-usb DeviceBuilder using the driver and config.
+    // It needs some buffers for building the descriptors.
+    let mut builder = {
+        static CONFIG_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
+        static BOS_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
+        static CONTROL_BUF: StaticCell<[u8; 64]> = StaticCell::new();
+
+        let builder = embassy_usb::Builder::new(
+            driver,
+            config,
+            CONFIG_DESCRIPTOR.init([0; 256]),
+            BOS_DESCRIPTOR.init([0; 256]),
+            &mut [], // no msos descriptors
+            CONTROL_BUF.init([0; 64]),
+        );
+        builder
+    };
+
+    // Create classes on the builder.
+    let class = {
+        static STATE: StaticCell<State> = StaticCell::new();
+        let state = STATE.init(State::new());
+        CdcAcmClass::new(&mut builder, state, 64)
+    };
+    let usb_device = builder.build();
+
+    (usb_device, class)
 }
 
 /// Initialize shared I2C bus
@@ -42,7 +88,7 @@ pub fn init_shared_i2c(
     let i2c = I2c::new_async(i2c0, scl, sda, Irqs, i2c_config);
 
     // Store in static memory
-    static I2C_BUS: static_cell::StaticCell<SharedI2c> = static_cell::StaticCell::new();
+    static I2C_BUS: StaticCell<SharedI2c> = StaticCell::new();
     I2C_BUS.init(Mutex::new(i2c))
 }
 
