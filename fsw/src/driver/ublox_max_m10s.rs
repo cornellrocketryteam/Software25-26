@@ -111,16 +111,15 @@ where
                 Some(Ok(ubx_packet)) => {
                     match ubx_packet {
                         PacketRef::NavPvt(pvt) => {
-                            // Update packet directly
-                            packet.latitude = pvt.lat_degrees() as f32;
-                            packet.longitude = pvt.lon_degrees() as f32;
-                            packet.num_satellites = pvt.num_satellites() as u32;
+                            // Update packet directly (lat/lon in µ degrees)
+                            packet.latitude = (pvt.lat_degrees() * 1_000_000.0) as i32;
+                            packet.longitude = (pvt.lon_degrees() * 1_000_000.0) as i32;
+                            packet.satellites_in_view = pvt.num_satellites();
 
-                            // Calculate timestamp from GPS time
-                            // Simple timestamp: hours * 3600 + minutes * 60 + seconds
-                            packet.timestamp = (pvt.hour() as f32 * 3600.0)
-                                + (pvt.min() as f32 * 60.0)
-                                + (pvt.sec() as f32);
+                            // GPS time as seconds-of-day (not true Unix time yet)
+                            packet.unix_time = (pvt.hour() as u32 * 3600)
+                                + (pvt.min() as u32 * 60)
+                                + (pvt.sec() as u32);
 
                             found_packet = true;
                         }

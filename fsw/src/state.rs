@@ -93,8 +93,8 @@ impl FlightState {
     }
 
     pub async fn read_sensors(&mut self) {
-        // Update packet flight mode
-        self.packet.flight_mode = self.flight_mode as u32;
+        // Update packet metadata with flight mode
+        self.packet.metadata = self.flight_mode as u16;
 
         // Read from FRAM
         match self.fram.read_u32(0).await {
@@ -115,9 +115,8 @@ impl FlightState {
         match self.altimeter.read_into_packet(&mut self.packet).await {
             Ok(_) => {
                 log::info!(
-                    "BMP | Pressure = {:.2} Pa, Temp = {:.2} °C, Alt = {:.2} m",
-                    self.packet.pressure,
-                    self.packet.temp,
+                    "BMP | Temp = {:.2} C, Alt = {:.2} m",
+                    self.packet.temperature,
                     self.packet.altitude
                 );
             }
@@ -130,11 +129,11 @@ impl FlightState {
         match self.gps.read_into_packet(&mut self.packet).await {
             Ok(_) => {
                 log::info!(
-                    "GPS | Lat = {:.6}°, Lon = {:.6}°, Sats = {}, Time = {:.0} s",
+                    "GPS | Lat = {} udeg, Lon = {} udeg, Sats = {}, Time = {} s",
                     self.packet.latitude,
                     self.packet.longitude,
-                    self.packet.num_satellites,
-                    self.packet.timestamp
+                    self.packet.satellites_in_view,
+                    self.packet.unix_time
                 );
             }
             Err(e) => {
@@ -150,15 +149,14 @@ impl FlightState {
         // Format packet data into a single transmission
         let _ = write!(
             &mut buffer,
-            "FM={},P={:.2},T={:.2},A={:.2},LAT={:.6},LON={:.6},SAT={},TS={:.0}\n",
-            self.packet.flight_mode,
-            self.packet.pressure,
-            self.packet.temp,
+            "FM={},T={:.2},A={:.2},LAT={},LON={},SAT={},TS={}\n",
+            self.packet.metadata,
+            self.packet.temperature,
             self.packet.altitude,
             self.packet.latitude,
             self.packet.longitude,
-            self.packet.num_satellites,
-            self.packet.timestamp
+            self.packet.satellites_in_view,
+            self.packet.unix_time
         );
 
         // Transmit via radio

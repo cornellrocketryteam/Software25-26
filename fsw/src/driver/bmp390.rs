@@ -40,13 +40,11 @@ impl Bmp390Sensor {
         packet: &mut crate::packet::Packet,
     ) -> Result<(), bmp390::Error<<I2cDevice<'static> as embedded_hal_async::i2c::ErrorType>::Error>> {
         use uom::si::length::meter;
-        use uom::si::pressure::pascal;
         use uom::si::thermodynamic_temperature::degree_celsius;
 
         let meas = self.sensor.measure().await?;
 
-        packet.pressure = meas.pressure.get::<pascal>() as f32;
-        packet.temp = meas.temperature.get::<degree_celsius>() as f32;
+        packet.temperature = meas.temperature.get::<degree_celsius>() as f32;
         packet.altitude = meas.altitude.get::<meter>() as f32;
 
         Ok(())

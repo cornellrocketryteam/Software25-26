@@ -4,18 +4,22 @@
 
 class StepperMotor {
     public:
-    StepperMotor(uint8_t DIR, uint8_t STEP, int stepsPerRev = 200, int microsteps = 16);
+    StepperMotor(uint8_t DIR, uint8_t STEP, int stepsPerRev = 200, int microsteps = 8);
     
     void moveAngleTo(double targetAngle);
-    void update();
+    void run();
     void setMaxSpeed(float stepsPerSec);
     void setAcceleration(float stepsPerSec2);
     void reset();
+    bool isRunning();
+    void home();
+    double getCurrentAngle();
+
 
     private:
+        AccelStepper motor_;
         uint8_t DIR_, STEP_;
         int stepsPerRev_, microsteps_;
         double currentAngle_;
-        AccelStepper motor_;
-        int angleToSteps(double angle) const;
-}
+        long angleToSteps(double angle) const;
+};
