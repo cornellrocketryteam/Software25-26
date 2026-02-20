@@ -92,4 +92,21 @@ impl<'a> Fram<'a> {
 
         Ok(())
     }
+
+    /// Reset the FRAM state (clear FlightMode, CycleCount, and Altitude log)
+    pub async fn reset(&mut self) -> Result<(), ()> {
+        // Reset FlightMode (Address 0) to 0 (Startup)
+        if self.write_u32(0, 0).await.is_err() {
+            return Err(());
+        }
+        // Reset CycleCount (Address 4) to 0
+        if self.write_u32(4, 0).await.is_err() {
+            return Err(());
+        }
+        // Reset Altitude Log (Address 100) to 0
+        if self.write_u32(100, 0).await.is_err() {
+            return Err(());
+        }
+        Ok(())
+    }
 }

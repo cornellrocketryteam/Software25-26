@@ -14,29 +14,26 @@ mod module;
 mod packet;
 mod state;
 mod flight_loop;
+pub mod actuator;
+pub mod umbilical;
 
 // Include simulation module
-#[path = "../Test/flight_sim.rs"]
+#[path = "../test/flight_sim.rs"]
 mod flight_sim;
 
-const SIMULATION_MODE: bool = true;
+const SIMULATION_MODE: bool = false;
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
-
     // Initialize USB driver for logger
     let driver = module::init_usb_driver(p.USB);
 
     // Spawn USB logger task
     spawner.spawn(logger_task(driver).unwrap());
 
-    // Give logger a moment to attach if using a tool that waits, though on Pico it's usually fine
-    // But logs might be lost if sent immediately before host connects.
-    // However, the user is waiting.
-    
-    // We can't log immediately if the host isn't connected, but we can try.
-    Timer::after_millis(500).await;
+    // Give logger a moment to attach if using a tool that waits, though on Pico it's fine usually
+    Timer::after_millis(5000).await;
     log::info!("Booting Cornell Rocketry FSW...");
 
     let i2c_bus = module::init_shared_i2c(p.I2C0, p.PIN_0, p.PIN_1);
@@ -48,19 +45,48 @@ async fn main(spawner: Spawner) {
     // Onboard LED
     let mut led = Output::new(p.PIN_25, Level::Low);
 
-    // Arming Switch and Umbilical Sense (Pins are placeholders don't know which ones to use yet)
-    let arming_switch = embassy_rp::gpio::Input::new(p.PIN_2, embassy_rp::gpio::Pull::Down);
-    let umbilical = embassy_rp::gpio::Input::new(p.PIN_3, embassy_rp::gpio::Pull::Down);
+    // Arming Switch and Umbilical Sense
+    let arming_switch = embassy_rp::gpio::Input::new(p.PIN_10, embassy_rp::gpio::Pull::Down);
+    let umbilical = embassy_rp::gpio::Input::new(p.PIN_11, embassy_rp::gpio::Pull::Down);
+
+    // Actuators
+    let (ssa, buzzer, mav, sv) = module::init_actuators(
+        p.PIN_2,
+        p.PIN_3,
+        p.PIN_6,
+        p.PWM_SLICE3,
+        p.PIN_7,
+        p.PIN_8,
+    );
     
-    log::info!("Initializing Flight State (Sensors)...");
-    let flight_state = state::FlightState::new(i2c_bus, spi, cs, arming_switch, umbilical, uart).await;
+    log::info!("Initializing Flight State (Sensors & Actuators)...");
+    let mut flight_state = state::FlightState::new(
+        i2c_bus, spi, cs, arming_switch, umbilical, uart,
+        ssa,
+        buzzer,
+        mav,
+        sv,
+    ).await;
     log::info!("Flight State Initialized.");
+     
+    // Reset FRAM for testing COMMENT OUT FOR REAL FLIGHT
+    flight_state.reset_fram().await;
+    
     let mut flight_loop = flight_loop::FlightLoop::new(flight_state);
 
     if SIMULATION_MODE {
         Timer::after_secs(5).await;
         log::info!("\nStarting Simulation Mode...");
-        flight_sim::simulate_flight_s1(&mut flight_loop).await;
+        flight_sim::simulate_flight_simple(&mut flight_loop).await;
+        
+        Timer::after_secs(2).await;
+        flight_sim::simulate_fault_scenarios(&mut flight_loop).await;
+        
+        Timer::after_secs(2).await;
+        flight_sim::simulate_stability_scenarios(&mut flight_loop).await;
+        
+        Timer::after_secs(2).await;
+        flight_sim::simulate_extra_features(&mut flight_loop).await;
         loop {
             // Blink rapidly to indicate sim complete
             led.toggle();

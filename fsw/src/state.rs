@@ -2,10 +2,10 @@ use crate::module::*;
 
 use crate::packet::Packet;
 
-use crate::driver::ak09915::Ak09915Sensor;
+use crate::driver::mmc56x3::Mmc56x3Sensor;
 use crate::driver::bmp390::Bmp390Sensor;
 use crate::driver::main_fram::Fram;
-use crate::driver::icm42688::Icm42688Sensor;
+use crate::driver::lsm6dsox::Lsm6dsoxSensor;
 use crate::driver::rfd900x::Rfd900x;
 use crate::driver::ublox_max_m10s::UbloxMaxM10s;
 
@@ -13,6 +13,8 @@ use embassy_rp::gpio::{Input, Output};
 use embassy_rp::peripherals::SPI0;
 use embassy_rp::spi::Spi;
 use embassy_rp::uart::{Async, Uart};
+
+use crate::actuator::{Ssa, Buzzer, Mav, SV, Chute};
 
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -72,18 +74,27 @@ pub struct FlightState {
     gps: UbloxMaxM10s<'static, I2cDevice<'static>>,
 
     // magnetometer
-    magnetometer: Ak09915Sensor,
+    magnetometer: Mmc56x3Sensor,
 
     // imu
-    imu: Icm42688Sensor,
+    imu: Lsm6dsoxSensor,
 
     // actuators
     arming_switch: Input<'static>,
     umbilical_sense: Input<'static>,
     pub arming_altitude: f32,
 
+    pub ssa: Ssa<'static>,
+    pub buzzer: Buzzer<'static>,
+    pub mav: Mav<'static>,
+    pub sv: SV<'static>,
+
     // telemetry
     radio: Rfd900x<'static>,
+
+    // comms
+    pub payload_comms_ok: bool,
+    pub recovery_comms_ok: bool,
 }
 
 impl FlightState {
@@ -94,10 +105,19 @@ impl FlightState {
         arming_switch: Input<'static>,
         umbilical_sense: Input<'static>,
         uart: Uart<'static, Async>,
+        ssa: Ssa<'static>,
+        buzzer: Buzzer<'static>,
+        mav: Mav<'static>,
+        sv: SV<'static>,
     ) -> Self {
         let packet = Packet::default();
         let altimeter = Bmp390Sensor::new(i2c_bus).await;
-        let fram = Fram::new(spi, cs);
+        let altimeter_init = if altimeter.is_init() {
+            SensorState::VALID
+        } else {
+            SensorState::INVALID
+        };
+        let mut fram = Fram::new(spi, cs);
         let mut gps = UbloxMaxM10s::new(i2c_bus);
 
         // Configure GPS module to output NAV-PVT messages
@@ -105,18 +125,37 @@ impl FlightState {
             log::error!("Failed to configure GPS: {:?}", e);
         }
 
-        let magnetometer = Ak09915Sensor::new(i2c_bus).await;
-        let imu = Icm42688Sensor::new(i2c_bus).await;
+        let magnetometer = Mmc56x3Sensor::new(i2c_bus).await;
+        let imu = Lsm6dsoxSensor::new(i2c_bus).await;
         let radio = Rfd900x::new(uart);
+
+        // Read stored state from FRAM
+        let (stored_mode, stored_cycle_count) = match fram.read_u32(0).await {
+            Ok(mode_raw) => {
+                let mode = FlightMode::from_u32(mode_raw);
+                log::info!("FlightMode read from FRAM: {:?}", mode);
+                match fram.read_u32(4).await {
+                    Ok(count) => (mode, count),
+                    Err(_) => {
+                        log::warn!("Failed to read CycleCount from FRAM");
+                        (mode, 0)
+                    }
+                }
+            }
+            Err(_) => {
+                log::warn!("Failed to read FlightMode from FRAM");
+                (FlightMode::Startup, 0)
+            }
+        };
 
         Self {
             packet: packet,
-            flight_mode: FlightMode::Startup,
-            cycle_count: 0,
+            flight_mode: stored_mode,
+            cycle_count: stored_cycle_count,
             key_armed: false,
             umbilical_connected: false,
             altimeter: altimeter,
-            altimeter_state: SensorState::OFF,
+            altimeter_state: altimeter_init,
             sd_logging_enabled: false, // Default to false (SD failure assumed for now)
             fram: fram,
             gps: gps,
@@ -127,6 +166,12 @@ impl FlightState {
             arming_altitude: 0.0,
             radio: radio,
             reference_pressure: 0.0,
+            payload_comms_ok: true,
+            recovery_comms_ok: true,
+            ssa,
+            buzzer,
+            mav,
+            sv,
         }
     }
 
@@ -138,16 +183,79 @@ impl FlightState {
         return self.packet.pressure;
     }
 
+    pub async fn check_subsystem_health(&mut self) {
+        // TODO: Implement actual payload command checks
+    }
+
+    pub async fn update_actuators(&mut self) {
+        self.ssa.update();
+        self.buzzer.update();
+        self.mav.update();
+        self.sv.update();
+    }
+
+    // Actuator wrappers with FRAM writing
+
+    pub async fn trigger_drogue(&mut self) {
+        log::info!("ACTUATOR: Triggering Drogue");
+        self.ssa.trigger(Chute::Drogue, crate::constants::SSA_THRESHOLD_MS);
+    }
+
+    pub async fn trigger_main(&mut self) {
+        log::info!("ACTUATOR: Triggering Main");
+        self.ssa.trigger(Chute::Main, crate::constants::SSA_THRESHOLD_MS);
+    }
+
+    pub fn buzz(&mut self, num: u32) {
+        log::info!("ACTUATOR: Buzzing {} times", num);
+        self.buzzer.buzz(num);
+    }
+    pub async fn open_mav(&mut self, duration: u64) {
+        log::info!("ACTUATOR: Opening MAV");
+        self.mav.open(duration);
+        // Open (1)
+        if let Err(_) = self.fram.write_u32(20, 1).await {
+             log::warn!("Failed to write MAV state to FRAM");
+        }
+    }
+
+    pub async fn close_mav(&mut self) {
+        log::info!("ACTUATOR: Closing MAV");
+        self.mav.close();
+        // Closed (0)
+        if let Err(_) = self.fram.write_u32(20, 0).await {
+             log::warn!("Failed to write MAV state to FRAM");
+        }
+    }
+    
+
+    pub async fn open_sv(&mut self, duration: u64) {
+        log::info!("ACTUATOR: Opening SV");
+        self.sv.open(duration);
+        // Open (1)
+        if let Err(_) = self.fram.write_u32(24, 1).await {
+             log::warn!("Failed to write SV state to FRAM");
+        }
+    }
+
+    pub async fn close_sv(&mut self) {
+         log::info!("ACTUATOR: Closing SV");
+         self.sv.close();
+         // Closed (0)
+         if let Err(_) = self.fram.write_u32(24, 0).await {
+             log::warn!("Failed to write SV state to FRAM");
+        }
+    }
+
     pub async fn read_sensors(&mut self) {
+        self.update_actuators().await;
+
         // Update packet flight mode
         self.packet.flight_mode = self.flight_mode as u32;
 
         // Update key armed status
         self.key_armed = self.arming_switch.is_high();
         self.umbilical_connected = self.umbilical_sense.is_high();
-
-        // Note: Umbilical state reading will be handled directly in flight_loop for strict logic,
-        // or we can add a field to FlightState if needed globally.
 
         // Read from FRAM
         match self.fram.read_u32(0).await {
@@ -159,10 +267,11 @@ impl FlightState {
             }
         }
 
-        // Write to FRAM
-        if let Err(_) = self.fram.write_u32(0, self.flight_mode as u32).await {
-            log::warn!("Failed to write the FlightMode to FRAM!");
-        }
+        // Write state to FRAM
+        self.write_state_to_fram().await;
+        
+        // Write sensor data to FRAM
+        self.write_sensor_data_to_fram().await;
 
         // Read altimeter and update packet
         match self.altimeter.read_into_packet(&mut self.packet).await {
@@ -278,6 +387,7 @@ impl FlightState {
     pub async fn execute(&mut self) {
         // Read sensors and update packet
         self.read_sensors().await;
+        log::info!("\n");
 
         // Transmit packet via radio
         self.transmit().await;
@@ -295,17 +405,49 @@ impl FlightState {
         }
     }
 
-    /// Logs critical PT (Pressure/Temperature/Altitude) data to FRAM
-    /// This is a fallback if SD logging fails.
-    pub async fn log_to_fram(&mut self) {
-        // Simple ring buffer or sequential write could be implemented here.
-        // For now, we just overwrite a scratchpad area (e.g., address 100) 
-        // with the latest Altitude (as u32 representation).
-        // Real implementation would manage addresses.
-        
+    // Logs critical PT (Pressure/Temperature/Altitude) data to FRAM
+    pub async fn log_to_fram(&mut self) {        
         let alt_bits = self.packet.altitude.to_bits();
         if let Err(_) = self.fram.write_u32(100, alt_bits).await {
              log::warn!("Failed to write PT data to FRAM");
+        }
+    }
+
+    // Reset FRAM state (FlightMode, CycleCount, Altitude log)
+    pub async fn reset_fram(&mut self) {
+        if let Err(_) = self.fram.reset().await {
+            log::error!("Failed to reset FRAM");
+        } else {
+            log::info!("FRAM Reset successfully");
+            self.flight_mode = FlightMode::Startup;
+            self.cycle_count = 0;
+        }
+    }
+
+    // Write critical state variables (Mode, CycleCount) to FRAM
+    pub async fn write_state_to_fram(&mut self) {
+        if let Err(_) = self.fram.write_u32(0, self.flight_mode as u32).await {
+            log::warn!("Failed to write FlightMode to FRAM");
+        }
+        if let Err(_) = self.fram.write_u32(4, self.cycle_count).await {
+            log::warn!("Failed to write CycleCount to FRAM");
+        }
+    }
+
+    // Write latest sensor data (Pressure, Temp, Altitude) to FRAM
+    pub async fn write_sensor_data_to_fram(&mut self) {
+        let press_bits = self.packet.pressure.to_bits();
+        let temp_bits = self.packet.temp.to_bits();
+        let alt_bits = self.packet.altitude.to_bits();
+
+        if let Err(_) = self.fram.write_u32(8, press_bits).await {
+            //log::warn!("Failed to write Pressure to FRAM");
+        }
+        if let Err(_) = self.fram.write_u32(12, temp_bits).await {
+            //log::warn!("Failed to write Temp to FRAM");
+        }
+        if let Err(_) = self.fram.write_u32(16, alt_bits).await {
+            //log::warn!("Failed to write Altitude to FRAM");
         }
     }
 }
