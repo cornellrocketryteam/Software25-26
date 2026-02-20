@@ -8,6 +8,7 @@ use crate::driver::main_fram::Fram;
 use crate::driver::lsm6dsox::Lsm6dsoxSensor;
 use crate::driver::rfd900x::Rfd900x;
 use crate::driver::ublox_max_m10s::UbloxMaxM10s;
+use crate::driver::ads1015::Ads1015Sensor;
 
 use embassy_rp::gpio::{Input, Output};
 use embassy_rp::peripherals::SPI0;
@@ -79,6 +80,9 @@ pub struct FlightState {
     // imu
     imu: Lsm6dsoxSensor,
 
+    // adc
+    adc: Ads1015Sensor,
+
     // actuators
     arming_switch: Input<'static>,
     umbilical_sense: Input<'static>,
@@ -127,6 +131,7 @@ impl FlightState {
 
         let magnetometer = Mmc56x3Sensor::new(i2c_bus).await;
         let imu = Lsm6dsoxSensor::new(i2c_bus).await;
+        let adc = Ads1015Sensor::new(i2c_bus).await;
         let radio = Rfd900x::new(uart);
 
         // Read stored state from FRAM
@@ -161,6 +166,7 @@ impl FlightState {
             gps: gps,
             magnetometer: magnetometer,
             imu: imu,
+            adc: adc,
             arming_switch: arming_switch,
             umbilical_sense: umbilical_sense,
             arming_altitude: 0.0,
@@ -338,10 +344,25 @@ impl FlightState {
                 log::error!("Failed to read ICM-42688-P IMU: {:?}", e);
             }
         }
+
+        // Read ADC and update packet
+        match self.adc.read_into_packet(&mut self.packet).await {
+            Ok(_) => {
+                log::info!(
+                    "ADC | PT3={:.0} PT4={:.0} RTD={:.0} (raw)",
+                    self.packet.pt3,
+                    self.packet.pt4,
+                    self.packet.rtd
+                );
+            }
+            Err(e) => {
+                log::error!("Failed to read ADS1015 ADC: {:?}", e);
+            }
+        }
     }
 
     pub async fn transmit(&mut self) {
-        let mut data = [0u8; 68];
+        let mut data = [0u8; 80];
         data[0..4].copy_from_slice(&self.packet.flight_mode.to_le_bytes());
         data[4..8].copy_from_slice(&self.packet.pressure.to_le_bytes());
         data[8..12].copy_from_slice(&self.packet.temp.to_le_bytes());
@@ -359,6 +380,10 @@ impl FlightState {
         data[56..60].copy_from_slice(&self.packet.gyro_x.to_le_bytes());
         data[60..64].copy_from_slice(&self.packet.gyro_y.to_le_bytes());
         data[64..68].copy_from_slice(&self.packet.gyro_z.to_le_bytes());
+        // ADS1015 ADC channels
+        data[68..72].copy_from_slice(&self.packet.pt3.to_le_bytes());
+        data[72..76].copy_from_slice(&self.packet.pt4.to_le_bytes());
+        data[76..80].copy_from_slice(&self.packet.rtd.to_le_bytes());
 
         // Transmit via radio
         match self.radio.send(&data).await {
@@ -434,7 +459,7 @@ impl FlightState {
         }
     }
 
-    // Write latest sensor data (Pressure, Temp, Altitude) to FRAM
+    // Write latest sensor data (Pressure, Temp, Altitude, ADC) to FRAM
     pub async fn write_sensor_data_to_fram(&mut self) {
         let press_bits = self.packet.pressure.to_bits();
         let temp_bits = self.packet.temp.to_bits();
@@ -448,6 +473,21 @@ impl FlightState {
         }
         if let Err(_) = self.fram.write_u32(16, alt_bits).await {
             //log::warn!("Failed to write Altitude to FRAM");
+        }
+
+        // ADC channels (PT3, PT4, RTD)
+        let pt3_bits = self.packet.pt3.to_bits();
+        let pt4_bits = self.packet.pt4.to_bits();
+        let rtd_bits = self.packet.rtd.to_bits();
+
+        if let Err(_) = self.fram.write_u32(28, pt3_bits).await {
+            //log::warn!("Failed to write PT3 to FRAM");
+        }
+        if let Err(_) = self.fram.write_u32(32, pt4_bits).await {
+            //log::warn!("Failed to write PT4 to FRAM");
+        }
+        if let Err(_) = self.fram.write_u32(36, rtd_bits).await {
+            //log::warn!("Failed to write RTD to FRAM");
         }
     }
 }
