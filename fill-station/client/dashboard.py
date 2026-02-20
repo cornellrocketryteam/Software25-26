@@ -36,9 +36,15 @@ class FillStationClient:
 
     def connect(self, url):
         self.url = url
-        if self.connected:
+        if self.connected and self.should_run:
+            print("Already connected and running.")
             return
         
+        # If threads are alive from a previous session, ensure they stop first
+        if self.should_run:
+            self.disconnect()
+            time.sleep(0.5) # Give threads time to die
+
         self.should_run = True
         self.thread = threading.Thread(target=self._run_ws, daemon=True)
         self.thread.start()

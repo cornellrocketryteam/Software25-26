@@ -7,16 +7,15 @@ The fill station now includes a background task that continuously monitors two A
 ## Architecture
 
 ### Background ADC Monitoring Task
-- Runs continuously at **10 Hz** (configurable via `ADC_SAMPLE_RATE_HZ`)
+- Runs continuously at **100 Hz** (configurable via `ADC_SAMPLE_RATE_HZ`)
 - Reads all 8 channels (4 per ADC) every cycle
-- **10x Averaging**: Each channel takes the arithmetic mean of 10 samples per cycle to reduce signal noise
 - Updates shared `AdcReadings` struct with thread-safe `Arc<Mutex<>>`
 - Includes retry logic: up to 5 attempts with 10ms delays between failures
 - Marks readings as invalid if all retries fail
 
 ### WebSocket Streaming
 - Clients connect and send `{"command": "start_adc_stream"}` to begin receiving data
-- Server pushes new ADC readings as they become available (~10 Hz)
+- Server pushes new ADC readings as they become available (~100 Hz)
 - Clients send `{"command": "stop_adc_stream"}` to stop the stream
 - Multiple clients can stream simultaneously (each gets their own stream)
 
@@ -26,7 +25,7 @@ All ADC parameters are defined as constants at the top of `main.rs`:
 
 ```rust
 // Sampling rate
-const ADC_SAMPLE_RATE_HZ: u64 = 10;  // Change to 20, 50, 100, etc.
+const ADC_SAMPLE_RATE_HZ: u64 = 100;  // Change to 20, 50, 100, etc.
 
 // ADC settings (Linux/Android only)
 const ADC_GAIN: Gain = Gain::One;              // ±4.096V range
@@ -34,7 +33,6 @@ const ADC_DATA_RATE: DataRate = DataRate::Sps3300;  // Maximum speed
 
 // Retry behavior
 const ADC_MAX_RETRIES: u32 = 5;
-const ADC_AVG_SAMPLES: usize = 10;   // 10x averaging per reading
 const ADC_RETRY_DELAY_MS: u64 = 10;
 
 // Pressure sensor scaling for PT1500
@@ -51,7 +49,7 @@ const LOADCELL_OFFSET: f32 = 75.37882;
 ```
 
 ### To Change Sampling Rate:
-Just modify `ADC_SAMPLE_RATE_HZ`. Example: `const ADC_SAMPLE_RATE_HZ: u64 = 20;` for 20 Hz.
+Just modify `ADC_SAMPLE_RATE_HZ`. Example: `const ADC_SAMPLE_RATE_HZ: u64 = 200;` for 200 Hz.
 
 ### To Update Pressure Sensor Calibration:
 Modify the `PT1500_*`, `PT2000_*`, and `LOADCELL_*` constants with your new calibration values.
@@ -193,9 +191,7 @@ Just update:
 
 ## Performance Notes
 
-- At 10 Hz with 8 channels (10x averaging): 800 samples/second total
-- **Optimized Driver Timing**: Uses microsecond-precision sleeps (e.g., 303µs for Sps3300) to ensure the 10x averaging fits within the 100ms cycle budget.
-- Total cycle time for 80 reads: ~50ms (well within the 10Hz/100ms limit)
+- At 100 Hz with 8 channels: 800 reads/second total
 - Actual I2C speed limited by `Sps3300` setting (~3300 samples/sec per channel max)
 - WebSocket JSON serialization is negligible overhead
-- Each reading is ~500 bytes JSON, so 10 Hz = ~5 KB/s per client
+- Each reading is ~500 bytes JSON, so 100 Hz = ~50 KB/s per client

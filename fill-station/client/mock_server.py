@@ -149,7 +149,7 @@ async def stream_adc(websocket):
                 ]
             }
             await websocket.send(json.dumps(msg))
-            await asyncio.sleep(0.1) # 10 Hz
+            await asyncio.sleep(0.01) # 100 Hz
     except asyncio.CancelledError:
         pass
     except Exception as e:

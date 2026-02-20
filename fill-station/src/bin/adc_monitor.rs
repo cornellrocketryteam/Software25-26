@@ -121,7 +121,7 @@ fn main() -> Result<()> {
 
         // Small delay to prevent overwhelming the terminal
         // Adjust or remove for maximum sampling rate
-        thread::sleep(Duration::from_millis(100));
+        thread::sleep(Duration::from_millis(10));
     }
 }
 

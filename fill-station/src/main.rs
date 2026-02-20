@@ -32,7 +32,7 @@ use crate::components::ads1015::{Channel, Gain, DataRate};
 // ============================================================================
 
 /// ADC sampling rate in Hz (samples per second)
-const ADC_SAMPLE_RATE_HZ: u64 = 10;
+const ADC_SAMPLE_RATE_HZ: u64 = 100;
 
 // ADC configuration constants - only needed on Linux/Android
 #[cfg(any(target_os = "linux", target_os = "android"))]

@@ -92,6 +92,6 @@ fn main() -> Result<()> {
         
         // Small delay to prevent terminal overflow
         // Remove or adjust for maximum sampling speed
-        thread::sleep(Duration::from_millis(50));
+        thread::sleep(Duration::from_millis(10));
     }
 }
