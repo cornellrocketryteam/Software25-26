@@ -28,12 +28,20 @@ pub async fn start_logging(
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    let filename = format!("{}/fill_station_log_{}.csv", log_dir, timestamp);
+        
+    let mut filename = format!("{}/fill_station_log_{}.csv", log_dir, timestamp);
+    let mut file_index = 1;
+
+    // Ensure we create a new file instead of re-using one
+    while std::path::Path::new(&filename).exists() {
+        filename = format!("{}/fill_station_log_{}_{}.csv", log_dir, timestamp, file_index);
+        file_index += 1;
+    }
 
     let mut file = match OpenOptions::new()
-        .create(true)
+        .create(true) // this creates the file if it doesn't exist
         .write(true)
-        .append(true)
+        .truncate(true) // Ensure we start with a clean file
         .open(&filename)
         .await
     {
