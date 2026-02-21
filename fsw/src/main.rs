@@ -26,14 +26,14 @@ const SIMULATION_MODE: bool = false;
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
-    // Initialize USB driver for logger
-    let driver = module::init_usb_driver(p.USB);
+    // Initialize USB subsystem (logger in debug, umbilical in release)
+    let usb_driver = module::init_usb_driver(p.USB);
+    umbilical::setup(&spawner, usb_driver);
 
-    // Spawn USB logger task
-    spawner.spawn(logger_task(driver).unwrap());
-
-    // Give logger a moment to attach if using a tool that waits, though on Pico it's fine usually
-    Timer::after_millis(5000).await;
+    // Give logger a moment to attach in debug mode
+    if cfg!(debug_assertions) {
+        Timer::after_millis(5000).await;
+    }
     log::info!("Booting Cornell Rocketry FSW...");
 
     let i2c_bus = module::init_shared_i2c(p.I2C0, p.PIN_0, p.PIN_1);
@@ -47,7 +47,7 @@ async fn main(spawner: Spawner) {
 
     // Arming Switch and Umbilical Sense
     let arming_switch = embassy_rp::gpio::Input::new(p.PIN_10, embassy_rp::gpio::Pull::Down);
-    let umbilical = embassy_rp::gpio::Input::new(p.PIN_11, embassy_rp::gpio::Pull::Down);
+    let umbilical = embassy_rp::gpio::Input::new(p.PIN_24, embassy_rp::gpio::Pull::Down);
 
     // Actuators
     let (ssa, buzzer, mav, sv) = module::init_actuators(
@@ -104,7 +104,3 @@ async fn main(spawner: Spawner) {
     }
 }
 
-#[embassy_executor::task]
-async fn logger_task(driver: embassy_rp::usb::Driver<'static, embassy_rp::peripherals::USB>) -> ! {
-    embassy_usb_logger::run!({ constants::USB_LOGGER_BUFFER_SIZE }, log::LevelFilter::Info, driver);
-}

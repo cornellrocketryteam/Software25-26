@@ -394,6 +394,9 @@ impl FlightState {
                 log::warn!("Failed to transmit packet via radio: {:?}", e);
             }
         }
+
+        // Share telemetry with umbilical sender task (no-op if logger mode)
+        crate::umbilical::update_telemetry(&data);
     }
     /*
     pub async fn transition(&mut self) {

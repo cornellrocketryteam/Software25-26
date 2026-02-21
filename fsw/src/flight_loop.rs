@@ -4,6 +4,7 @@ use embassy_time::Instant;
 use crate::state::{FlightMode, FlightState};
 use crate::constants;
 use crate::state::SensorState;
+use crate::umbilical::{self, UmbilicalCommand};
 
 // TODO: Add //CHALLENGE_# to each fault with its solution
 // TODO: Remove some bools and edit FlightLoop to be able to trigger events with methods 
@@ -135,20 +136,56 @@ impl FlightLoop {
     }
 
     pub async fn check_umbilical_commands(&mut self) {
-        // TODO: Implement actual serial/UART command receiving logic here
-        // For now placeholder
-        
-        // if let Some(cmd) = self.flight_state.umbilical_serial.receive().await {
-        //     match cmd {
-        //         Command::ForceMode(mode) => {
-        //             self.set_flight_mode(mode);
-        //         },
-        //         Command::Launch => {
-        //             self.set_launch_command(true);
-        //         },
-        //         _ => {}
-        //     }
-        // }
+        while let Some(cmd) = umbilical::try_recv_command() {
+            match cmd {
+                UmbilicalCommand::Launch => {
+                    log::warn!("UMBILICAL CMD: Launch received");
+                    self.set_launch_command(true);
+                },
+                UmbilicalCommand::OpenMav => {
+                    log::warn!("UMBILICAL CMD: Open MAV");
+                    self.flight_state.open_mav(constants::MAV_OPEN_DURATION_MS).await;
+                    self.mav_open = true;
+                    self.mav_open_time = Some(Instant::now());
+                },
+                UmbilicalCommand::CloseMav => {
+                    log::warn!("UMBILICAL CMD: Close MAV");
+                    self.flight_state.close_mav().await;
+                    self.mav_open = false;
+                    self.mav_open_time = None;
+                },
+                UmbilicalCommand::OpenSv => {
+                    log::warn!("UMBILICAL CMD: Open SV");
+                    self.flight_state.open_sv(0).await;
+                    self.sv_open = true;
+                },
+                UmbilicalCommand::CloseSv => {
+                    log::warn!("UMBILICAL CMD: Close SV");
+                    self.flight_state.close_sv().await;
+                    self.sv_open = false;
+                },
+                UmbilicalCommand::Safe => {
+                    log::warn!("UMBILICAL CMD: Safe — closing all actuators");
+                    self.flight_state.close_mav().await;
+                    self.flight_state.close_sv().await;
+                    self.mav_open = false;
+                    self.sv_open = false;
+                    self.mav_open_time = None;
+                },
+                UmbilicalCommand::ResetFram => {
+                    log::warn!("UMBILICAL CMD: Reset FRAM");
+                    self.flight_state.reset_fram().await;
+                },
+                UmbilicalCommand::ResetCard => {
+                    log::warn!("UMBILICAL CMD: Reset SD Card");
+                    // TODO: Implement SD card reset when SD logging is enabled
+                },
+                UmbilicalCommand::Reboot => {
+                    log::warn!("UMBILICAL CMD: Reboot");
+                    cortex_m::peripheral::SCB::sys_reset();
+                },
+            }
+        }
     }
 
     pub async fn check_transitions(&mut self) {
