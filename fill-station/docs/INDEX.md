@@ -33,6 +33,11 @@ Complete documentation for the Cornell Rocketry Team fill station server.
   - Performance notes
   - Testing instructions
 
+- **[UMBILICAL.md](UMBILICAL.md)** - Ground-FSW USB umbilical connection
+  - Architecture and Data Flow
+  - Telemetry formats
+  - Command translations
+
 - **[WEBSOCKET_API.md](WEBSOCKET_API.md)** - Full reference of all network commands
   - Command JSON formats
   - Response structures
@@ -78,7 +83,8 @@ fill-station/
 │   ├── ADC_STREAMING.md         # ADC feature documentation
 │   ├── ADC_MONITOR_GUIDE.md     # Hardware setup guide
 │   ├── QUICKSTART_ADC.md        # Quick testing guide
-│   └── TROUBLESHOOTING.md       # Problem solving
+│   ├── TROUBLESHOOTING.md       # Problem solving
+│   └── UMBILICAL.md             # Umbilical connection details
 ├── src/
 │   ├── main.rs                  # Server & background tasks
 │   ├── command.rs               # WebSocket protocol
@@ -151,8 +157,12 @@ WebSocket Client
 ### Background Tasks
 ```
 main() spawns tasks:
-    ├─ adc_monitoring_task (10 Hz)
+    ├─ adc_monitoring_task (100 Hz)
     │   └─ Updates AdcReadings state
+    │       └─ Streamed to clients
+    │
+    ├─ umbilical_task (continuous serial poll)
+    │   └─ Updates UmbilicalReadings state
     │       └─ Streamed to clients
     │
     └─ your_background_task
@@ -190,12 +200,14 @@ main() spawns tasks:
 | `actuate_valve` | Open/Close solenoid valve | [WEBSOCKET_API.md](WEBSOCKET_API.md#actuate_valve) |
 | `get_valve_state` | Query valve state | [WEBSOCKET_API.md](WEBSOCKET_API.md#get_valve_state) |
 | `set_mav_angle` | Set MAV servo angle | [WEBSOCKET_API.md](WEBSOCKET_API.md#set_mav_angle) |
+| `start_fsw_stream` | Stream FSW telemetry | [UMBILICAL.md](UMBILICAL.md) |
+| `fsw_launch` | Send Launch command to FSW | [UMBILICAL.md](UMBILICAL.md) |
 
 ## Configuration Reference
 
 ### ADC Settings (`src/main.rs`)
 ```rust
-const ADC_SAMPLE_RATE_HZ: u64 = 10;           // Sampling frequency
+const ADC_SAMPLE_RATE_HZ: u64 = 100;          // Sampling frequency
 const ADC_GAIN: Gain = Gain::One;             // ±4.096V range
 const ADC_DATA_RATE: DataRate = DataRate::Sps3300;  // Max speed (optimized)
 const ADC_MAX_RETRIES: u32 = 5;               // Retry attempts

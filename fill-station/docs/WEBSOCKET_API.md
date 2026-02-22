@@ -76,7 +76,7 @@ Initiates a **non-blocking** ignition sequence. Fires both igniters concurrently
 ---
 
 ### `start_adc_stream`
-Begins pushing real-time ADC data to the connecting client at 10 Hz.
+Begins pushing real-time ADC data to the connecting client at 100 Hz.
 
 **Format:**
 ```json
@@ -109,7 +109,7 @@ Stops the ADC data stream for the current client.
 ## Server Push Messages
 
 ### `adc_data`
-Sent periodically (at 10 Hz) after a `start_adc_stream` command.
+Sent periodically (at 100 Hz) after a `start_adc_stream` command.
 
 **Format:**
 ```json
@@ -345,3 +345,98 @@ Set the Ball Valve ON_OFF line state manually.
 ```json
 {"type": "success"}
 ```
+
+---
+
+## FSW Umbilical Commands
+
+These commands interface with the Flight Software over the USB Umbilical. 
+
+### `start_fsw_stream`
+Begin streaming parsed FSW telemetry data (`fsw_telemetry`) to the client as fast as it arrives.
+
+**Format:**
+```json
+{"command": "start_fsw_stream"}
+```
+
+**Response:**
+```json
+{"type": "success"}
+```
+
+---
+
+### `stop_fsw_stream`
+Stop streaming FSW telemetry data.
+
+**Format:**
+```json
+{"command": "stop_fsw_stream"}
+```
+
+**Response:**
+```json
+{"type": "success"}
+```
+
+---
+
+### FSW Actuators and States
+
+The following commands send simple 1-byte command characters over the serial connection to the Flight Software. They all follow the same format and response structure.
+
+*   `fsw_open_mav`
+*   `fsw_close_mav`
+*   `fsw_open_sv`
+*   `fsw_close_sv`
+*   `fsw_launch`
+*   `fsw_safe`
+*   `fsw_reset_fram`
+*   `fsw_reset_card`
+*   `fsw_reboot`
+
+**Format:**
+```json
+{"command": "fsw_launch"} 
+```
+
+**Response:**
+```json
+{"type": "success"}
+```
+
+---
+
+### Push Message `fsw_telemetry`
+Data received back from the Flight software, pushed to clients when `start_fsw_stream` is active.
+
+**Format:**
+```json
+{
+  "type": "fsw_telemetry",
+  "timestamp_ms": 1734678125456,
+  "connected": true,
+  "flight_mode": "Standby",
+  "telemetry": {
+    "flight_mode": 1,
+    "pressure": 101325.0,
+    "temp": 22.5,
+    "altitude": 10.0,
+    "latitude": 42.44,
+    "longitude": -76.48,
+    "num_satellites": 8,
+    "timestamp": 12.34,
+    "mag_x": 0.0, "mag_y": 0.0, "mag_z": 0.0,
+    "accel_x": 0.0, "accel_y": 0.0, "accel_z": 9.81,
+    "gyro_x": 0.0, "gyro_y": 0.0, "gyro_z": 0.0,
+    "pt3": 1200.0,
+    "pt4": 1500.0,
+    "rtd": 500.0
+  }
+}
+```
+
+* `connected`: True if the background task can communicate with the serial device.
+* `flight_mode`: Human readable string.
+* `telemetry`: The full 80-byte `FswTelemetry` packet parsed into JSON variables.

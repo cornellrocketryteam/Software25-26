@@ -36,7 +36,8 @@ fill-station/
 │   ├── ADC_STREAMING.md     # ADC background monitoring docs
 │   ├── ADC_MONITOR_GUIDE.md # ADC hardware setup
 │   ├── QUICKSTART_ADC.md    # Quick ADC testing guide
-│   └── TROUBLESHOOTING.md   # Common issues & solutions
+│   ├── TROUBLESHOOTING.md   # Common issues & solutions
+│   └── UMBILICAL.md         # FSW Umbilical connection details
 └── test_adc_stream.py       # WebSocket client test script
 ```
 
@@ -54,10 +55,12 @@ fill-station/
 - **MAV**: Servo control (PWM) for Mechanically Actuated Valve
 - **ADC Monitoring**: Dual ADS1015 12-bit ADCs (8 channels total)
 - **Pressure Sensors**: Calibrated scaling for ADC channels
+- **Umbilical**: CDC-ACM Serial connection for FSW command/telemetry linking
 - Platform-aware: Compiles on macOS for dev, runs on Linux
 
 ### ✅ Background Tasks
-- **ADC Monitoring**: Continuous 10 Hz sampling with retry logic
+- **ADC Monitoring**: Continuous 100 Hz sampling with retry logic
+- **Umbilical Task**: Real-time background processing of 80-byte binary FSW telemetry over USB serialization
 - **Streaming**: Real-time ADC data pushed to WebSocket clients
 - Thread-safe shared state using `Arc<Mutex<>>`
 
@@ -101,7 +104,7 @@ See [`docs/ADC_STREAMING.md`](docs/ADC_STREAMING.md) for detailed protocol speci
 - **ADC1 Address**: `0x48`
 - **ADC2 Address**: `0x49`
 - **Gain**: ±4.096V (configurable)
-- **Sample Rate**: 10 Hz (configurable)
+- **Sample Rate**: 100 Hz (configurable)
 
 ### GPIO Pins
 - **Igniter 1**: GPIO Chip 0, Pin 38 (signal), Pin 39 (continuity)
@@ -126,7 +129,7 @@ All configuration constants are at the top of `src/main.rs`:
 
 ```rust
 // ADC sampling rate
-const ADC_SAMPLE_RATE_HZ: u64 = 10;  // Change to 20, 50, 100...
+const ADC_SAMPLE_RATE_HZ: u64 = 100;
 
 // Pressure sensor calibration
 // Pressure sensor scaling for PT1500
@@ -283,6 +286,7 @@ See [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) for:
 - **[ADC_MONITOR_GUIDE.md](docs/ADC_MONITOR_GUIDE.md)** - ADC hardware setup
 - **[QUICKSTART_ADC.md](docs/QUICKSTART_ADC.md)** - Quick ADC testing
 - **[TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Common issues & fixes
+- **[UMBILICAL.md](docs/UMBILICAL.md)** - Ground-system to FSW USB serial communication
 - **[DTBO_BUILDER.md](docs/DTBO_BUILDER.md)** - Device tree overlay automation
 - **[LINUX_IMAGE_BUILD_PROCESS.md](docs/LINUX_IMAGE_BUILD_PROCESS.md)** - Complete build system guide
 
