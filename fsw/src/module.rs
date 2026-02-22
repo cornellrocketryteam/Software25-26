@@ -10,6 +10,7 @@ use embassy_rp::peripherals::{
 use embassy_rp::spi::{Config as SpiConfig, Spi};
 use embassy_rp::uart::{Config as UartConfig, InterruptHandler as UartInterruptHandler, Uart};
 use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
+use embassy_rp::dma::InterruptHandler as DmaInterruptHandler;
 use embassy_rp::{bind_interrupts, i2c, spi, uart, Peri};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
@@ -25,6 +26,7 @@ bind_interrupts!(pub struct Irqs {
     USBCTRL_IRQ => UsbInterruptHandler<USB>;
     I2C0_IRQ => I2cInterruptHandler<I2C0>;
     UART1_IRQ => UartInterruptHandler<UART1>;
+    DMA_IRQ_0 => DmaInterruptHandler<DMA_CH0>, DmaInterruptHandler<DMA_CH1>, DmaInterruptHandler<DMA_CH2>, DmaInterruptHandler<DMA_CH3>;
 });
 
 // Initialize USB driver for logger
@@ -108,7 +110,7 @@ pub fn init_spi(
     let mut spi_config = SpiConfig::default();
     spi_config.frequency = constants::SPI_FREQUENCY;
 
-    let spi = Spi::new(spi0, clk, mosi, miso, tx_dma, rx_dma, spi_config);
+    let spi = Spi::new(spi0, clk, mosi, miso, tx_dma, rx_dma, Irqs, spi_config);
 
     // CS pin starts high (inactive)
     let cs = Output::new(cs, embassy_rp::gpio::Level::High);
