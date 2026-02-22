@@ -5,7 +5,8 @@ use embassy_time::Delay;
 
 /// BMP390 sensor driver wrapper
 pub struct Bmp390Sensor {
-    sensor: Bmp390<I2cDevice<'static>>,
+    sensor: Option<Bmp390<I2cDevice<'static>>>,
+    altimeter_init: bool,
 }
 
 impl Bmp390Sensor {
@@ -22,13 +23,22 @@ impl Bmp390Sensor {
         let config = Configuration::default();
 
         // Initialize BMP390 sensor
-        let sensor = Bmp390::try_new(i2c_device, address, Delay, &config)
-            .await
-            .expect("Failed to initialize BMP390 sensor");
+        let (sensor_opt, init_success) = match Bmp390::try_new(i2c_device, address, Delay, &config).await {
+            Ok(s) => {
+                log::info!("BMP390 sensor initialized successfully");
+                (Some(s), true)
+            }
+            Err(e) => {
+                // Log the error but no crash
+                log::error!("Failed to initialize BMP390: {:?}", e);
+                (None, false)
+            }
+        };
 
-        log::info!("BMP390 sensor initialized successfully");
-
-        Self { sensor }
+        Self { 
+            sensor: sensor_opt,
+            altimeter_init: init_success,
+        }
     }
 
     /// Read BMP390 sensor data and update the packet
@@ -36,19 +46,25 @@ impl Bmp390Sensor {
     /// This method measures pressure, temperature, and altitude from the BMP390
     /// and directly updates the provided packet.
     pub async fn read_into_packet(
-        &mut self,
-        packet: &mut crate::packet::Packet,
+    &mut self,
+    packet: &mut crate::packet::Packet,
     ) -> Result<(), bmp390::Error<<I2cDevice<'static> as embedded_hal_async::i2c::ErrorType>::Error>> {
         use uom::si::length::meter;
         use uom::si::pressure::pascal;
         use uom::si::thermodynamic_temperature::degree_celsius;
 
-        let meas = self.sensor.measure().await?;
+        let sensor = self.sensor.as_mut().ok_or(bmp390::Error::Fatal)?;
+        let meas = sensor.measure().await?;
 
         packet.pressure = meas.pressure.get::<pascal>() as f32;
         packet.temp = meas.temperature.get::<degree_celsius>() as f32;
         packet.altitude = meas.altitude.get::<meter>() as f32;
 
         Ok(())
+    }
+
+    /// Check if the sensor was successfully initialized
+    pub fn is_init(&self) -> bool {
+        self.altimeter_init
     }
 }
