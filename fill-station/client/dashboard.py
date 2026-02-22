@@ -34,6 +34,11 @@ class FillStationClient:
         self.last_update = time.time()
         self.launch_status = None # For UI Banner
 
+        # FSW Telemetry
+        self.fsw_connected = False
+        self.fsw_telemetry = None
+        self.fsw_flight_mode = "Unknown"
+
     def connect(self, url):
         self.url = url
         if self.connected and self.should_run:
@@ -95,6 +100,7 @@ class FillStationClient:
         def on_open(ws):
             self.connected = True
             ws.send(json.dumps({"command": "start_adc_stream"}))
+            ws.send(json.dumps({"command": "start_fsw_stream"}))
             # Initial Poll
             for val in ["SV1", "SV2", "SV3", "SV4", "SV5"]:
                 self.send_command({"command": "get_valve_state", "valve": val})
@@ -127,6 +133,11 @@ class FillStationClient:
                     ign_id = data.get("id")
                     if ign_id:
                         self.igniters[ign_id] = data.get("continuity", False)
+
+                elif msg_type == "fsw_telemetry":
+                    self.fsw_connected = data.get("connected", False)
+                    self.fsw_flight_mode = data.get("flight_mode", "Unknown")
+                    self.fsw_telemetry = data.get("telemetry", {})
 
             except Exception as e:
                 print(f"Error parsing: {e}")
@@ -391,5 +402,64 @@ with col_right:
         )
     else:
         st.info("Waiting for data...")
+
+# --- FLIGHT SOFTWARE TELEMETRY ---
+st.divider()
+st.subheader("Flight Software (Umbilical)")
+
+fsw_status = "Connected" if client.fsw_connected else "Disconnected"
+fsw_color = "green" if client.fsw_connected else "red"
+st.markdown(f"**Umbilical:** :{fsw_color}[{fsw_status}]  |  **Flight Mode:** {client.fsw_flight_mode}")
+
+if client.fsw_telemetry and client.fsw_connected:
+    t = client.fsw_telemetry
+
+    fsw_col1, fsw_col2, fsw_col3, fsw_col4 = st.columns(4)
+
+    with fsw_col1:
+        st.metric("Altitude", f"{t.get('altitude', 0):.1f} m")
+        st.metric("Pressure", f"{t.get('pressure', 0):.1f} Pa")
+        st.metric("Temperature", f"{t.get('temp', 0):.1f} C")
+
+    with fsw_col2:
+        st.metric("Latitude", f"{t.get('latitude', 0):.6f}")
+        st.metric("Longitude", f"{t.get('longitude', 0):.6f}")
+        st.metric("Satellites", f"{t.get('num_satellites', 0)}")
+
+    with fsw_col3:
+        imu_data = [
+            {"Axis": "X", "Accel (m/s2)": t.get('accel_x', 0), "Gyro (deg/s)": t.get('gyro_x', 0), "Mag (uT)": t.get('mag_x', 0)},
+            {"Axis": "Y", "Accel (m/s2)": t.get('accel_y', 0), "Gyro (deg/s)": t.get('gyro_y', 0), "Mag (uT)": t.get('mag_y', 0)},
+            {"Axis": "Z", "Accel (m/s2)": t.get('accel_z', 0), "Gyro (deg/s)": t.get('gyro_z', 0), "Mag (uT)": t.get('mag_z', 0)},
+        ]
+        st.caption("IMU")
+        st.dataframe(pd.DataFrame(imu_data), hide_index=True, use_container_width=True)
+
+    with fsw_col4:
+        st.metric("PT3 (ADC)", f"{t.get('pt3', 0):.2f}")
+        st.metric("PT4 (ADC)", f"{t.get('pt4', 0):.2f}")
+        st.metric("RTD (ADC)", f"{t.get('rtd', 0):.2f}")
+
+# FSW Command Buttons
+st.caption("FSW Commands")
+fsw_btn_cols = st.columns(9)
+if fsw_btn_cols[0].button("FSW Launch", type="primary", use_container_width=True):
+    client.send_command({"command": "fsw_launch"})
+if fsw_btn_cols[1].button("FSW Open MAV", use_container_width=True):
+    client.send_command({"command": "fsw_open_mav"})
+if fsw_btn_cols[2].button("FSW Close MAV", use_container_width=True):
+    client.send_command({"command": "fsw_close_mav"})
+if fsw_btn_cols[3].button("FSW Open SV", use_container_width=True):
+    client.send_command({"command": "fsw_open_sv"})
+if fsw_btn_cols[4].button("FSW Close SV", use_container_width=True):
+    client.send_command({"command": "fsw_close_sv"})
+if fsw_btn_cols[5].button("FSW Safe", use_container_width=True):
+    client.send_command({"command": "fsw_safe"})
+if fsw_btn_cols[6].button("Reset FRAM", use_container_width=True):
+    client.send_command({"command": "fsw_reset_fram"})
+if fsw_btn_cols[7].button("Reset Card", use_container_width=True):
+    client.send_command({"command": "fsw_reset_card"})
+if fsw_btn_cols[8].button("FSW Reboot", use_container_width=True):
+    client.send_command({"command": "fsw_reboot"})
 
 st.rerun()

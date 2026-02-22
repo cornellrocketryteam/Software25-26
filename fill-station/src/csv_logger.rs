@@ -7,11 +7,12 @@ use smol::fs::{self, OpenOptions};
 use smol::io::AsyncWriteExt;
 
 use crate::hardware::Hardware;
-use crate::command::AdcReadings;
+use crate::command::{AdcReadings, UmbilicalReadings};
 
 pub async fn start_logging(
     _hardware: Arc<Mutex<Hardware>>,
     adc_readings: Arc<Mutex<AdcReadings>>,
+    umbilical_readings: Arc<Mutex<UmbilicalReadings>>,
 ) {
     info!("Starting CSV Logger task...");
 
@@ -60,7 +61,10 @@ pub async fn start_logging(
     let header = "Loop,Timestamp_ms,MAV_Angle,MAV_Pulse_US,Igniter1_Active,Igniter2_Active,\
 SV1_Actuated,SV1_Cont,SV2_Actuated,SV2_Cont,SV3_Actuated,SV3_Cont,SV4_Actuated,SV4_Cont,SV5_Actuated,SV5_Cont,\
 ADC1_0_Raw,ADC1_0_Scaled,ADC1_1_Raw,ADC1_1_Scaled,ADC1_2_Raw,ADC1_2_Scaled,ADC1_3_Raw,ADC1_3_Scaled,\
-ADC2_0_Raw,ADC2_0_Scaled,ADC2_1_Raw,ADC2_1_Scaled,ADC2_2_Raw,ADC2_2_Scaled,ADC2_3_Raw,ADC2_3_Scaled\n";
+ADC2_0_Raw,ADC2_0_Scaled,ADC2_1_Raw,ADC2_1_Scaled,ADC2_2_Raw,ADC2_2_Scaled,ADC2_3_Raw,ADC2_3_Scaled,\
+FSW_Connected,FSW_Mode,FSW_Pressure,FSW_Temp,FSW_Altitude,FSW_Lat,FSW_Lon,FSW_Sats,FSW_Timestamp,\
+FSW_MagX,FSW_MagY,FSW_MagZ,FSW_AccelX,FSW_AccelY,FSW_AccelZ,FSW_GyroX,FSW_GyroY,FSW_GyroZ,\
+FSW_PT3,FSW_PT4,FSW_RTD\n";
     
     if let Err(e) = file.write_all(header.as_bytes()).await {
         error!("Failed to write header to log file: {}", e);
@@ -129,22 +133,38 @@ ADC2_0_Raw,ADC2_0_Scaled,ADC2_1_Raw,ADC2_1_Scaled,ADC2_2_Raw,ADC2_2_Scaled,ADC2_
                 let scaled_str = ch.scaled.map(|v| format!("{:.4}", v)).unwrap_or("N/A".to_string());
                 line.push_str(&format!("{},{},", ch.raw, scaled_str));
             }
-            for (i, ch) in adc2.iter().enumerate() {
+            for ch in adc2 {
                 let scaled_str = ch.scaled.map(|v| format!("{:.4}", v)).unwrap_or("N/A".to_string());
-                if i == 3 {
-                    line.push_str(&format!("{},{}", ch.raw, scaled_str));
-                } else {
-                    line.push_str(&format!("{},{},", ch.raw, scaled_str));
-                }
+                line.push_str(&format!("{},{},", ch.raw, scaled_str));
             }
         } else {
-             // 8 channels * 2 columns = 16 N/A. 
-             // We need 15 commas and 16 N/As.
-             // "N/A,N/A,..."
+             // 8 channels * 2 columns = 16 N/A + trailing comma
              let nas = std::iter::repeat("N/A").take(16).collect::<Vec<_>>().join(",");
              line.push_str(&nas);
+             line.push(',');
         }
-        
+
+        // 3. Gather FSW telemetry
+        {
+            let umb = umbilical_readings.lock().await;
+            if umb.connected {
+                let t = &umb.telemetry;
+                line.push_str(&format!(
+                    "true,{},{:.2},{:.2},{:.2},{:.6},{:.6},{},{:.3},{:.2},{:.2},{:.2},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.2},{:.2},{:.2}",
+                    t.flight_mode, t.pressure, t.temp, t.altitude,
+                    t.latitude, t.longitude, t.num_satellites, t.timestamp,
+                    t.mag_x, t.mag_y, t.mag_z,
+                    t.accel_x, t.accel_y, t.accel_z,
+                    t.gyro_x, t.gyro_y, t.gyro_z,
+                    t.pt3, t.pt4, t.rtd,
+                ));
+            } else {
+                // 21 FSW columns: connected + 20 telemetry fields
+                let nas = std::iter::repeat("N/A").take(21).collect::<Vec<_>>().join(",");
+                line.push_str(&nas);
+            }
+        }
+
         line.push('\n');
 
         // Write to file

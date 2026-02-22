@@ -23,6 +23,7 @@ tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 async-gpiod = "0.3.0"
 i2cdev = "0.6"
+serialport = "4"
 
 [profile.release]
 opt-level = "s"     # Optimize for size

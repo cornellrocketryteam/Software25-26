@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use crate::components::umbilical::FswTelemetry;
 
 /// All supported commands for the fill station
 #[derive(Debug, Serialize, Deserialize)]
@@ -51,6 +52,30 @@ pub enum Command {
     },
     /// Client heartbeat to indicate connection is alive
     Heartbeat,
+
+    // FSW Umbilical Commands
+    /// Send launch command to FSW
+    FswLaunch,
+    /// Open MAV on FSW
+    FswOpenMav,
+    /// Close MAV on FSW
+    FswCloseMav,
+    /// Open SV on FSW
+    FswOpenSv,
+    /// Close SV on FSW
+    FswCloseSv,
+    /// Safe all actuators on FSW
+    FswSafe,
+    /// Reset FRAM on FSW
+    FswResetFram,
+    /// Reset SD card on FSW
+    FswResetCard,
+    /// Reboot FSW
+    FswReboot,
+    /// Start streaming FSW telemetry to this client
+    StartFswStream,
+    /// Stop streaming FSW telemetry to this client
+    StopFswStream,
 }
 
 /// Response sent back to WebSocket clients after command execution
@@ -82,6 +107,13 @@ pub enum CommandResponse {
         angle: f32,
         pulse_width_us: u32,
     },
+    /// FSW telemetry data from umbilical
+    FswTelemetry {
+        timestamp_ms: u64,
+        connected: bool,
+        flight_mode: String,
+        telemetry: FswTelemetry,
+    },
 }
 
 /// Single ADC channel reading with all relevant data
@@ -108,6 +140,24 @@ impl Default for AdcReadings {
             valid: false,
             adc1: [ChannelReading { raw: 0, voltage: 0.0, scaled: None }; 4],
             adc2: [ChannelReading { raw: 0, voltage: 0.0, scaled: None }; 4],
+        }
+    }
+}
+
+/// Shared FSW telemetry readings from umbilical, accessible across tasks
+#[derive(Debug, Clone)]
+pub struct UmbilicalReadings {
+    pub timestamp_ms: u64,
+    pub connected: bool,
+    pub telemetry: FswTelemetry,
+}
+
+impl Default for UmbilicalReadings {
+    fn default() -> Self {
+        Self {
+            timestamp_ms: 0,
+            connected: false,
+            telemetry: FswTelemetry::default(),
         }
     }
 }

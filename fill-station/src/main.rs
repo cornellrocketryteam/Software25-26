@@ -19,10 +19,12 @@ use tracing_subscriber::fmt;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tungstenite::Message;
 
-use crate::command::{AdcReadings, Command, CommandResponse};
+use crate::command::{AdcReadings, Command, CommandResponse, UmbilicalReadings};
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use crate::command::ChannelReading;
 use crate::hardware::Hardware;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use crate::components::umbilical::FswTelemetry;
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use crate::components::ads1015::{Channel, Gain, DataRate};
@@ -65,6 +67,22 @@ const LOADCELL_SCALE: f32 = 1.69661;
 const LOADCELL_OFFSET: f32 = 75.37882;
 
 // ============================================================================
+// UMBILICAL CONFIGURATION
+// ============================================================================
+
+/// Serial device path for the umbilical CDC-ACM port
+#[cfg(any(target_os = "linux", target_os = "android"))]
+const UMBILICAL_DEVICE: &str = "/dev/ttyACM0";
+
+/// Baud rate for umbilical serial communication
+#[cfg(any(target_os = "linux", target_os = "android"))]
+const UMBILICAL_BAUD: u32 = 115200;
+
+/// Read timeout for serial port (milliseconds)
+#[cfg(any(target_os = "linux", target_os = "android"))]
+const UMBILICAL_READ_TIMEOUT_MS: u64 = 200;
+
+// ============================================================================
 // SHARED ADC STATE
 // ============================================================================
 
@@ -97,6 +115,15 @@ fn main() -> Result<()> {
         // Create shared ADC readings state
         let adc_readings = Arc::new(Mutex::new(AdcReadings::default()));
 
+        // Create shared umbilical readings state and command channel
+        let umbilical_readings = Arc::new(Mutex::new(UmbilicalReadings::default()));
+        let (umb_cmd_tx, umb_cmd_rx) = smol::channel::bounded::<String>(8);
+
+        // Spawn umbilical background task
+        info!("Starting Umbilical monitoring task...");
+        let umb_task_readings = umbilical_readings.clone();
+        smol::spawn(umbilical_task(umb_task_readings, umb_cmd_rx)).detach();
+
         // Active client tracker
         let active_client_count = Arc::new(AtomicUsize::new(0));
 
@@ -116,7 +143,8 @@ fn main() -> Result<()> {
         // Spawn CSV Logger Task
         let log_hw = hardware.clone();
         let log_adc = adc_readings.clone();
-        smol::spawn(csv_logger::start_logging(log_hw, log_adc)).detach();
+        let log_umb = umbilical_readings.clone();
+        smol::spawn(csv_logger::start_logging(log_hw, log_adc, log_umb)).detach();
 
         info!("Initializing web socket server...");
         let listener = Async::<TcpListener>::bind(([0, 0, 0, 0], 9000))?;
@@ -147,25 +175,31 @@ fn main() -> Result<()> {
             let span = span!(Level::INFO, "websocket", client_ip);
             let hw = hardware.clone();
             let adc = adc_readings.clone();
+            let umb = umbilical_readings.clone();
+            let umb_tx = umb_cmd_tx.clone();
             let active_clients = active_client_count.clone();
-            smol::spawn(handle_socket(stream, hw, adc, active_clients).instrument(span)).detach();
+            smol::spawn(handle_socket(stream, hw, adc, umb, umb_tx, active_clients).instrument(span)).detach();
         }
     })
 }
 
 /// Handle WebSocket connection lifecycle
 async fn handle_socket(
-    mut stream: WebSocketStream<Async<TcpStream>>, 
+    mut stream: WebSocketStream<Async<TcpStream>>,
     hardware: Arc<Mutex<Hardware>>,
     adc_readings: Arc<Mutex<AdcReadings>>,
+    umbilical_readings: Arc<Mutex<UmbilicalReadings>>,
+    umb_cmd_tx: smol::channel::Sender<String>,
     active_client_count: Arc<AtomicUsize>,
 ) {
     info!("Client connected");
     active_client_count.fetch_add(1, Ordering::SeqCst);
-    
+
     // Track streaming state and last sent timestamp
     let mut streaming_enabled = false;
     let mut last_sent_timestamp = 0u64;
+    let mut fsw_streaming_enabled = false;
+    let mut last_sent_fsw_timestamp = 0u64;
     let mut last_heartbeat = Instant::now();
     
     // Small timeout for non-blocking message receive
@@ -197,7 +231,7 @@ async fn handle_socket(
             Some(Ok(Message::Text(message))) => {
                 // Reset heartbeat timer on any valid message
                 last_heartbeat = Instant::now();
-                let response = process_message(&message, &hardware, &adc_readings, &mut streaming_enabled).await;
+                let response = process_message(&message, &hardware, &adc_readings, &mut streaming_enabled, &mut fsw_streaming_enabled, &umb_cmd_tx).await;
                 if let Err(e) = send_response(&mut stream, response).await {
                     error!("Error sending message: {}", e);
                     break;
@@ -213,20 +247,37 @@ async fn handle_socket(
                 // Timeout - check if we should send ADC data
                 if streaming_enabled {
                     let readings = adc_readings.lock().await;
-                    
+
                     // Send if we have new data
                     if readings.timestamp_ms != last_sent_timestamp {
                         last_sent_timestamp = readings.timestamp_ms;
-                        
+
                         let response = CommandResponse::AdcData {
                             timestamp_ms: readings.timestamp_ms,
                             valid: readings.valid,
                             adc1: readings.adc1,
                             adc2: readings.adc2,
                         };
-                        
+
                         if let Err(e) = send_response(&mut stream, response).await {
                             error!("Error sending ADC stream data: {}", e);
+                            break;
+                        }
+                    }
+                }
+                // Check if we should send FSW telemetry
+                if fsw_streaming_enabled {
+                    let umb = umbilical_readings.lock().await;
+                    if umb.timestamp_ms != last_sent_fsw_timestamp {
+                        last_sent_fsw_timestamp = umb.timestamp_ms;
+                        let response = CommandResponse::FswTelemetry {
+                            timestamp_ms: umb.timestamp_ms,
+                            connected: umb.connected,
+                            flight_mode: umb.telemetry.flight_mode_name().to_string(),
+                            telemetry: umb.telemetry,
+                        };
+                        if let Err(e) = send_response(&mut stream, response).await {
+                            error!("Error sending FSW telemetry stream data: {}", e);
                             break;
                         }
                     }
@@ -240,17 +291,19 @@ async fn handle_socket(
 }
 
 async fn process_message(
-    message: &str, 
+    message: &str,
     hardware: &Arc<Mutex<Hardware>>,
     _adc_readings: &Arc<Mutex<AdcReadings>>,
     streaming_enabled: &mut bool,
+    fsw_streaming_enabled: &mut bool,
+    umb_cmd_tx: &smol::channel::Sender<String>,
 ) -> CommandResponse {
     debug!("Received message: {}", message);
 
     match serde_json::from_str(message) {
         Ok(command) => {
             info!("Received command: {:?}", command);
-            execute_command(command, hardware, streaming_enabled).await
+            execute_command(command, hardware, streaming_enabled, fsw_streaming_enabled, umb_cmd_tx).await
         }
         Err(e) => {
             warn!("Failed to parse command: {}", e);
@@ -260,9 +313,11 @@ async fn process_message(
 }
 
 async fn execute_command(
-    command: Command, 
+    command: Command,
     hardware: &Arc<Mutex<Hardware>>,
     streaming_enabled: &mut bool,
+    fsw_streaming_enabled: &mut bool,
+    umb_cmd_tx: &smol::channel::Sender<String>,
 ) -> CommandResponse {
     match command {
         Command::Ignite => {
@@ -534,6 +589,80 @@ async fn execute_command(
             // Heartbeat command just keeps the connection alive
             CommandResponse::Success
         }
+        // FSW Umbilical Commands
+        Command::FswLaunch => {
+            info!("Sending FSW Launch command via umbilical");
+            match umb_cmd_tx.try_send("<L>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswOpenMav => {
+            info!("Sending FSW Open MAV command via umbilical");
+            match umb_cmd_tx.try_send("<M>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswCloseMav => {
+            info!("Sending FSW Close MAV command via umbilical");
+            match umb_cmd_tx.try_send("<m>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswOpenSv => {
+            info!("Sending FSW Open SV command via umbilical");
+            match umb_cmd_tx.try_send("<S>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswCloseSv => {
+            info!("Sending FSW Close SV command via umbilical");
+            match umb_cmd_tx.try_send("<s>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswSafe => {
+            info!("Sending FSW Safe command via umbilical");
+            match umb_cmd_tx.try_send("<V>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswResetFram => {
+            info!("Sending FSW Reset FRAM command via umbilical");
+            match umb_cmd_tx.try_send("<F>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswResetCard => {
+            info!("Sending FSW Reset Card command via umbilical");
+            match umb_cmd_tx.try_send("<D>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswReboot => {
+            info!("Sending FSW Reboot command via umbilical");
+            match umb_cmd_tx.try_send("<R>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::StartFswStream => {
+            info!("Starting FSW telemetry stream for client");
+            *fsw_streaming_enabled = true;
+            CommandResponse::Success
+        }
+        Command::StopFswStream => {
+            info!("Stopping FSW telemetry stream for client");
+            *fsw_streaming_enabled = false;
+            CommandResponse::Success
+        }
     }
 }
 
@@ -752,6 +881,139 @@ async fn adc_monitoring_task(
 ) {
     warn!("ADC monitoring not supported on this platform");
     // Just sleep forever
+    loop {
+        Timer::after(Duration::from_secs(3600)).await;
+    }
+}
+
+// ============================================================================
+// UMBILICAL BACKGROUND TASK
+// ============================================================================
+
+/// Background task that manages the serial connection to the FSW Pico 2 via umbilical.
+/// Reads 80-byte telemetry packets and writes command tokens.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+async fn umbilical_task(
+    umbilical_readings: Arc<Mutex<UmbilicalReadings>>,
+    cmd_rx: smol::channel::Receiver<String>,
+) {
+    use std::io::Read as _;
+    use std::io::Write as _;
+
+    info!("Umbilical task started, looking for device at {}", UMBILICAL_DEVICE);
+
+    loop {
+        // Try to open the serial port
+        let port = serialport::new(UMBILICAL_DEVICE, UMBILICAL_BAUD)
+            .timeout(Duration::from_millis(UMBILICAL_READ_TIMEOUT_MS))
+            .open();
+
+        let mut port = match port {
+            Ok(p) => {
+                info!("Umbilical serial port opened: {}", UMBILICAL_DEVICE);
+                p
+            }
+            Err(e) => {
+                debug!("Umbilical not available ({}), retrying in 2s...", e);
+                {
+                    let mut umb = umbilical_readings.lock().await;
+                    umb.connected = false;
+                }
+                Timer::after(Duration::from_secs(2)).await;
+                continue;
+            }
+        };
+
+        // Port is open — mark connected and enter read/write loop
+        {
+            let mut umb = umbilical_readings.lock().await;
+            umb.connected = true;
+        }
+
+        let mut buf = [0u8; FswTelemetry::SIZE];
+        let mut read_offset = 0usize;
+
+        loop {
+            // Check for pending commands to send
+            while let Ok(cmd) = cmd_rx.try_recv() {
+                // Wrap write in unblock since serialport is synchronous
+                let cmd_bytes = cmd.into_bytes();
+                let write_result = smol::unblock({
+                    let mut port_clone = port.try_clone().expect("Failed to clone serial port");
+                    move || port_clone.write_all(&cmd_bytes)
+                }).await;
+                if let Err(e) = write_result {
+                    error!("Umbilical write failed: {}", e);
+                    break;
+                }
+            }
+
+            // Try to read telemetry data (blocking read wrapped in unblock)
+            let remaining = FswTelemetry::SIZE - read_offset;
+            let read_result = smol::unblock({
+                let mut port_clone = port.try_clone().expect("Failed to clone serial port");
+                let offset = read_offset;
+                move || {
+                    let mut temp = vec![0u8; remaining];
+                    match port_clone.read(&mut temp) {
+                        Ok(n) => Ok((temp, n, offset)),
+                        Err(e) => Err(e),
+                    }
+                }
+            }).await;
+
+            match read_result {
+                Ok((data, bytes_read, offset)) => {
+                    buf[offset..offset + bytes_read].copy_from_slice(&data[..bytes_read]);
+                    read_offset = offset + bytes_read;
+
+                    // If we have a full packet, deserialize and update shared state
+                    if read_offset >= FswTelemetry::SIZE {
+                        let telemetry = FswTelemetry::from_bytes(&buf);
+                        let timestamp_ms = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap()
+                            .as_millis() as u64;
+
+                        {
+                            let mut umb = umbilical_readings.lock().await;
+                            umb.timestamp_ms = timestamp_ms;
+                            umb.connected = true;
+                            umb.telemetry = telemetry;
+                        }
+
+                        debug!("FSW telemetry received: mode={}", telemetry.flight_mode_name());
+                        read_offset = 0;
+                    }
+                }
+                Err(e) => {
+                    if e.kind() == std::io::ErrorKind::TimedOut {
+                        // Timeout is normal — just loop again
+                        continue;
+                    }
+                    error!("Umbilical read error: {}, reconnecting...", e);
+                    break;
+                }
+            }
+        }
+
+        // Connection lost — mark disconnected and retry
+        {
+            let mut umb = umbilical_readings.lock().await;
+            umb.connected = false;
+        }
+        warn!("Umbilical disconnected, retrying in 2s...");
+        Timer::after(Duration::from_secs(2)).await;
+    }
+}
+
+/// Stub for non-Linux platforms
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+async fn umbilical_task(
+    _umbilical_readings: Arc<Mutex<UmbilicalReadings>>,
+    _cmd_rx: smol::channel::Receiver<String>,
+) {
+    warn!("Umbilical not supported on this platform (no serial port)");
     loop {
         Timer::after(Duration::from_secs(3600)).await;
     }
