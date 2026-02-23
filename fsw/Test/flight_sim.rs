@@ -404,9 +404,10 @@ pub async fn simulate_flight_hsim(flight_loop: &mut FlightLoop) {
     let mut alt_index = 0;
     
     loop {
-        // Run the hardware loop
-        flight_loop.execute().await;
+        // 1. Read sensors (this will read 0.0m on altimeter)
+        flight_loop.flight_state.read_sensors().await;
         
+        // 2. OVERWRITE the altitude sensor data before transition logic runs
         // Start feeding altimeter data once the rocket enters Ascent mode
         // type <L> in the serial console to launch
         if flight_loop.flight_state.flight_mode == FlightMode::Ascent 
@@ -430,6 +431,23 @@ pub async fn simulate_flight_hsim(flight_loop: &mut FlightLoop) {
             // While waiting on the launch pad in Startup/Standby, just keep it at 0m
             flight_loop.set_altitude(0.0);
         }
+
+        // 3. Process the rest of the hardware loop logic
+        flight_loop.flight_state.check_subsystem_health().await;
+        flight_loop.key_armed = flight_loop.flight_state.key_armed;
+        flight_loop.umbilical_state = flight_loop.flight_state.umbilical_connected;
+
+        flight_loop.check_ground_commands().await;
+        flight_loop.check_umbilical_commands().await;
+        flight_loop.check_transitions().await;
+        flight_loop.flight_state.transmit().await;
+
+        log::info!(
+            "Current Flight Mode: {} on cycle {} \n",
+            flight_loop.flight_state.flight_mode_name(),
+            flight_loop.flight_state.cycle_count
+        );
+        flight_loop.flight_state.cycle_count += 1;
 
         // Delay to match the real timing cycle
         Timer::after_millis(constants::MAIN_LOOP_DELAY_MS).await;
