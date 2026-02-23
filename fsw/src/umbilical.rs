@@ -8,6 +8,15 @@ use embassy_time::Timer;
 
 use crate::module::{self, UsbDriver};
 use crate::constants;
+use core::sync::atomic::{AtomicBool, Ordering};
+
+/// Global software umbilical connection tracked by embassy-usb.
+static IS_CONNECTED: AtomicBool = AtomicBool::new(false);
+
+/// Returns whether the ground station umbilical is actively connected via USB.
+pub fn is_connected() -> bool {
+    IS_CONNECTED.load(Ordering::Relaxed)
+}
 
 /// Commands that can be received from the ground station via USB umbilical.
 #[derive(Debug)]
@@ -72,6 +81,7 @@ async fn usb_task(mut usb_device: UsbDevice<'static, UsbDriver>) -> ! {
 async fn umbilical_sender_task(mut sender: Sender<'static, UsbDriver>) -> ! {
     loop {
         sender.wait_connection().await;
+        IS_CONNECTED.store(true, Ordering::Relaxed);
 
         loop {
             // Block until the flight loop provides fresh telemetry
@@ -80,7 +90,10 @@ async fn umbilical_sender_task(mut sender: Sender<'static, UsbDriver>) -> ! {
             match sender.write_packet(&data).await {
                 Ok(_) => {},
                 Err(EndpointError::BufferOverflow) => panic!("Buffer overflow shouldn't be possible"),
-                Err(EndpointError::Disabled) => break,
+                Err(EndpointError::Disabled) => {
+                    IS_CONNECTED.store(false, Ordering::Relaxed);
+                    break;
+                },
             };
         }
     }
@@ -91,12 +104,16 @@ async fn umbilical_receiver_task(mut receiver: Receiver<'static, UsbDriver>) -> 
     let mut buf = [0; 64];
     loop {
         receiver.wait_connection().await;
+        IS_CONNECTED.store(true, Ordering::Relaxed);
 
         loop {
             let n = match receiver.read_packet(&mut buf).await {
                 Ok(n) => n,
                 Err(EndpointError::BufferOverflow) => panic!("Buffer overflow isn't possible"),
-                Err(EndpointError::Disabled) => break,
+                Err(EndpointError::Disabled) => {
+                    IS_CONNECTED.store(false, Ordering::Relaxed);
+                    break;
+                },
             };
 
             let data = &buf[..n];

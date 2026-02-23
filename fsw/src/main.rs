@@ -21,7 +21,7 @@ pub mod umbilical;
 #[path = "../test/flight_sim.rs"]
 mod flight_sim;
 
-const SIMULATION_MODE: bool = false;
+const SIMULATION_MODE: bool = true;
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
@@ -76,6 +76,7 @@ async fn main(spawner: Spawner) {
 
     if SIMULATION_MODE {
         Timer::after_secs(5).await;
+        /*
         log::info!("\nStarting Simulation Mode...");
         flight_sim::simulate_flight_simple(&mut flight_loop).await;
         
@@ -92,6 +93,12 @@ async fn main(spawner: Spawner) {
             led.toggle();
             Timer::after_millis(100).await;
         }
+        */
+        log::info!("\nStarting Hardware Simulation Mode...");
+        
+        // This runs an infinite loop reading real sensors, but overwriting Altitude data
+        flight_sim::simulate_flight_hsim(&mut flight_loop).await;
+        
     } else {
         loop {
             flight_loop.flight_state.cycle_count += 1;

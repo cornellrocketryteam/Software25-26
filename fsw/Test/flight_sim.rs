@@ -20,7 +20,8 @@ pub async fn simulate_flight_simple(flight_loop: &mut FlightLoop) {
     // 2. Transition to Standby
     Timer::after_secs(2).await;
     log::info!("[SIM] Testing Startup -> Standby");
-    flight_loop.set_key_switch(true);
+    flight_loop.set_umbilical(true); // Umbilical must be connected now
+    flight_loop.set_key_switch(true); // And key switch armed
     flight_loop.simulate_cycle().await;
     
     if flight_loop.flight_state.flight_mode == FlightMode::Standby {
@@ -63,6 +64,9 @@ pub async fn simulate_flight_simple(flight_loop: &mut FlightLoop) {
     //let altitudes: [f32; 20] = [0.0, 100.0, 189.0, 311.0, 420.0, 732.0, 864.1, 1029.4, 1413.9, 1692.1, 1999.9, 2209.9, 2509.9, 2900.9, 2618.8, 2163.1, 1300.0, 949.0, 400.0, 0.0];
 
     for (_i,alt) in TEST_ALTS_LST.iter().enumerate() {
+        if _i % 20 == 0 {
+            log::info!("[SIM] Current Simulated Altitude: {:.2}m", alt);
+        }
         flight_loop.set_altitude(*alt);
         Timer::after_millis(10).await; // Reduced delay to speed up simulation loop
 
@@ -261,6 +265,7 @@ pub async fn simulate_stability_scenarios(flight_loop: &mut FlightLoop) {
     flight_loop.set_umbilical(true);
     flight_loop.set_launch_command(true);
     flight_loop.simulate_cycle().await; // Ascent
+    flight_loop.set_umbilical(false); // Disconnect umbilical immediately after launch
     
     if flight_loop.flight_state.flight_mode != FlightMode::Ascent {
          log::error!("[STABILITY SIM] Setup Failed: Could not get to Ascent");
@@ -332,6 +337,7 @@ pub async fn simulate_extra_features(flight_loop: &mut FlightLoop) {
     flight_loop.set_umbilical(true);
     flight_loop.set_launch_command(true);
     flight_loop.simulate_cycle().await; // Should go to Ascent and start timer
+    flight_loop.set_umbilical(false); // Disconnect umbilical immediately after launch
     
     if flight_loop.flight_state.flight_mode == FlightMode::Ascent && flight_loop.mav_open {
          log::info!("[EXTRA FEATURE SIM] Setup: In Ascent, MAV Open");
@@ -383,4 +389,49 @@ pub async fn simulate_extra_features(flight_loop: &mut FlightLoop) {
     flight_loop.flight_state.recovery_comms_ok = true;
 
     log::info!("\n--- EXTRA FEATURES SIMULATION COMPLETE ---");
+}
+
+// Runs a Hardware physical simulation.
+// This executes the actual hardware `execute()` loop, 
+// processes real USB umbilical commands (`<L>`, `<M>`, etc.), and toggles actuators
+// it overwrites the altimeter sensor data with the `TEST_ALTS_LST` array
+// to test the entire physical breadboard setup
+pub async fn simulate_flight_hsim(flight_loop: &mut FlightLoop) {
+    log::info!("\n--- STARTING HARDWARE SIMULATION ---");
+    log::info!("Insert Key Switch and Type <L> in Serial Monitor to Launch");
+
+    flight_loop.set_altimeter_state(SensorState::VALID);
+    let mut alt_index = 0;
+    
+    loop {
+        // Run the hardware loop
+        flight_loop.execute().await;
+        
+        // Start feeding altimeter data once the rocket enters Ascent mode
+        // type <L> in the serial console to launch
+        if flight_loop.flight_state.flight_mode == FlightMode::Ascent 
+            || flight_loop.flight_state.flight_mode == FlightMode::Coast 
+            || flight_loop.flight_state.flight_mode == FlightMode::DrogueDeployed 
+            || flight_loop.flight_state.flight_mode == FlightMode::MainDeployed 
+        {
+            if alt_index < constants::TEST_ALTS_LST.len() {
+                // OVERWRITE the real altimeter readings
+                flight_loop.set_altitude(constants::TEST_ALTS_LST[alt_index]);
+                
+                if alt_index % 20 == 0 {
+                    log::info!("[H SIM] Flying at Simulated Alt: {:.2}m", constants::TEST_ALTS_LST[alt_index]);
+                }
+                alt_index += 1;
+            } else {
+                log::info!("\n[H SIM] Reached end of simulated altitude array");
+                break;
+            }
+        } else {
+            // While waiting on the launch pad in Startup/Standby, just keep it at 0m
+            flight_loop.set_altitude(0.0);
+        }
+
+        // Delay to match the real timing cycle
+        Timer::after_millis(constants::MAIN_LOOP_DELAY_MS).await;
+    }
 }
