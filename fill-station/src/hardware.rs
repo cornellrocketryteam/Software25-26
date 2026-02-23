@@ -59,7 +59,7 @@ impl Hardware {
         // SV2
         let sv2 = SolenoidValve::new(
             &chip0, 32,
-            &chip0, 34,
+            &chip0, 35,
             LinePull::NormallyClosed
         ).await?;
         
@@ -72,7 +72,7 @@ impl Hardware {
 
         // SV4
         let sv4 = SolenoidValve::new(
-            &chip1, 65, // Placeholder
+            &chip0, 44, // Placeholder
             &chip0, 36, // Placeholder
             LinePull::NormallyClosed
         ).await?;
@@ -84,8 +84,8 @@ impl Hardware {
             LinePull::NormallyClosed
         ).await?;
 
-        // MAV (Chip 0, Channel 0)
-        let mav = Mav::new(0, 0, "MAV").await?;
+        // MAV (Chip 0, Channel 1 for B)
+        let mav = Mav::new(0, 1, "MAV").await?;
 
         // Ball Valve
         // Signal: Chip 1, Line 62
