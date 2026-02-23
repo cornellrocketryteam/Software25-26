@@ -20,7 +20,8 @@ pub async fn simulate_flight_simple(flight_loop: &mut FlightLoop) {
     // 2. Transition to Standby
     Timer::after_secs(2).await;
     log::info!("[SIM] Testing Startup -> Standby");
-    flight_loop.set_key_switch(true);
+    flight_loop.set_umbilical(true); // Umbilical must be connected now
+    flight_loop.set_key_switch(true); // And key switch armed
     flight_loop.simulate_cycle().await;
     
     if flight_loop.flight_state.flight_mode == FlightMode::Standby {
@@ -261,6 +262,7 @@ pub async fn simulate_stability_scenarios(flight_loop: &mut FlightLoop) {
     flight_loop.set_umbilical(true);
     flight_loop.set_launch_command(true);
     flight_loop.simulate_cycle().await; // Ascent
+    flight_loop.set_umbilical(false); // Disconnect umbilical immediately after launch
     
     if flight_loop.flight_state.flight_mode != FlightMode::Ascent {
          log::error!("[STABILITY SIM] Setup Failed: Could not get to Ascent");
@@ -332,6 +334,7 @@ pub async fn simulate_extra_features(flight_loop: &mut FlightLoop) {
     flight_loop.set_umbilical(true);
     flight_loop.set_launch_command(true);
     flight_loop.simulate_cycle().await; // Should go to Ascent and start timer
+    flight_loop.set_umbilical(false); // Disconnect umbilical immediately after launch
     
     if flight_loop.flight_state.flight_mode == FlightMode::Ascent && flight_loop.mav_open {
          log::info!("[EXTRA FEATURE SIM] Setup: In Ascent, MAV Open");

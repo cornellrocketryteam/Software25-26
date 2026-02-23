@@ -261,7 +261,7 @@ impl FlightState {
 
         // Update key armed status
         self.key_armed = self.arming_switch.is_high();
-        self.umbilical_connected = self.umbilical_sense.is_high();
+        self.umbilical_connected = crate::umbilical::is_connected();
 
         // Read from FRAM
         match self.fram.read_u32(0).await {

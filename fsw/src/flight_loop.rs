@@ -101,7 +101,6 @@ impl FlightLoop {
         // Update local loop state from FlightState
         self.key_armed = self.flight_state.key_armed;
         
-        // Placeholder: Check umbilical state here (e.g. read another GPIO)
         self.umbilical_state = self.flight_state.umbilical_connected;
 
         self.check_ground_commands().await;
@@ -201,9 +200,7 @@ impl FlightLoop {
                     self.flight_state.reference_pressure = self.flight_state.read_barometer();
                     log::info!("Reference pressure set to {}", self.flight_state.reference_pressure);
                 }
-                // TODO: add umbilical check command logic (no need to fault, use this to know to connect umbilical)
                 if self.flight_state.umbilical_connected {
-                    // For now just log the state for umbilical
                     log::info!("Umbilical connected");
                     self.umbilical_disconnect_time = None;
                     self.vent_signal_sent = false;
@@ -227,12 +224,12 @@ impl FlightLoop {
                 if self.flight_state.altimeter_state == crate::state::SensorState::INVALID {
                     self.alt_armed = false;
                     self.flight_state.flight_mode = FlightMode::Fault;
-                    self.flight_state.write_state_to_fram().await;
+                    // self.flight_state.write_state_to_fram().await; // Note: cannot await inside check_transitions easily if not mut
                     log::error!("Altimeter invalid at Startup; transitioning to Fault");
                     return;
                 }
 
-                if self.key_armed {
+                if self.key_armed && self.flight_state.umbilical_connected {
                     if self.flight_state.altimeter_state == crate::state::SensorState::VALID {
                         // Record arming altitude (TODO: implement into storage)
                         self.alt_armed = true;
@@ -257,15 +254,14 @@ impl FlightLoop {
                     log::error!("Altimeter invalid at Standby; transitioning to Fault");
                     return;
                 }
-                // TODO: add umbilical check command logic with written class (no need to fault, use this to know to connect umbilical)
                 if self.flight_state.umbilical_connected {
-                    // For now just log the state for umbilical
                     log::info!("Umbilical connected");
                     self.umbilical_disconnect_time = None;
                     self.vent_signal_sent = false;
                     self.flight_state.buzz(2);
                 } else {
                     log::info!("Umbilical disconnected");
+                    self.umbilical_launch = false; // Abort any pending launch command if umbilical drops
                     // Start timer if not started
                     if self.umbilical_disconnect_time.is_none() {
                         self.umbilical_disconnect_time = Some(Instant::now());
@@ -281,7 +277,7 @@ impl FlightLoop {
                 }
 
                 // Check altimeter for launch with umbilical
-                if self.umbilical_launch {
+                if self.umbilical_launch && self.flight_state.umbilical_connected {
                     // TODO: Send command for launch to payload
                     // send_launch_command();
                     log::info!("Payload launch command sent");
@@ -306,6 +302,12 @@ impl FlightLoop {
                 }
             }
             FlightMode::Ascent => {
+                if self.flight_state.umbilical_connected {
+                    log::error!("CRITICAL: Umbilical still connected during Ascent! Transitioning to Fault");
+                    self.flight_state.flight_mode = FlightMode::Fault;
+                    return;
+                }
+                
                 if self.flight_state.altimeter_state != crate::state::SensorState::VALID {
                     // altimeter is not working
                     self.alt_armed = false;
@@ -328,21 +330,9 @@ impl FlightLoop {
                     self.flight_state.log_to_fram().await;
                 }
                 
-                // TODO: Add umbilical check command logic 
-                /* ex:
-                    umbilical.check_command();
-                    umbilical.transmit();
-                 */
-                if !self.flight_state.umbilical_connected {
-                    // For now just log the state for umbilical
-                    //log::info!("Umbilical disconnected");
-                    self.flight_state.buzz(3);
-                } else {
-                    log::info!("Umbilical connected");
-                    //self.flight_state.flight_mode = FlightMode::Fault; dont know this yet
-                    self.flight_state.buzz(2);
-                }
                 if !self.mav_open {
+                    self.flight_state.close_sv().await;
+                    self.sv_open = false;
                     self.flight_state.flight_mode = FlightMode::Coast;
                     log::warn!("MAV closed in Ascent; transitioning to Coast");
                 } else {
@@ -475,9 +465,6 @@ impl FlightLoop {
             }
             FlightMode::Fault => {
                 // TODO: Flight software does nothing in Fault mode
-                // TODO: Umbilical check ex:
-                // umbilical.check_command();
-                // umbilical.transmit();
                 log::error!("Flight mode is Fault");
             }
         }
@@ -536,7 +523,7 @@ impl FlightLoop {
         // Sync local fields from state (in case modified directly)
         self.key_armed = self.flight_state.key_armed;
         self.umbilical_state = self.flight_state.umbilical_connected;
-        
+
         // Log Simulated Sensor Data
         //if !(self.flight_state.flight_mode == FlightMode::Ascent) || !(self.flight_state.flight_mode == FlightMode::Coast) {
         //log::info!(
@@ -547,7 +534,13 @@ impl FlightLoop {
         //);
         //}
 
+        // Process any commands sent over USB during simulation
+        self.check_umbilical_commands().await;
+
         // Run logic
         self.check_transitions().await;
+        
+        // Continuously update actuators so timers and physical pins actually output during simulation tests
+        self.flight_state.update_actuators().await;
     }
 }

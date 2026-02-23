@@ -21,7 +21,7 @@ pub mod umbilical;
 #[path = "../test/flight_sim.rs"]
 mod flight_sim;
 
-const SIMULATION_MODE: bool = false;
+const SIMULATION_MODE: bool = true;
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
