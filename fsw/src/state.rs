@@ -9,6 +9,7 @@ use crate::driver::lsm6dsox::Lsm6dsoxSensor;
 use crate::driver::rfd900x::Rfd900x;
 use crate::driver::ublox_max_m10s::UbloxMaxM10s;
 use crate::driver::ads1015::Ads1015Sensor;
+use crate::driver::onboard_flash::OnboardFlash;
 
 use embassy_rp::gpio::{Input, Output};
 use embassy_rp::peripherals::SPI0;
@@ -99,6 +100,9 @@ pub struct FlightState {
     // comms
     pub payload_comms_ok: bool,
     pub recovery_comms_ok: bool,
+
+    // QSPI Flash
+    flash: OnboardFlash<'static>,
 }
 
 impl FlightState {
@@ -113,8 +117,9 @@ impl FlightState {
         buzzer: Buzzer<'static>,
         mav: Mav<'static>,
         sv: SV<'static>,
+        mut flash: OnboardFlash<'static>,
     ) -> Self {
-        let packet = Packet::default();
+        let mut packet = Packet::default();
         let altimeter = Bmp390Sensor::new(i2c_bus).await;
         let altimeter_init = if altimeter.is_init() {
             SensorState::VALID
@@ -153,6 +158,23 @@ impl FlightState {
             }
         };
 
+        // Attempt to read the last packet state from Onboard QSPI Flash
+        match flash.read_packet().await {
+            Ok(recovered_packet) => {
+                // To avoid reading empty uninitialized flash (usually all 0xFF or 0x00), 
+                // we'll do a basic sanity check on the timestamp or flight mode
+                if recovered_packet.flight_mode <= (FlightMode::Fault as u32) {
+                    log::info!("Successfully recovered previous packet from QSPI Flash.");
+                    packet = recovered_packet;
+                } else {
+                    log::info!("QSPI Flash data appears uninitialized or invalid.");
+                }
+            }
+            Err(_) => {
+                log::warn!("Failed to recover packet from QSPI Flash.");
+            }
+        }
+
         Self {
             packet: packet,
             flight_mode: stored_mode,
@@ -178,6 +200,7 @@ impl FlightState {
             buzzer,
             mav,
             sv,
+            flash,
         }
     }
 
@@ -419,6 +442,14 @@ impl FlightState {
 
         // Transmit packet via radio
         self.transmit().await;
+
+        // Save packet to QSPI Flash 
+        // NOTE(Flash): This requires a blocking 4KB Sector Erase that takes ~45ms.
+        // As a result, when flash writing is active, the absolute fastest this
+        // flight loop can execute is ~20Hz (50ms).
+        if let Err(e) = self.flash.write_packet(&self.packet).await {
+            log::warn!("Failed to write packet to QSPI Flash: {:?}", e);
+        }
     }
 
     pub fn flight_mode_name(&mut self) -> &'static str {

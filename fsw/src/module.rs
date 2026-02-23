@@ -10,6 +10,7 @@ use embassy_rp::peripherals::{
 use embassy_rp::spi::{Config as SpiConfig, Spi};
 use embassy_rp::uart::{Config as UartConfig, InterruptHandler as UartInterruptHandler, Uart};
 use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
+use embassy_rp::dma::InterruptHandler as DmaInterruptHandler;
 use embassy_rp::{bind_interrupts, i2c, spi, uart, Peri};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
@@ -26,7 +27,7 @@ bind_interrupts!(pub struct Irqs {
     USBCTRL_IRQ => UsbInterruptHandler<USB>;
     I2C0_IRQ => I2cInterruptHandler<I2C0>;
     UART1_IRQ => UartInterruptHandler<UART1>;
-    DMA_IRQ_0 => embassy_rp::dma::InterruptHandler<DMA_CH0>, embassy_rp::dma::InterruptHandler<DMA_CH1>, embassy_rp::dma::InterruptHandler<DMA_CH2>, embassy_rp::dma::InterruptHandler<DMA_CH3>;
+    DMA_IRQ_0 => DmaInterruptHandler<DMA_CH0>, DmaInterruptHandler<DMA_CH1>, DmaInterruptHandler<DMA_CH2>, DmaInterruptHandler<DMA_CH3>, DmaInterruptHandler<DMA_CH4>;
 });
 
 // Initialize USB driver for logger
@@ -199,15 +200,12 @@ pub fn init_actuators(
     
     (ssa, buzzer, mav, sv)
 }
-/*
 /// Initialize onboard QSPI flash for packet storage
 ///
 /// Returns an OnboardFlash driver for reading/writing packets
 pub fn init_onboard_flash(
     flash: Peri<'static, FLASH>,
     dma: Peri<'static, DMA_CH4>,
-) -> OnboardFlash<'static> {
-    OnboardFlash::new(flash, dma)
+) -> crate::driver::onboard_flash::OnboardFlash<'static> {
+    crate::driver::onboard_flash::OnboardFlash::new(flash, dma)
 }
-
-*/

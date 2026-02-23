@@ -58,6 +58,7 @@ async fn main(spawner: Spawner) {
         p.PIN_7,
         p.PIN_8,
     );
+    let flash = module::init_onboard_flash(p.FLASH, p.DMA_CH4);
     
     log::info!("Initializing Flight State (Sensors & Actuators)...");
     let mut flight_state = state::FlightState::new(
@@ -66,6 +67,7 @@ async fn main(spawner: Spawner) {
         buzzer,
         mav,
         sv,
+        flash,
     ).await;
     log::info!("Flight State Initialized.");
      

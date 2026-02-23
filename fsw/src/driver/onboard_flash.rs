@@ -45,7 +45,7 @@ impl<'d> OnboardFlash<'d> {
     /// * `dma` - A DMA channel for async operations
     pub fn new(flash: Peri<'d, FLASH>, dma: Peri<'d, DMA_CH4>) -> Self {
         Self {
-            flash: Flash::new(flash, dma),
+            flash: Flash::new(flash, dma, crate::module::Irqs),
         }
     }
 
