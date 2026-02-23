@@ -385,28 +385,7 @@ impl FlightState {
     }
 
     pub async fn transmit(&mut self) {
-        let mut data = [0u8; 80];
-        data[0..4].copy_from_slice(&self.packet.flight_mode.to_le_bytes());
-        data[4..8].copy_from_slice(&self.packet.pressure.to_le_bytes());
-        data[8..12].copy_from_slice(&self.packet.temp.to_le_bytes());
-        data[12..16].copy_from_slice(&self.packet.altitude.to_le_bytes());
-        data[16..20].copy_from_slice(&self.packet.latitude.to_le_bytes());
-        data[20..24].copy_from_slice(&self.packet.longitude.to_le_bytes());
-        data[24..28].copy_from_slice(&self.packet.num_satellites.to_le_bytes());
-        data[28..32].copy_from_slice(&self.packet.timestamp.to_le_bytes());
-        data[32..36].copy_from_slice(&self.packet.mag_x.to_le_bytes());
-        data[36..40].copy_from_slice(&self.packet.mag_y.to_le_bytes());
-        data[40..44].copy_from_slice(&self.packet.mag_z.to_le_bytes());
-        data[44..48].copy_from_slice(&self.packet.accel_x.to_le_bytes());
-        data[48..52].copy_from_slice(&self.packet.accel_y.to_le_bytes());
-        data[52..56].copy_from_slice(&self.packet.accel_z.to_le_bytes());
-        data[56..60].copy_from_slice(&self.packet.gyro_x.to_le_bytes());
-        data[60..64].copy_from_slice(&self.packet.gyro_y.to_le_bytes());
-        data[64..68].copy_from_slice(&self.packet.gyro_z.to_le_bytes());
-        // ADS1015 ADC channels
-        data[68..72].copy_from_slice(&self.packet.pt3.to_le_bytes());
-        data[72..76].copy_from_slice(&self.packet.pt4.to_le_bytes());
-        data[76..80].copy_from_slice(&self.packet.rtd.to_le_bytes());
+        let data = self.packet.to_bytes();
 
         // Transmit via radio
         match self.radio.send(&data).await {
