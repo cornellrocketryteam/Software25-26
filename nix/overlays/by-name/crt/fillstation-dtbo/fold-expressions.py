@@ -11,15 +11,26 @@ output_file = sys.argv[2]
 
 text = open(input_file, "r").read()
 
-# Match: (0x0088), ((0x00010000) + (3))
+# Match: (0x0088), ((val_expr) + (3))
+# where val_expr can be hex/dec constants joined by |
+# e.g. (0x00010000|0) or just (0x00010000)
 pat = re.compile(
     r"\(\s*(0x[0-9a-fA-F]+)\s*\)\s*,\s*"
-    r"\(\(\s*(0x[0-9a-fA-F]+)\s*\)\s*\+\s*\(\s*([0-9]+)\s*\)\)"
+    r"\(\s*\(\s*([\s0-9a-fA-Fx|]+)\s*\)\s*\+\s*\(\s*([0-9]+)\s*\)\s*\)"
 )
+
+def eval_or_expr(s):
+    """Evaluate a |-separated expression of hex/dec constants."""
+    parts = s.split('|')
+    result = 0
+    for p in parts:
+        p = p.strip()
+        result |= int(p, 0)  # int(x, 0) auto-detects hex/dec
+    return result
 
 def repl(m):
     off = int(m.group(1), 16)
-    base = int(m.group(2), 16)
+    base = eval_or_expr(m.group(2))
     add = int(m.group(3), 10)
     return f"0x{off:04x} 0x{(base+add):08x}"
 

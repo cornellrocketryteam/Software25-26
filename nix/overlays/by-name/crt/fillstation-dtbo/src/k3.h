@@ -31,6 +31,10 @@
 #define PIN_DEBOUNCE_CONF5	(5 << DEBOUNCE_SHIFT)
 #define PIN_DEBOUNCE_CONF6	(6 << DEBOUNCE_SHIFT)
 
+/* Drive-strength flags used by TI SysConfig-generated pin mux files */
+#define PIN_DRIVE_STRENGTH_NOMINAL	0
+#define PIN_DRIVE_STRENGTH_HIGH		(1 << 19)
+
 #define AM62AX_IOPAD(pa, val, muxmode)		(((pa) & 0x1fff)) ((val) | (muxmode))
 #define AM62AX_MCU_IOPAD(pa, val, muxmode)	(((pa) & 0x1fff)) ((val) | (muxmode))
 
