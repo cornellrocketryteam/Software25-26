@@ -69,6 +69,7 @@ pub fn init_usb_device(driver: UsbDriver) -> (UsbDevice<'static, UsbDriver>, Cdc
     let class = {
         static STATE: StaticCell<State> = StaticCell::new();
         let state = STATE.init(State::new());
+        // 64 bytes = USB full-speed bulk endpoint max
         CdcAcmClass::new(&mut builder, state, 64)
     };
     let usb_device = builder.build();

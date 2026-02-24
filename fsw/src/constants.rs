@@ -57,8 +57,8 @@ pub const SV_PIN: u8 = 8;
 
 // Timing Configuration
 
-/// Main loop cycle time in milliseconds
-pub const MAIN_LOOP_DELAY_MS: u64 = 1000;
+/// Main loop cycle time in milliseconds (10 Hz)
+pub const MAIN_LOOP_DELAY_MS: u64 = 100;
 
 // USB Logger Configuration
 

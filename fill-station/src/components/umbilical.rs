@@ -1,5 +1,9 @@
 use serde::{Deserialize, Serialize};
 
+/// Sync header that the FSW prepends to every telemetry frame.
+/// The receiver scans the byte stream for this pattern to find packet boundaries.
+pub const SYNC_HEADER: [u8; 2] = [0xAA, 0x55];
+
 /// FSW telemetry packet — 80 bytes, little-endian.
 /// Mirrors the Packet struct serialized in fsw/src/state.rs:transmit().
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]

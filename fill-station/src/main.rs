@@ -24,7 +24,7 @@ use crate::command::{AdcReadings, Command, CommandResponse, UmbilicalReadings};
 use crate::command::ChannelReading;
 use crate::hardware::Hardware;
 #[cfg(any(target_os = "linux", target_os = "android"))]
-use crate::components::umbilical::FswTelemetry;
+use crate::components::umbilical::{FswTelemetry, SYNC_HEADER};
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use crate::components::ads1015::{Channel, Gain, DataRate};
@@ -74,7 +74,8 @@ const LOADCELL_OFFSET: f32 = 75.37882;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 const UMBILICAL_DEVICE: &str = "/dev/ttyACM0";
 
-/// Baud rate for umbilical serial communication
+/// Baud rate for umbilical serial communication.
+/// Note: baud rate is ignored for USB CDC-ACM; kept for serialport crate API.
 #[cfg(any(target_os = "linux", target_os = "android"))]
 const UMBILICAL_BAUD: u32 = 115200;
 
@@ -930,13 +931,21 @@ async fn umbilical_task(
             umb.connected = true;
         }
 
-        let mut buf = [0u8; FswTelemetry::SIZE];
-        let mut read_offset = 0usize;
+        // Sync-scanning state machine: finds [0xAA, 0x55] header before
+        // accumulating 80 payload bytes.  This allows the receiver to
+        // re-synchronise if it connects mid-stream.
+        enum ReaderState {
+            Syncing,
+            Reading(usize), // offset into payload_buf
+        }
+
+        let mut state = ReaderState::Syncing;
+        let mut prev_byte: u8 = 0;
+        let mut payload_buf = [0u8; FswTelemetry::SIZE];
 
         loop {
             // Check for pending commands to send
             while let Ok(cmd) = cmd_rx.try_recv() {
-                // Wrap write in unblock since serialport is synchronous
                 let cmd_bytes = cmd.into_bytes();
                 let write_result = smol::unblock({
                     let mut port_clone = port.try_clone().expect("Failed to clone serial port");
@@ -948,42 +957,58 @@ async fn umbilical_task(
                 }
             }
 
-            // Try to read telemetry data (blocking read wrapped in unblock)
-            let remaining = FswTelemetry::SIZE - read_offset;
+            // Read available bytes from serial port (blocking read wrapped in unblock)
             let read_result = smol::unblock({
                 let mut port_clone = port.try_clone().expect("Failed to clone serial port");
-                let offset = read_offset;
                 move || {
-                    let mut temp = vec![0u8; remaining];
+                    let mut temp = [0u8; 128];
                     match port_clone.read(&mut temp) {
-                        Ok(n) => Ok((temp, n, offset)),
+                        Ok(n) => Ok((temp, n)),
                         Err(e) => Err(e),
                     }
                 }
             }).await;
 
             match read_result {
-                Ok((data, bytes_read, offset)) => {
-                    buf[offset..offset + bytes_read].copy_from_slice(&data[..bytes_read]);
-                    read_offset = offset + bytes_read;
+                Ok((data, bytes_read)) => {
+                    // Process each byte through the sync state machine
+                    for &byte in &data[..bytes_read] {
+                        match state {
+                            ReaderState::Syncing => {
+                                if prev_byte == SYNC_HEADER[0] && byte == SYNC_HEADER[1] {
+                                    // Found sync pattern — start reading payload
+                                    state = ReaderState::Reading(0);
+                                    prev_byte = 0;
+                                    continue;
+                                }
+                                prev_byte = byte;
+                            }
+                            ReaderState::Reading(offset) => {
+                                payload_buf[offset] = byte;
+                                let next = offset + 1;
+                                if next >= FswTelemetry::SIZE {
+                                    // Full 80-byte payload received — deserialize
+                                    let telemetry = FswTelemetry::from_bytes(&payload_buf);
+                                    let timestamp_ms = SystemTime::now()
+                                        .duration_since(UNIX_EPOCH)
+                                        .unwrap()
+                                        .as_millis() as u64;
 
-                    // If we have a full packet, deserialize and update shared state
-                    if read_offset >= FswTelemetry::SIZE {
-                        let telemetry = FswTelemetry::from_bytes(&buf);
-                        let timestamp_ms = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap()
-                            .as_millis() as u64;
+                                    {
+                                        let mut umb = umbilical_readings.lock().await;
+                                        umb.timestamp_ms = timestamp_ms;
+                                        umb.connected = true;
+                                        umb.telemetry = telemetry;
+                                    }
 
-                        {
-                            let mut umb = umbilical_readings.lock().await;
-                            umb.timestamp_ms = timestamp_ms;
-                            umb.connected = true;
-                            umb.telemetry = telemetry;
+                                    debug!("FSW telemetry received: mode={}", telemetry.flight_mode_name());
+                                    state = ReaderState::Syncing;
+                                    prev_byte = 0;
+                                } else {
+                                    state = ReaderState::Reading(next);
+                                }
+                            }
                         }
-
-                        debug!("FSW telemetry received: mode={}", telemetry.flight_mode_name());
-                        read_offset = 0;
                     }
                 }
                 Err(e) => {
