@@ -23,3 +23,16 @@
     pinctrl-names = "default";
     pinctrl-0 = <&allgpio0_pins_default &allgpio1_pins_default>;
 };
+
+/* Enable USB0 in host mode for Pico 2 umbilical (CDC-ACM) */
+&usbss0 {
+    ti,vbus-divider;
+};
+
+&usb0 {
+    status = "okay";
+    dr_mode = "host";
+    maximum-speed = "high-speed";
+    pinctrl-names = "default";
+    pinctrl-0 = <&myusb1_pins_default>;
+};
