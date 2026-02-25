@@ -45,6 +45,10 @@ stdenvNoCC.mkDerivation {
     # Apply the overlay to the base DTB
     fdtoverlay -i dtb -o dtb-merged ${dtbOverlay}
     
+    # Remove SerDes PHY reference from USB node — we only need USB 2.0
+    fdtput -d dtb-merged /bus@f4000/cdns-usb@f900000/usb@f400000 phys
+    fdtput -d dtb-merged /bus@f4000/cdns-usb@f900000/usb@f400000 phy-names
+
     # Add kernel boot parameters to the merged DTB
     fdtput --auto-path --verbose --type=s dtb-merged /chosen bootargs "''${kernelParams[@]}"
     
