@@ -72,8 +72,8 @@ impl Hardware {
 
         // SV4
         let sv4 = SolenoidValve::new(
-            &chip0, 44, // Placeholder
-            &chip0, 36, // Placeholder
+            &chip0, 41, // Signal4 - GPIO0_41 (R19)
+            &chip0, 36, // GPIO4 - GPIO0_36 (T19)
             LinePull::NormallyClosed
         ).await?;
 
