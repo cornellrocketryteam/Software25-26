@@ -38,6 +38,11 @@ Complete documentation for the Cornell Rocketry Team fill station server.
   - Telemetry formats
   - Command translations
 
+- **[CSV_LOGGING.md](CSV_LOGGING.md)** - Automatic CSV data logger
+  - Data column formats
+  - File generation behaviors
+  - Umbilical data inclusion
+
 - **[WEBSOCKET_API.md](WEBSOCKET_API.md)** - Full reference of all network commands
   - Command JSON formats
   - Response structures
@@ -67,6 +72,7 @@ Complete documentation for the Cornell Rocketry Team fill station server.
 | Add a new sensor/actuator | [ADDING_FEATURES.md](ADDING_FEATURES.md#adding-a-new-hardware-component) |
 | Add a WebSocket command | [ADDING_FEATURES.md](ADDING_FEATURES.md#adding-a-new-websocket-command) |
 | Create a background task | [ADDING_FEATURES.md](ADDING_FEATURES.md#adding-background-tasks) |
+| View CSV logs | Logs are saved to `/tmp/data` (Linux) or `logs/` (macOS/Windows) |
 | Configure ADC sampling | [ADC_STREAMING.md](ADC_STREAMING.md#configuration-easy-to-modify) |
 | Test ADC readings | [QUICKSTART_ADC.md](QUICKSTART_ADC.md) |
 | Fix I2C permissions | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
@@ -113,7 +119,7 @@ fill-station/
 - **SolenoidValve** (`src/components/solenoid_valve.rs`)
   - GPIO-based control (Control + Signal lines)
   - Configurable Line Pull (NO/NC)
-  - SV1 & SV2 configured by default
+  - SV1 through SV5 configured by default
 
 - **MAV** (`src/components/mav.rs`)
   - PWM-based servo control
@@ -165,6 +171,9 @@ main() spawns tasks:
     │   └─ Updates UmbilicalReadings state
     │       └─ Streamed to clients
     │
+    ├─ csv_logging_task (100 Hz)
+    │   └─ Writes ADC and Hardware state to CSV file
+    │
     └─ your_background_task
         └─ Updates YourState
             └─ Queried by commands
@@ -200,6 +209,8 @@ main() spawns tasks:
 | `actuate_valve` | Open/Close solenoid valve | [WEBSOCKET_API.md](WEBSOCKET_API.md#actuate_valve) |
 | `get_valve_state` | Query valve state | [WEBSOCKET_API.md](WEBSOCKET_API.md#get_valve_state) |
 | `set_mav_angle` | Set MAV servo angle | [WEBSOCKET_API.md](WEBSOCKET_API.md#set_mav_angle) |
+| `mav_open` / `mav_close` | Open or Close MAV fully | [WEBSOCKET_API.md](WEBSOCKET_API.md#mav_open) |
+| `bv_open` / `bv_close` | Open or Close Ball Valve | [WEBSOCKET_API.md](WEBSOCKET_API.md#bv_open) |
 | `start_fsw_stream` | Stream FSW telemetry | [UMBILICAL.md](UMBILICAL.md) |
 | `fsw_launch` | Send Launch command to FSW | [UMBILICAL.md](UMBILICAL.md) |
 

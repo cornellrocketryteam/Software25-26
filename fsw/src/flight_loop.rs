@@ -212,9 +212,9 @@ impl FlightLoop {
                         self.umbilical_disconnect_time = Some(Instant::now());
                     } else if let Some(disconnect_time) = self.umbilical_disconnect_time {
                         if disconnect_time.elapsed().as_millis() as u64 > constants::UMBILICAL_TIMEOUT_MS && !self.vent_signal_sent {
-                            log::warn!("Umbilical Disconnected > 15s. Signal sent to fill station to vent.");
-                            // TODO: Replace with actual command: umbilical.send_vent_command();
-                            log::info!("CMD: Vent Command Sent");
+                            log::warn!("Umbilical Disconnected > 15s. Opening SV to vent.");
+                            self.flight_state.open_sv(0).await;
+                            self.sv_open = true;
                             self.vent_signal_sent = true;
                         }
                     }
@@ -267,9 +267,9 @@ impl FlightLoop {
                         self.umbilical_disconnect_time = Some(Instant::now());
                     } else if let Some(disconnect_time) = self.umbilical_disconnect_time {
                         if disconnect_time.elapsed().as_millis() as u64 > constants::UMBILICAL_TIMEOUT_MS && !self.vent_signal_sent {
-                            log::warn!("Umbilical Disconnected > 15s. Signal sent to fill station to vent.");
-                            // TODO: Replace with actual command: umbilical.send_vent_command();
-                            log::info!("CMD: Vent Command Sent");
+                            log::warn!("Umbilical Disconnected > 15s. Opening SV to vent.");
+                            self.flight_state.open_sv(0).await;
+                            self.sv_open = true;
                             self.vent_signal_sent = true;
                         }
                     }

@@ -192,7 +192,7 @@ Actuates (opens/energizes) or de-actuates (closes/de-energizes) a specific solen
 {"command": "actuate_valve", "valve": "SV1", "state": true}
 ```
 *   `valve`: Valve identifier ("SV1" through "SV5", case-insensitive).
-    *   *Note: For Normally Closed (NC) valves (SV1-SV4), `true` = HIGH (Open). For Normally Open (SV5), `true` = LOW (Open).*
+    *   *Note: For Normally Closed (NC) valves (SV1-SV4), `true` = HIGH (Open). SV5 is an NC valve in hardware but its logical state is inverted in software.*
 
 **Response:**
 ```json
