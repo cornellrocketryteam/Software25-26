@@ -736,6 +736,9 @@ async fn perform_emergency_shutdown(hardware: &Arc<Mutex<Hardware>>) {
         
         // Close MAV
         let _ = hw.mav.close().await;
+
+        // Close Ball Valve
+        let _ = hw.ball_valve.close_sequence().await;
     }
     
     #[cfg(not(any(target_os = "linux", target_os = "android")))]

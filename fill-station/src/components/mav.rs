@@ -9,9 +9,9 @@ const FREQUENCY_HZ: u32 = 330;
 #[allow(dead_code)]
 const NEUTRAL_US: u32 = 1300;
 #[allow(dead_code)]
-const OPEN_90_US: u32 = 922;
+const OPEN_90_US: u32 = 1922;
 #[allow(dead_code)]
-const CLOSE_0_US: u32 = 1922;
+const CLOSE_0_US: u32 = 866;
 #[allow(dead_code)]
 const MAX_US: u32 = 2200;
 #[allow(dead_code)]
