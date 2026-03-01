@@ -1,12 +1,11 @@
 //! USB Logger and Sensor Module
 use crate::constants;
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice as SharedI2cDevice;
+use embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice as SharedSpiDevice;
 use embassy_rp::gpio::Output;
 use embassy_rp::i2c::{Config as I2cConfig, I2c, InterruptHandler as I2cInterruptHandler};
 use embassy_rp::peripherals::{
-    DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, DMA_CH4, FLASH, I2C0, PIN_0, PIN_1, PIN_16, PIN_17, PIN_18, PIN_19, PIN_4, PIN_5, SPI0,
-    UART1, USB,
-};
+    DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, DMA_CH4, FLASH, I2C0, PIN_0, PIN_1, PIN_4, PIN_5, PIN_6, PIN_7, PIN_16, PIN_17, PIN_18, PIN_19, PIN_21, PIN_36, PIN_39, PIN_40, PIN_47, PWM_SLICE8, SPI0, UART1, USB};
 use embassy_rp::spi::{Config as SpiConfig, Spi};
 use embassy_rp::uart::{Config as UartConfig, InterruptHandler as UartInterruptHandler, Uart};
 use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
@@ -22,6 +21,9 @@ use static_cell::StaticCell;
 pub type UsbDriver = Driver<'static, USB>;
 pub type SharedI2c = Mutex<NoopRawMutex, I2c<'static, I2C0, i2c::Async>>;
 pub type I2cDevice<'a> = SharedI2cDevice<'a, NoopRawMutex, I2c<'static, I2C0, i2c::Async>>;
+
+pub type SharedSpi = Mutex<NoopRawMutex, Spi<'static, SPI0, spi::Async>>;
+pub type SpiDevice<'a> = SharedSpiDevice<'a, NoopRawMutex, Spi<'static, SPI0, spi::Async>, Output<'a>>;
 
 bind_interrupts!(pub struct Irqs {
     USBCTRL_IRQ => UsbInterruptHandler<USB>;
@@ -95,28 +97,26 @@ pub fn init_shared_i2c(
     I2C_BUS.init(Mutex::new(i2c))
 }
 
-// Initialize SPI for FRAM
+// Initialize shared SPI bus
 //
-// Returns async SPI instance and CS pin
-pub fn init_spi(
+// Returns a shared SPI instance wrapped in a Mutex that can be used by multiple sensors
+pub fn init_shared_spi(
     spi0: Peri<'static, SPI0>,
     miso: Peri<'static, PIN_16>,
     mosi: Peri<'static, PIN_19>,
     clk: Peri<'static, PIN_18>,
-    cs: Peri<'static, PIN_17>,
     tx_dma: Peri<'static, DMA_CH2>,
     rx_dma: Peri<'static, DMA_CH3>,
-) -> (Spi<'static, SPI0, spi::Async>, Output<'static>) {
-    // Configure SPI for FRAM
+) -> &'static SharedSpi {
+    // Configure SPI (1MHz usually safe for all SPI on the bus)
     let mut spi_config = SpiConfig::default();
-    spi_config.frequency = constants::SPI_FREQUENCY;
+    spi_config.frequency = constants::SPI_FREQUENCY; // 1MHz from constants
 
     let spi = Spi::new(spi0, clk, mosi, miso, tx_dma, rx_dma, Irqs, spi_config);
 
-    // CS pin starts high (inactive)
-    let cs = Output::new(cs, embassy_rp::gpio::Level::High);
-
-    (spi, cs)
+    // Store in static memory
+    static SPI_BUS: static_cell::StaticCell<SharedSpi> = static_cell::StaticCell::new();
+    SPI_BUS.init(Mutex::new(spi))
 }
 
 // Initialize UART1 for RFD900x radio
@@ -137,12 +137,11 @@ pub fn init_uart1(
 }
 
 use crate::actuator::Ssa;
-use embassy_rp::peripherals::{PIN_2, PIN_3};
 
 // Initialize SSA
 pub fn init_ssa(
-    drogue_pin: Peri<'static, PIN_2>,
-    main_pin: Peri<'static, PIN_3>,
+    drogue_pin: Peri<'static, PIN_36>,
+    main_pin: Peri<'static, PIN_39>,
 ) -> Ssa<'static> {
     Ssa::new(
         Output::new(drogue_pin, embassy_rp::gpio::Level::Low),
@@ -151,47 +150,44 @@ pub fn init_ssa(
 }
 
 use crate::actuator::Buzzer;
-use embassy_rp::peripherals::PIN_6;
 
 // Initialize Buzzer
-pub fn init_buzzer(pin: Peri<'static, PIN_6>) -> Buzzer<'static> {
+pub fn init_buzzer(pin: Peri<'static, PIN_21>) -> Buzzer<'static> {
     Buzzer::new(Output::new(pin, embassy_rp::gpio::Level::Low))
 }
 
 use crate::actuator::Mav;
 use embassy_rp::pwm::{Config as PwmConfig, Pwm};
-use embassy_rp::peripherals::{PWM_SLICE3, PIN_7};
 
 // Initialize MAV
 pub fn init_mav(
-    slice: Peri<'static, PWM_SLICE3>,
-    pin: Peri<'static, PIN_7>,
+    slice: Peri<'static, PWM_SLICE8>,
+    pin: Peri<'static, PIN_40>,
 ) -> Mav<'static> {
     let mut config = PwmConfig::default();
     config.top = 3300;
     // Standard servo 50hz-330hz
     
-    // Using output B for Pin 7 (Slice 3B) from pinout
-    let pwm = Pwm::new_output_b(slice, pin, config.clone());
+    // Using output A for Pin 40 (Slice 8A) from pinout
+    let pwm = Pwm::new_output_a(slice, pin, config.clone());
     Mav::new(pwm)
 }
 
 use crate::actuator::SV;
-use embassy_rp::peripherals::PIN_8;
 
 // Initialize SV
-pub fn init_sv(pin: Peri<'static, PIN_8>) -> SV<'static> {
+pub fn init_sv(pin: Peri<'static, PIN_47>) -> SV<'static> {
     SV::new(Output::new(pin, embassy_rp::gpio::Level::High)) // Active Low, so now High (Closed)
 }
 
 // Initialize all actuators
 pub fn init_actuators(
-    drogue_pin: Peri<'static, PIN_2>,
-    main_pin: Peri<'static, PIN_3>,
-    buzzer_pin: Peri<'static, PIN_6>,
-    mav_slice: Peri<'static, PWM_SLICE3>,
-    mav_pin: Peri<'static, PIN_7>,
-    sv_pin: Peri<'static, PIN_8>,
+    drogue_pin: Peri<'static, PIN_36>,
+    main_pin: Peri<'static, PIN_39>,
+    buzzer_pin: Peri<'static, PIN_21>,
+    mav_slice: Peri<'static, PWM_SLICE8>,
+    mav_pin: Peri<'static, PIN_40>,
+    sv_pin: Peri<'static, PIN_47>,
 ) -> (Ssa<'static>, Buzzer<'static>, Mav<'static>, SV<'static>) {
     let ssa = init_ssa(drogue_pin, main_pin);
     let buzzer = init_buzzer(buzzer_pin);

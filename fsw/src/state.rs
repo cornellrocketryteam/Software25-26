@@ -13,7 +13,6 @@ use crate::driver::onboard_flash::OnboardFlash;
 
 use embassy_rp::gpio::{Input, Output};
 use embassy_rp::peripherals::SPI0;
-use embassy_rp::spi::Spi;
 use embassy_rp::uart::{Async, Uart};
 
 use crate::actuator::{Ssa, Buzzer, Mav, SV, Chute};
@@ -62,7 +61,7 @@ pub struct FlightState {
     pub umbilical_connected: bool,
 
     // altimeter
-    altimeter: Bmp390Sensor,
+    altimeter: Bmp390Sensor<'static>,
     pub altimeter_state: SensorState,
     pub reference_pressure: f32,
     
@@ -108,8 +107,9 @@ pub struct FlightState {
 impl FlightState {
     pub async fn new(
         i2c_bus: &'static SharedI2c,
-        spi: Spi<'static, SPI0, embassy_rp::spi::Async>,
-        cs: Output<'static>,
+        spi_bus: &'static SharedSpi,
+        fram_cs: Output<'static>,
+        altimeter_cs: Output<'static>,
         arming_switch: Input<'static>,
         umbilical_sense: Input<'static>,
         uart: Uart<'static, Async>,
@@ -120,13 +120,13 @@ impl FlightState {
         mut flash: OnboardFlash<'static>,
     ) -> Self {
         let mut packet = Packet::default();
-        let altimeter = Bmp390Sensor::new(i2c_bus).await;
+        let altimeter = Bmp390Sensor::new(spi_bus, altimeter_cs).await;
         let altimeter_init = if altimeter.is_init() {
             SensorState::VALID
         } else {
             SensorState::INVALID
         };
-        let mut fram = Fram::new(spi, cs);
+        let mut fram = Fram::new(spi_bus, fram_cs);
         let mut gps = UbloxMaxM10s::new(i2c_bus);
 
         // Configure GPS module to output NAV-PVT messages

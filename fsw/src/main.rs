@@ -37,10 +37,14 @@ async fn main(spawner: Spawner) {
     log::info!("Booting Cornell Rocketry FSW...");
 
     let i2c_bus = module::init_shared_i2c(p.I2C0, p.PIN_0, p.PIN_1);
-    let (spi, cs) = module::init_spi(
-        p.SPI0, p.PIN_16, p.PIN_19, p.PIN_18, p.PIN_17, p.DMA_CH2, p.DMA_CH3,
+    let spi_bus = module::init_shared_spi(
+        p.SPI0, p.PIN_16, p.PIN_19, p.PIN_18, p.DMA_CH2, p.DMA_CH3,
     );
     let uart = module::init_uart1(p.UART1, p.PIN_4, p.PIN_5, p.DMA_CH0, p.DMA_CH1);
+
+    let fram_cs = Output::new(p.PIN_17, Level::High);
+    let _flash_cs = Output::new(p.PIN_6, Level::High); // For onboard flash
+    let altimeter_cs = Output::new(p.PIN_7, Level::High);
 
     // Onboard LED
     let mut led = Output::new(p.PIN_25, Level::Low);
@@ -51,18 +55,18 @@ async fn main(spawner: Spawner) {
 
     // Actuators
     let (ssa, buzzer, mav, sv) = module::init_actuators(
-        p.PIN_2,
-        p.PIN_3,
-        p.PIN_6,
-        p.PWM_SLICE3,
-        p.PIN_7,
-        p.PIN_8,
+        p.PIN_36,
+        p.PIN_39,
+        p.PIN_21,
+        p.PWM_SLICE8,
+        p.PIN_40,
+        p.PIN_47,
     );
     let flash = module::init_onboard_flash(p.FLASH, p.DMA_CH4);
     
     log::info!("Initializing Flight State (Sensors & Actuators)...");
     let mut flight_state = state::FlightState::new(
-        i2c_bus, spi, cs, arming_switch, umbilical, uart,
+        i2c_bus, spi_bus, fram_cs, altimeter_cs, arming_switch, umbilical, uart,
         ssa,
         buzzer,
         mav,

@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 embassy-executor = { git = "https://github.com/embassy-rs/embassy.git", features = ["arch-cortex-m", "executor-thread", "defmt"] }
 embassy-time = { git = "https://github.com/embassy-rs/embassy.git", features = ["defmt"] }
-embassy-rp = { git = "https://github.com/embassy-rs/embassy.git", features = ["defmt", "time-driver", "critical-section-impl", "rp235xa"] }
+embassy-rp = { git = "https://github.com/embassy-rs/embassy.git", features = ["defmt", "time-driver", "critical-section-impl", "rp235xb"] }
 embassy-usb = { git = "https://github.com/embassy-rs/embassy.git", features = ["defmt"] }
 embassy-usb-logger = { git = "https://github.com/embassy-rs/embassy.git" }
 embassy-sync = { git = "https://github.com/embassy-rs/embassy.git", features = ["defmt"] }
@@ -22,8 +22,9 @@ defmt-rtt = "0.4"
 panic-probe = { version = "0.3", features = ["print-defmt"] }
 log = "0.4"
 static_cell = "2"
-bmp390 = "0.2"
 uom = { version = "0.36", default-features = false, features = ["f32", "si"] }
 ublox = { version = "0.4", default-features = false }
 heapless = "0.8"
 embedded-hal-bus = { version = "0.2", features = ["async"] }
+bmp390-rs = { version = "0.4.0", features = ["uom"] }
+libm = "0.2.16"

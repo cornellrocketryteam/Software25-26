@@ -24,6 +24,12 @@ pub const SPI_MISO_PIN: u8 = 16;
 /// SPI0 CS (Chip Select) pin for FRAM
 pub const SPI_CS_PIN: u8 = 17;
 
+/// SPI0 CS (Chip Select) pin for Altimeter
+pub const ALTIMETER_CS_PIN: u8 = 7;
+
+/// SPI0 CS (Chip Select) pin for Flash
+pub const FLASH_CS_PIN: u8 = 6;
+
 /// SPI0 CLK (Clock) pin
 pub const SPI_CLK_PIN: u8 = 18;
 
@@ -49,11 +55,11 @@ pub const UART_RX_PIN: u8 = 5;
 pub const LED_PIN: u8 = 25;
 
 // Actuator Pin Assignments (put actual pin numbers when testing)
-pub const SSA_DROGUE_PIN: u8 = 2;
-pub const SSA_MAIN_PIN: u8 = 3;
-pub const BUZZER_PIN: u8 = 6;
-pub const MAV_PIN: u8 = 7;
-pub const SV_PIN: u8 = 8;
+pub const SSA_DROGUE_PIN: u8 = 36;
+pub const SSA_MAIN_PIN: u8 = 39;
+pub const BUZZER_PIN: u8 = 21;
+pub const MAV_PIN: u8 = 40;
+pub const SV_PIN: u8 = 47;
 
 // Timing Configuration
 
