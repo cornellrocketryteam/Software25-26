@@ -1,0 +1,23 @@
+[package]
+name = "src"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["std"]
+std     = []
+
+[dependencies]
+csv  = "1.4.0"
+libm = "0.2"
+
+[dev-dependencies]
+# No additional test dependencies needed
+
+# For embedded RP2040 targets, add to your application crate:
+#   rp2040-hal = { version = "0.10", features = ["rt"] }
+#   cortex-m-rt = "0.7"
+
+[[bin]]
+name = "simulate"
+path = "src/sim.rs"
