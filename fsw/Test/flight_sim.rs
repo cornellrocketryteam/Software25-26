@@ -403,9 +403,16 @@ pub async fn simulate_flight_hsim(flight_loop: &mut FlightLoop) {
     flight_loop.set_altimeter_state(SensorState::VALID);
     let mut alt_index = 0;
     
+    #[cfg(debug_assertions)]
+    let mut debug_standby_cycles = 0;
+    
     loop {
-        // 1. Read sensors (this will read 0.0m on altimeter)
+        // 1. Read sensors (this will flag altimeter as INVALID if missing)
         flight_loop.flight_state.read_sensors().await;
+        
+        // FOR SIMULATION ONLY: Force the altimeter state back to VALID so the flight controller
+        // doesn't immediately abort into Fault mode when the physical sensor is unplugged.
+        flight_loop.set_altimeter_state(SensorState::VALID);
         
         // 2. OVERWRITE the altitude sensor data before transition logic runs
         // Start feeding altimeter data once the rocket enters Ascent mode
@@ -419,9 +426,7 @@ pub async fn simulate_flight_hsim(flight_loop: &mut FlightLoop) {
                 // OVERWRITE the real altimeter readings
                 flight_loop.set_altitude(constants::TEST_ALTS_LST[alt_index]);
                 
-                if alt_index % 20 == 0 {
-                    log::info!("[H SIM] Flying at Simulated Alt: {:.2}m", constants::TEST_ALTS_LST[alt_index]);
-                }
+                log::info!("[H SIM] Flying at Simulated Alt: {:.2}m", constants::TEST_ALTS_LST[alt_index]);
                 alt_index += 1;
             } else {
                 log::info!("\n[H SIM] Reached end of simulated altitude array");
@@ -434,6 +439,34 @@ pub async fn simulate_flight_hsim(flight_loop: &mut FlightLoop) {
 
         // 3. Process the rest of the hardware loop logic
         flight_loop.flight_state.check_subsystem_health().await;
+        
+        // OVERRIDE for DEBUG builds.
+        // In debug mode, the USB is used for logging, not the umbilical interface.
+        // Also, we likely don't have the physical key switch plugged into the debugger.
+        // We force these true so the state machine can transition from Startup -> Standby.
+        #[cfg(debug_assertions)]
+        {
+            flight_loop.flight_state.key_armed = true;
+            
+            // Only force umbilical connected while on the pad. 
+            // Disconnect it instantly when we launch so we don't fault in Ascent.
+            if flight_loop.flight_state.flight_mode == FlightMode::Startup || flight_loop.flight_state.flight_mode == FlightMode::Standby {
+                flight_loop.flight_state.umbilical_connected = true;
+                Timer::after_millis(2000).await;
+            } else {
+                flight_loop.flight_state.umbilical_connected = false;
+            }
+            
+            // Automatically launch after 5 cycles in Standby since USB umbilical is unavailable in debug
+            if flight_loop.flight_state.flight_mode == FlightMode::Standby {
+                debug_standby_cycles += 1;
+                if debug_standby_cycles == 5 {
+                    log::info!("[H SIM DEBUG] Auto-injecting Launch Command...");
+                    flight_loop.set_launch_command(true);
+                }
+            }
+        }
+
         flight_loop.key_armed = flight_loop.flight_state.key_armed;
         flight_loop.umbilical_state = flight_loop.flight_state.umbilical_connected;
 
@@ -451,5 +484,98 @@ pub async fn simulate_flight_hsim(flight_loop: &mut FlightLoop) {
 
         // Delay to match the real timing cycle
         Timer::after_millis(constants::MAIN_LOOP_DELAY_MS).await;
+    }
+}
+
+// -------------------------------------------------------------
+// INDIVIDUAL ACTUATOR HARDWARE SIMULATIONS
+// These bypass the flight logic entirely, testing physical pins
+// -------------------------------------------------------------
+
+/// Tests the physical Main Actuation Valve (MAV) pin by opening and closing it.
+pub async fn simulate_hsim_mav(flight_loop: &mut FlightLoop) {
+    log::info!("\n--- STARTING HSIM: MAV VALVE TEST ---");
+    log::info!("This simulation will repeatedly open MAV, wait, and close it.");
+    
+    loop {
+        log::info!("[HSIM] Actuating MAV OPEN for {}ms...", constants::MAV_OPEN_DURATION_MS);
+        flight_loop.flight_state.open_mav(constants::MAV_OPEN_DURATION_MS).await;
+        
+        // Wait long enough to observe it open + a buffer
+        Timer::after_millis(constants::MAV_OPEN_DURATION_MS + 2000).await;
+        
+        log::info!("[HSIM] Actuating MAV CLOSE...");
+        flight_loop.flight_state.close_mav().await;
+        
+        log::info!("[HSIM] Waiting 5 seconds before next cycle...");
+        Timer::after_millis(5000).await;
+    }
+}
+
+/// Tests the physical Solenoid Valve (SV) pin by opening and closing it.
+pub async fn simulate_hsim_sv(flight_loop: &mut FlightLoop) {
+    log::info!("\n--- STARTING HSIM: SV VALVE TEST ---");
+    log::info!("This simulation will repeatedly open SV, wait, and close it.");
+    
+    loop {
+        // SV doesn't have a specific duration constant yet, using 2 seconds
+        let sv_test_duration = 2000;
+        
+        log::info!("[HSIM] Actuating SV OPEN for {}ms...", sv_test_duration);
+        flight_loop.flight_state.open_sv(sv_test_duration).await;
+        
+        Timer::after_millis(sv_test_duration + 2000).await;
+        
+        log::info!("[HSIM] Actuating SV CLOSE...");
+        flight_loop.flight_state.close_sv().await;
+        
+        log::info!("[HSIM] Waiting 5 seconds before next cycle...");
+        Timer::after_millis(5000).await;
+    }
+}
+
+/// Tests the physical Drogue parachute ematch (SSA) pin.
+pub async fn simulate_hsim_drogue(flight_loop: &mut FlightLoop) {
+    log::info!("\n--- STARTING HSIM: DROGUE CHUTE E-MATCH TEST ---");
+    log::info!("This simulation will repeatedly fire the DROGUE ematch.");
+    
+    loop {
+        log::info!("[HSIM] Firing DROGUE ematch for {}ms...", constants::SSA_THRESHOLD_MS);
+        flight_loop.flight_state.trigger_drogue().await;
+        
+        // Let the flight state update the actuators to actually hit the pin
+        flight_loop.flight_state.update_actuators().await;
+        
+        Timer::after_millis(constants::SSA_THRESHOLD_MS).await;
+        
+        log::info!("[HSIM] Ematch firing complete. Waiting 5 seconds...");
+        
+        // Make sure we spin the update actuator loop while waiting so pins settle
+        for _ in 0..50 {
+            flight_loop.flight_state.update_actuators().await;
+            Timer::after_millis(100).await;
+        }
+    }
+}
+
+/// Tests the physical Main parachute ematch (SSA) pin.
+pub async fn simulate_hsim_main(flight_loop: &mut FlightLoop) {
+    log::info!("\n--- STARTING HSIM: MAIN CHUTE E-MATCH TEST ---");
+    log::info!("This simulation will repeatedly fire the MAIN ematch.");
+    
+    loop {
+        log::info!("[HSIM] Firing MAIN ematch for {}ms...", constants::SSA_THRESHOLD_MS);
+        flight_loop.flight_state.trigger_main().await;
+        
+        flight_loop.flight_state.update_actuators().await;
+        
+        Timer::after_millis(constants::SSA_THRESHOLD_MS).await;
+        
+        log::info!("[HSIM] Ematch firing complete. Waiting 5 seconds...");
+        
+        for _ in 0..50 {
+            flight_loop.flight_state.update_actuators().await;
+            Timer::after_millis(100).await;
+        }
     }
 }

@@ -21,7 +21,7 @@ pub mod umbilical;
 #[path = "../test/flight_sim.rs"]
 mod flight_sim;
 
-const SIMULATION_MODE: bool = true;
+const SIMULATION_MODE: bool = false;
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
@@ -35,8 +35,28 @@ async fn main(spawner: Spawner) {
         Timer::after_millis(5000).await;
     }
     log::info!("Booting Cornell Rocketry FSW...");
-
     let i2c_bus = module::init_shared_i2c(p.I2C0, p.PIN_0, p.PIN_1);
+    
+    // Perform an I2C scan
+    log::info!("Scanning I2C Bus...");
+    {
+        use embedded_hal_async::i2c::I2c;
+        let mut bus = i2c_bus.lock().await;
+        let mut found = 0;
+        for addr in 0x08u8..=0x77u8 {
+            let mut buf = [0u8; 1];
+            // A 0-byte read is the standard way to ping an I2C address for an ACK
+            match bus.read(addr, &mut []).await {
+                Ok(_) => {
+                    log::info!("Found I2C device at address: {:#04x}", addr);
+                    found += 1;
+                }
+                Err(_) => {}
+            }
+        }
+        log::info!("I2C scan complete. Found {} devices.", found);
+    }
+    
     let spi_bus = module::init_shared_spi(
         p.SPI0, p.PIN_16, p.PIN_19, p.PIN_18, p.DMA_CH2, p.DMA_CH3,
     );
@@ -103,7 +123,16 @@ async fn main(spawner: Spawner) {
         log::info!("\nStarting Hardware Simulation Mode...");
         
         // This runs an infinite loop reading real sensors, but overwriting Altitude data
-        flight_sim::simulate_flight_hsim(&mut flight_loop).await;
+        //flight_sim::simulate_flight_hsim(&mut flight_loop).await;
+        
+        // --- INDIVIDUAL ACTUATOR HARDWARE TESTS ---
+        // Uncomment ONE of the lines below to bypass the flight loop and 
+        // infinitely test a specific physical actuator on the breadboard instead.
+        
+        flight_sim::simulate_hsim_mav(&mut flight_loop).await;
+        // flight_sim::simulate_hsim_sv(&mut flight_loop).await;
+        // flight_sim::simulate_hsim_drogue(&mut flight_loop).await;
+        // flight_sim::simulate_hsim_main(&mut flight_loop).await;
         
     } else {
         loop {
