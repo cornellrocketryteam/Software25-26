@@ -246,12 +246,12 @@ class FillStationClient:
             time.sleep(1.0)
             
             self.launch_status = "Step 3: Opening MAV..."
-            self.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 0.0})
+            self.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 98})
             self.mav["angle"] = 0.0
             time.sleep(7.88)
             
             self.launch_status = "Step 4: Closing MAV & Setting SV1/SV2_Rocket High..."
-            self.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 95.0})
+            self.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 11})
             self.mav["angle"] = 95.0
             
             # Close All (Signal Low = False), EXCEPT SV1 and SV5 which go High
@@ -312,13 +312,13 @@ with col_left:
     
     c1, c2 = st.columns(2)
     if c1.button("OPEN", type="primary", use_container_width=True):
-        client.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 0.0})
+        client.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 98})
         # Force re-poll
         time.sleep(0.1)
         client.send_command({"command": "get_mav_state", "valve": "MAV"})
 
     if c2.button("CLOSE", use_container_width=True):
-        client.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 95.0})
+        client.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 11})
         time.sleep(0.1)
         client.send_command({"command": "get_mav_state", "valve": "MAV"})
     
