@@ -12,7 +12,6 @@ use crate::driver::ads1015::Ads1015Sensor;
 use crate::driver::onboard_flash::OnboardFlash;
 
 use embassy_rp::gpio::{Input, Output};
-use embassy_rp::peripherals::SPI0;
 use embassy_rp::uart::{Async, Uart};
 
 use crate::actuator::{Ssa, Buzzer, Mav, SV, Chute};
