@@ -536,44 +536,42 @@ pub async fn simulate_hsim_sv(flight_loop: &mut FlightLoop) {
     }
 }
 
-/// Tests the physical Drogue parachute ematch (SSA) pin.
+/// Tests the physical Drogue parachute (SSA) pin.
 pub async fn simulate_hsim_drogue(flight_loop: &mut FlightLoop) {
-    log::info!("\n--- STARTING HSIM: DROGUE CHUTE E-MATCH TEST ---");
-    log::info!("This simulation will repeatedly fire the DROGUE ematch.");
+    log::info!("\n--- STARTING HSIM: DROGUE CHUTE TEST ---");
+    log::info!("This simulation will fire the drogue ssa.");
     
-    loop {
-        log::info!("[HSIM] Firing DROGUE ematch for {}ms...", constants::SSA_THRESHOLD_MS);
-        flight_loop.flight_state.trigger_drogue().await;
-        
-        // Let the flight state update the actuators to actually hit the pin
+    log::info!("[HSIM] Firing Drogue for {}ms...", constants::SSA_THRESHOLD_MS);
+    flight_loop.flight_state.trigger_drogue().await;
+    
+    // Let the flight state update the actuators to actually hit the pin
+    flight_loop.flight_state.update_actuators().await;
+    
+    Timer::after_millis(constants::SSA_THRESHOLD_MS).await;
+    
+    log::info!("[HSIM] Drogue deploy complete. Waiting 5 seconds...");
+    
+    // Make sure we spin the update actuator loop while waiting so pins settle
+    for _ in 0..50 {
         flight_loop.flight_state.update_actuators().await;
-        
-        Timer::after_millis(constants::SSA_THRESHOLD_MS).await;
-        
-        log::info!("[HSIM] Ematch firing complete. Waiting 5 seconds...");
-        
-        // Make sure we spin the update actuator loop while waiting so pins settle
-        for _ in 0..50 {
-            flight_loop.flight_state.update_actuators().await;
-            Timer::after_millis(100).await;
-        }
+        Timer::after_millis(100).await;
     }
 }
 
 /// Tests the physical Main parachute ematch (SSA) pin.
 pub async fn simulate_hsim_main(flight_loop: &mut FlightLoop) {
-    log::info!("\n--- STARTING HSIM: MAIN CHUTE E-MATCH TEST ---");
-    log::info!("This simulation will repeatedly fire the MAIN ematch.");
+    log::info!("\n--- STARTING HSIM: MAIN CHUTE TEST ---");
+    log::info!("This simulation will repeatedly fire the main ssa.");
     
     loop {
-        log::info!("[HSIM] Firing MAIN ematch for {}ms...", constants::SSA_THRESHOLD_MS);
+        log::info!("[HSIM] Firing Main for {}ms...", constants::SSA_THRESHOLD_MS);
         flight_loop.flight_state.trigger_main().await;
         
         flight_loop.flight_state.update_actuators().await;
         
         Timer::after_millis(constants::SSA_THRESHOLD_MS).await;
         
-        log::info!("[HSIM] Ematch firing complete. Waiting 5 seconds...");
+        log::info!("[HSIM] Main deploy complete. Waiting 5 seconds...");
         
         for _ in 0..50 {
             flight_loop.flight_state.update_actuators().await;
@@ -581,3 +579,8 @@ pub async fn simulate_hsim_main(flight_loop: &mut FlightLoop) {
         }
     }
 }
+/*
+pub async fn simulate_hsim_buzzer(flight_loop: &mut FlightLoop) {
+    log::info
+}
+*/

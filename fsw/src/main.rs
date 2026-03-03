@@ -35,10 +35,11 @@ async fn main(spawner: Spawner) {
         Timer::after_millis(5000).await;
     }
     log::info!("Booting Cornell Rocketry FSW...");
-    Timer::after_millis(2000).await;
+    Timer::after_millis(1000).await;
     let i2c_bus = module::init_shared_i2c(p.I2C0, p.PIN_0, p.PIN_1);
     
     // Perform an I2C scan
+    /*
     log::info!("Scanning I2C Bus...");
     {
         use embedded_hal_async::i2c::I2c;
@@ -57,6 +58,7 @@ async fn main(spawner: Spawner) {
         }
         log::info!("I2C scan complete. Found {} devices.", found);
     }
+    */
     
     let spi_bus = module::init_shared_spi(
         p.SPI0, p.PIN_16, p.PIN_19, p.PIN_18, p.DMA_CH2, p.DMA_CH3,
@@ -102,7 +104,7 @@ async fn main(spawner: Spawner) {
     let mut flight_loop = flight_loop::FlightLoop::new(flight_state);
 
     if SIMULATION_MODE {
-        Timer::after_secs(5).await;
+        Timer::after_secs(2).await;
         /*
         log::info!("\nStarting Simulation Mode...");
         flight_sim::simulate_flight_simple(&mut flight_loop).await;
@@ -130,10 +132,10 @@ async fn main(spawner: Spawner) {
         // Uncomment ONE of the lines below to bypass the flight loop and 
         // infinitely test a specific physical actuator on the breadboard instead.
         
-        flight_sim::simulate_hsim_mav(&mut flight_loop).await;
+        // flight_sim::simulate_hsim_mav(&mut flight_loop).await;
         // flight_sim::simulate_hsim_sv(&mut flight_loop).await;
-        // flight_sim::simulate_hsim_drogue(&mut flight_loop).await;
-        // flight_sim::simulate_hsim_main(&mut flight_loop).await;
+        flight_sim::simulate_hsim_drogue(&mut flight_loop).await;
+        //flight_sim::simulate_hsim_main(&mut flight_loop).await;
         
     } else {
         loop {
