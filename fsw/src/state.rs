@@ -19,7 +19,7 @@ use crate::actuator::{Ssa, Buzzer, Mav, SV, Chute};
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum SensorState {
-    OFF = 0,
+    //OFF = 0,
     VALID = 1,
     INVALID = 2,
 }

@@ -499,12 +499,14 @@ pub async fn simulate_hsim_mav(flight_loop: &mut FlightLoop) {
     
     loop {
         log::info!("[HSIM] Actuating MAV OPEN for {}ms...", constants::MAV_OPEN_DURATION_MS);
+        // Should be ~1.08 V
         flight_loop.flight_state.open_mav(constants::MAV_OPEN_DURATION_MS).await;
         
         // Wait long enough to observe it open + a buffer
         Timer::after_millis(constants::MAV_OPEN_DURATION_MS + 2000).await;
         
         log::info!("[HSIM] Actuating MAV CLOSE...");
+        // Should be ~2.17 V
         flight_loop.flight_state.close_mav().await;
         
         log::info!("[HSIM] Waiting 5 seconds before next cycle...");
