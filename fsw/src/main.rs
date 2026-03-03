@@ -21,7 +21,7 @@ pub mod umbilical;
 #[path = "../test/flight_sim.rs"]
 mod flight_sim;
 
-const SIMULATION_MODE: bool = false;
+const SIMULATION_MODE: bool = true;
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
@@ -79,8 +79,8 @@ async fn main(spawner: Spawner) {
         p.PIN_36,
         p.PIN_39,
         p.PIN_21,
-        p.PWM_SLICE4,
-        p.PIN_8,
+        p.PWM_SLICE8,
+        p.PIN_40,
         p.PIN_47,
     );
     let flash = module::init_onboard_flash(p.FLASH, p.DMA_CH4);
