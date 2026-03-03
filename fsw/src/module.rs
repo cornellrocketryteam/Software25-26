@@ -5,7 +5,7 @@ use embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice as SharedSpiDevice;
 use embassy_rp::gpio::Output;
 use embassy_rp::i2c::{Config as I2cConfig, I2c, InterruptHandler as I2cInterruptHandler};
 use embassy_rp::peripherals::{
-    DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, DMA_CH4, FLASH, I2C0, PIN_0, PIN_1, PIN_4, PIN_5, PIN_6, PIN_7, PIN_8, PIN_16, PIN_17, PIN_18, PIN_19, PIN_21, PIN_36, PIN_39, PIN_40, PIN_47, PWM_SLICE8, SPI0, UART1, USB};
+    DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, DMA_CH4, FLASH, I2C0, PIN_0, PIN_1, PIN_4, PIN_5, PIN_6, PIN_7, PIN_8, PIN_16, PIN_17, PIN_18, PIN_19, PIN_21, PIN_36, PIN_39, PIN_40, PIN_47, PWM_SLICE4, SPI0, UART1, USB};
 use embassy_rp::spi::{Config as SpiConfig, Spi};
 use embassy_rp::uart::{Config as UartConfig, InterruptHandler as UartInterruptHandler, Uart};
 use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
@@ -161,15 +161,19 @@ use embassy_rp::pwm::{Config as PwmConfig, Pwm};
 
 // Initialize MAV
 pub fn init_mav(
-    slice: Peri<'static, PWM_SLICE8>,
-    pin: Peri<'static, PIN_40>,
+    slice: Peri<'static, PWM_SLICE4>,
+    pin: Peri<'static, PIN_8>,
 ) -> Mav<'static> {
     let mut config = PwmConfig::default();
-    config.top = 3300;
-    // Standard servo 50hz-330hz
     
-    // Using output A for Pin 40 (Slice 8A) from pinout
-    let pwm = Pwm::new_output_a(slice, pin, config.clone());
+    // For 125 MHz system clock -> 330 Hz Servo frequency:
+    // divider = 125.0
+    // top = 3030 
+    config.top = 3030;
+    config.divider = 125.into(); // Needs to be integer for into() here
+    
+    // Using output A for Pin 8 (Slice 4A) from pinout
+    let pwm = Pwm::new_output_a(slice, pin, config);
     Mav::new(pwm)
 }
 
@@ -185,8 +189,8 @@ pub fn init_actuators(
     drogue_pin: Peri<'static, PIN_36>,
     main_pin: Peri<'static, PIN_39>,
     buzzer_pin: Peri<'static, PIN_21>,
-    mav_slice: Peri<'static, PWM_SLICE8>,
-    mav_pin: Peri<'static, PIN_40>,
+    mav_slice: Peri<'static, PWM_SLICE4>,
+    mav_pin: Peri<'static, PIN_8>,
     sv_pin: Peri<'static, PIN_47>,
 ) -> (Ssa<'static>, Buzzer<'static>, Mav<'static>, SV<'static>) {
     let ssa = init_ssa(drogue_pin, main_pin);

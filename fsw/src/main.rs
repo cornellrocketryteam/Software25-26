@@ -35,6 +35,7 @@ async fn main(spawner: Spawner) {
         Timer::after_millis(5000).await;
     }
     log::info!("Booting Cornell Rocketry FSW...");
+    Timer::after_millis(2000).await;
     let i2c_bus = module::init_shared_i2c(p.I2C0, p.PIN_0, p.PIN_1);
     
     // Perform an I2C scan
@@ -45,8 +46,8 @@ async fn main(spawner: Spawner) {
         let mut found = 0;
         for addr in 0x08u8..=0x77u8 {
             let mut buf = [0u8; 1];
-            // A 0-byte read is the standard way to ping an I2C address for an ACK
-            match bus.read(addr, &mut []).await {
+            // Some I2C peripherals optimize away 0-byte reads. We request 1 byte.
+            match bus.read(addr, &mut buf).await {
                 Ok(_) => {
                     log::info!("Found I2C device at address: {:#04x}", addr);
                     found += 1;
@@ -78,8 +79,8 @@ async fn main(spawner: Spawner) {
         p.PIN_36,
         p.PIN_39,
         p.PIN_21,
-        p.PWM_SLICE8,
-        p.PIN_40,
+        p.PWM_SLICE4,
+        p.PIN_8,
         p.PIN_47,
     );
     let flash = module::init_onboard_flash(p.FLASH, p.DMA_CH4);
