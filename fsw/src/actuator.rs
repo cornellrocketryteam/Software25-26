@@ -1,6 +1,6 @@
 use embassy_rp::gpio::Output;
-use embassy_time::Instant;
-
+use embassy_rp::pwm::Pwm;
+use embassy_time::{Instant, Duration};
 use embedded_hal::pwm::SetDutyCycle;
 // 360 ms use duty cycle 330 Hz for period
 // 1520/3300 for duty cycle
@@ -126,50 +126,80 @@ impl<'a> Buzzer<'a> {
 }
 
 // MAV
+/// Servo driver for ProModeler DS2685BLHV
+///
+/// PWM requirements:
+/// - 330 Hz frame rate
+/// - 3030 µs period
+/// - 1000–2000 µs pulse width
 pub struct Mav<'a> {
-    pwm: embassy_rp::pwm::Pwm<'a>,
+    pwm: Pwm<'a>,
     open_deadline: Option<Instant>,
 }
 
 impl<'a> Mav<'a> {
-    pub fn new(pwm: embassy_rp::pwm::Pwm<'a>) -> Self {
-        let mut mav = Self { 
+    // ======== Servo Constants ========
+
+    const SERVO_FREQ_HZ: u32 = 330;
+    const SERVO_PERIOD_US: u16 = (1_000_000 / Self::SERVO_FREQ_HZ) as u16; // 3030 µs
+    const SERVO_MIN_US: u16 = 1000;
+    const SERVO_MAX_US: u16 = 2000;
+    const SERVO_NEUTRAL_US: u16 = 1520;
+
+    /// Create new MAV servo driver.
+    /// Assumes PWM slice already configured for:
+    /// - top = 3030
+    /// - divider ≈ 125
+    pub fn new(pwm: Pwm<'a>) -> Self {
+        let mut mav = Self {
             pwm,
             open_deadline: None,
         };
-        mav.close();
+
+        // Start at neutral position
+        mav.set_pulse_width(Self::SERVO_NEUTRAL_US);
         mav
     }
 
-    pub fn set_position(&mut self, position: f32) {
-        // Clamp position 0.0 to 1.0
-        let pos = position.clamp(0.0, 1.0);
-        
-        // Map 0.0 -> 1520, 1.0 -> 3000 (Based on 1520 Open / 3300 Top) from MAV spec
-        let min_duty = 1520.0;
-        let max_duty = 3000.0; 
-        
-        let duty = min_duty + (max_duty - min_duty) * pos;
-        let _ = self.pwm.set_duty_cycle_fraction(duty as u16, 3300);
+    /// Core low-level function:
+    /// Sets pulse width in microseconds directly.
+    fn set_pulse_width(&mut self, pulse_us: u16) {
+        let pulse = pulse_us.clamp(Self::SERVO_MIN_US, Self::SERVO_MAX_US);
+        let _ = self.pwm.set_duty_cycle_fraction(pulse, Self::SERVO_PERIOD_US);
     }
 
+    /// Set servo position as normalized value:
+    /// 0.0 = fully open
+    /// 1.0 = fully closed
+    pub fn set_position(&mut self, position: f32) {
+        let pos = position.clamp(0.0, 1.0);
+
+        let span = (Self::SERVO_MAX_US - Self::SERVO_MIN_US) as f32;
+        let pulse = Self::SERVO_MIN_US as f32 + (span * pos);
+
+        // Add 0.5 for rounding before truncating to integer in no_std
+        self.set_pulse_width((pulse + 0.5) as u16);
+    }
+
+    /// Open valve (minimum pulse)
     pub fn open(&mut self, duration_ms: u64) {
-        // Open = Position 0.0 (based on 21845/65535 33% 1100/3300)
-        let _ = self.pwm.set_duty_cycle_fraction(1520, 3300);
-        
+        self.set_pulse_width(Self::SERVO_MIN_US);
+
         if duration_ms > 0 {
-            self.open_deadline = Some(Instant::now() + embassy_time::Duration::from_millis(duration_ms));
+            self.open_deadline =
+                Some(Instant::now() + Duration::from_millis(duration_ms));
         } else {
             self.open_deadline = None;
         }
     }
 
+    /// Close valve (maximum pulse)
     pub fn close(&mut self) {
-        // Close = Position 1.0
-        let _ = self.pwm.set_duty_cycle_fraction(3000, 3300);
+        self.set_pulse_width(Self::SERVO_MAX_US);
         self.open_deadline = None;
     }
 
+    /// Must be called periodically to handle timed open()
     pub fn update(&mut self) {
         if let Some(deadline) = self.open_deadline {
             if Instant::now() >= deadline {

@@ -216,6 +216,7 @@ impl FlightLoop {
                             self.flight_state.open_sv(0).await;
                             self.sv_open = true;
                             self.vent_signal_sent = true;
+                            self.vent_signal_sent = true;
                         }
                     }
                     self.flight_state.buzz(3);

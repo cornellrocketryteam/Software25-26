@@ -16,9 +16,9 @@ const MAX_READ_BYTES: usize = 255;
 #[derive(Debug)]
 pub enum GpsError {
     I2cError,
-    ParseError,
+    //ParseError,
     NoData,
-    InvalidData,
+    //InvalidData,
 }
 
 /// Driver for ublox MAX-M10S GPS module over I2C

@@ -9,10 +9,9 @@ use crate::driver::lsm6dsox::Lsm6dsoxSensor;
 use crate::driver::rfd900x::Rfd900x;
 use crate::driver::ublox_max_m10s::UbloxMaxM10s;
 use crate::driver::ads1015::Ads1015Sensor;
+use crate::driver::onboard_flash::OnboardFlash;
 
 use embassy_rp::gpio::{Input, Output};
-use embassy_rp::peripherals::SPI0;
-use embassy_rp::spi::Spi;
 use embassy_rp::uart::{Async, Uart};
 
 use crate::actuator::{Ssa, Buzzer, Mav, SV, Chute};
@@ -20,7 +19,7 @@ use crate::actuator::{Ssa, Buzzer, Mav, SV, Chute};
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum SensorState {
-    OFF = 0,
+    //OFF = 0,
     VALID = 1,
     INVALID = 2,
 }
@@ -61,7 +60,7 @@ pub struct FlightState {
     pub umbilical_connected: bool,
 
     // altimeter
-    altimeter: Bmp390Sensor,
+    altimeter: Bmp390Sensor<'static>,
     pub altimeter_state: SensorState,
     pub reference_pressure: f32,
     
@@ -99,13 +98,17 @@ pub struct FlightState {
     // comms
     pub payload_comms_ok: bool,
     pub recovery_comms_ok: bool,
+
+    // QSPI Flash
+    flash: OnboardFlash<'static>,
 }
 
 impl FlightState {
     pub async fn new(
         i2c_bus: &'static SharedI2c,
-        spi: Spi<'static, SPI0, embassy_rp::spi::Async>,
-        cs: Output<'static>,
+        spi_bus: &'static SharedSpi,
+        fram_cs: Output<'static>,
+        altimeter_cs: Output<'static>,
         arming_switch: Input<'static>,
         umbilical_sense: Input<'static>,
         uart: Uart<'static, Async>,
@@ -113,15 +116,16 @@ impl FlightState {
         buzzer: Buzzer<'static>,
         mav: Mav<'static>,
         sv: SV<'static>,
+        mut flash: OnboardFlash<'static>,
     ) -> Self {
-        let packet = Packet::default();
-        let altimeter = Bmp390Sensor::new(i2c_bus).await;
+        let mut packet = Packet::default();
+        let altimeter = Bmp390Sensor::new(spi_bus, altimeter_cs).await;
         let altimeter_init = if altimeter.is_init() {
             SensorState::VALID
         } else {
             SensorState::INVALID
         };
-        let mut fram = Fram::new(spi, cs);
+        let mut fram = Fram::new(spi_bus, fram_cs);
         let mut gps = UbloxMaxM10s::new(i2c_bus);
 
         // Configure GPS module to output NAV-PVT messages
@@ -153,6 +157,23 @@ impl FlightState {
             }
         };
 
+        // Attempt to read the last packet state from Onboard QSPI Flash
+        match flash.read_packet().await {
+            Ok(recovered_packet) => {
+                // To avoid reading empty uninitialized flash (usually all 0xFF or 0x00), 
+                // we'll do a basic sanity check on the timestamp or flight mode
+                if recovered_packet.flight_mode <= (FlightMode::Fault as u32) {
+                    log::info!("Successfully recovered previous packet from QSPI Flash.");
+                    packet = recovered_packet;
+                } else {
+                    log::info!("QSPI Flash data appears uninitialized or invalid.");
+                }
+            }
+            Err(_) => {
+                log::warn!("Failed to recover packet from QSPI Flash.");
+            }
+        }
+
         Self {
             packet: packet,
             flight_mode: stored_mode,
@@ -178,6 +199,7 @@ impl FlightState {
             buzzer,
             mav,
             sv,
+            flash,
         }
     }
 
@@ -362,28 +384,7 @@ impl FlightState {
     }
 
     pub async fn transmit(&mut self) {
-        let mut data = [0u8; 80];
-        data[0..4].copy_from_slice(&self.packet.flight_mode.to_le_bytes());
-        data[4..8].copy_from_slice(&self.packet.pressure.to_le_bytes());
-        data[8..12].copy_from_slice(&self.packet.temp.to_le_bytes());
-        data[12..16].copy_from_slice(&self.packet.altitude.to_le_bytes());
-        data[16..20].copy_from_slice(&self.packet.latitude.to_le_bytes());
-        data[20..24].copy_from_slice(&self.packet.longitude.to_le_bytes());
-        data[24..28].copy_from_slice(&self.packet.num_satellites.to_le_bytes());
-        data[28..32].copy_from_slice(&self.packet.timestamp.to_le_bytes());
-        data[32..36].copy_from_slice(&self.packet.mag_x.to_le_bytes());
-        data[36..40].copy_from_slice(&self.packet.mag_y.to_le_bytes());
-        data[40..44].copy_from_slice(&self.packet.mag_z.to_le_bytes());
-        data[44..48].copy_from_slice(&self.packet.accel_x.to_le_bytes());
-        data[48..52].copy_from_slice(&self.packet.accel_y.to_le_bytes());
-        data[52..56].copy_from_slice(&self.packet.accel_z.to_le_bytes());
-        data[56..60].copy_from_slice(&self.packet.gyro_x.to_le_bytes());
-        data[60..64].copy_from_slice(&self.packet.gyro_y.to_le_bytes());
-        data[64..68].copy_from_slice(&self.packet.gyro_z.to_le_bytes());
-        // ADS1015 ADC channels
-        data[68..72].copy_from_slice(&self.packet.pt3.to_le_bytes());
-        data[72..76].copy_from_slice(&self.packet.pt4.to_le_bytes());
-        data[76..80].copy_from_slice(&self.packet.rtd.to_le_bytes());
+        let data = self.packet.to_bytes();
 
         // Transmit via radio
         match self.radio.send(&data).await {
@@ -419,6 +420,14 @@ impl FlightState {
 
         // Transmit packet via radio
         self.transmit().await;
+
+        // Save packet to QSPI Flash 
+        // NOTE(Flash): This requires a blocking 4KB Sector Erase that takes ~45ms.
+        // As a result, when flash writing is active, the absolute fastest this
+        // flight loop can execute is ~20Hz (50ms).
+        if let Err(e) = self.flash.write_packet(&self.packet).await {
+            log::warn!("Failed to write packet to QSPI Flash: {:?}", e);
+        }
     }
 
     pub fn flight_mode_name(&mut self) -> &'static str {
