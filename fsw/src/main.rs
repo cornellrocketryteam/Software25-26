@@ -5,7 +5,7 @@
 
 use embassy_executor::Spawner;
 use embassy_rp::gpio::{Level, Output};
-use embassy_time::Timer;
+use embassy_time::{Instant, Timer};
 use {defmt_rtt as _, panic_probe as _};
 
 mod constants;
@@ -100,13 +100,18 @@ async fn main(spawner: Spawner) {
 
     // STEP 4: Run actual flight loop with real telemetry
     loop {
+        let start_time = Instant::now();
+        
         flight_loop.flight_state.cycle_count += 1;
         flight_loop.execute().await;
+
+        let execution_duration = start_time.elapsed();
+        log::info!("Flight loop executed in {} ms", execution_duration.as_millis());
 
         // Toggle LED for heartbeat (every 10 cycles = 1 Hz blink at 10 Hz loop)
         if flight_loop.flight_state.cycle_count % 10 == 0 {
             led.toggle();
         }
-        Timer::after_millis(constants::MAIN_LOOP_DELAY_MS).await;
+        // Timer::after_millis(constants::MAIN_LOOP_DELAY_MS).await; // Removed to test max speed
     }
 }
