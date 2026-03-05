@@ -146,6 +146,30 @@ async fn main(spawner: Spawner) {
         }
     }
 
+    #[cfg(feature = "test_buzzer")]
+    {
+        log::info!("Starting Buzzer Test Mode...");
+        loop {
+            log::info!("Actuating Buzzer 3 times");
+            flight_state.buzz(3);
+            // Loop calling update_actuators repeatedly to allow the buzzer state machine to process buzzes
+            for _ in 0..20 {
+                flight_state.update_actuators().await;
+                Timer::after_millis(50).await;
+            }
+            log::info!("Wait 2 seconds...");
+            Timer::after_millis(2000).await;
+            log::info!("Actuating Buzzer 2 times");
+            flight_state.buzz(2);
+            for _ in 0..15 {
+                flight_state.update_actuators().await;
+                Timer::after_millis(50).await;
+            }
+            log::info!("Wait 5 seconds...");
+            Timer::after_millis(5000).await;
+        }
+    }
+
     #[cfg(feature = "test_sensors")]
     {
         log::info!("Starting Sensor Test Mode...");
@@ -156,6 +180,7 @@ async fn main(spawner: Spawner) {
             Timer::after_millis(500).await; // Fast loop for sensor readouts
         }
     }
+
 
     #[cfg(feature = "test_all")]
     {
@@ -193,6 +218,21 @@ async fn main(spawner: Spawner) {
             flight_state.update_actuators().await;
             Timer::after_millis(constants::SSA_THRESHOLD_MS + 1000).await;
 
+            // 5. Test Buzzer
+            log::info!("5. Testing Buzzer 3 times...");
+            flight_state.buzz(3);
+            for _ in 0..20 {
+                flight_state.update_actuators().await;
+                Timer::after_millis(50).await;
+            }
+            Timer::after_millis(2000).await;
+            log::info!("Actuating Buzzer 2 times");
+            flight_state.buzz(2);
+            for _ in 0..15 {
+                flight_state.update_actuators().await;
+                Timer::after_millis(50).await;
+            }
+
             test_cycle += 1;
             led.toggle();
             log::info!("Cycle complete. Waiting 3 seconds before repeating...");
@@ -201,7 +241,7 @@ async fn main(spawner: Spawner) {
     }
 
     // --- NORMAL FLIGHT LOOP --- //
-    #[cfg(not(any(feature = "test_mav", feature = "test_sv", feature = "test_ssa", feature = "test_sensors", feature = "test_all")))]
+    #[cfg(not(any(feature = "test_mav", feature = "test_sv", feature = "test_ssa", feature = "test_sensors", feature = "test_buzzer", feature = "test_all")))]
     {
         let mut flight_loop = flight_loop::FlightLoop::new(flight_state);
         
