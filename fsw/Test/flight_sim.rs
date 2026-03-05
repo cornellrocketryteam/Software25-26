@@ -544,14 +544,13 @@ pub async fn simulate_hsim_drogue(flight_loop: &mut FlightLoop) {
     log::info!("[HSIM] Firing Drogue for {}ms...", constants::SSA_THRESHOLD_MS);
     flight_loop.flight_state.trigger_drogue().await;
     
-    // Let the flight state update the actuators to actually hit the pin
+    // Let the flight state update the actuators to trigger the pin
     flight_loop.flight_state.update_actuators().await;
     
     Timer::after_millis(constants::SSA_THRESHOLD_MS).await;
     
     log::info!("[HSIM] Drogue deploy complete. Waiting 5 seconds...");
     
-    // Make sure we spin the update actuator loop while waiting so pins settle
     for _ in 0..50 {
         flight_loop.flight_state.update_actuators().await;
         Timer::after_millis(100).await;
@@ -563,20 +562,18 @@ pub async fn simulate_hsim_main(flight_loop: &mut FlightLoop) {
     log::info!("\n--- STARTING HSIM: MAIN CHUTE TEST ---");
     log::info!("This simulation will repeatedly fire the main ssa.");
     
-    loop {
-        log::info!("[HSIM] Firing Main for {}ms...", constants::SSA_THRESHOLD_MS);
-        flight_loop.flight_state.trigger_main().await;
-        
+    log::info!("[HSIM] Firing Main for {}ms...", constants::SSA_THRESHOLD_MS);
+    flight_loop.flight_state.trigger_main().await;
+    
+    flight_loop.flight_state.update_actuators().await;
+    
+    Timer::after_millis(constants::SSA_THRESHOLD_MS).await;
+    
+    log::info!("[HSIM] Main deploy complete. Waiting 5 seconds...");
+    
+    for _ in 0..50 {
         flight_loop.flight_state.update_actuators().await;
-        
-        Timer::after_millis(constants::SSA_THRESHOLD_MS).await;
-        
-        log::info!("[HSIM] Main deploy complete. Waiting 5 seconds...");
-        
-        for _ in 0..50 {
-            flight_loop.flight_state.update_actuators().await;
-            Timer::after_millis(100).await;
-        }
+        Timer::after_millis(100).await;
     }
 }
 /*
