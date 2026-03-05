@@ -5,7 +5,7 @@
 
 use embassy_executor::Spawner;
 use embassy_rp::gpio::{Level, Output};
-use embassy_time::{Instant, Timer};
+use embassy_time::Timer;
 use {defmt_rtt as _, panic_probe as _};
 
 mod constants;
@@ -96,22 +96,125 @@ async fn main(spawner: Spawner) {
     // Reset FRAM for testing (COMMENT OUT FOR REAL FLIGHT)
     flight_state.reset_fram().await;
 
-    let mut flight_loop = flight_loop::FlightLoop::new(flight_state);
+    // --- HARDWARE TEST MODES --- //
 
-    // STEP 4: Run actual flight loop with real telemetry
-    loop {
-        let start_time = Instant::now();
-        
-        flight_loop.flight_state.cycle_count += 1;
-        flight_loop.execute().await;
-
-        let execution_duration = start_time.elapsed();
-        log::info!("Flight loop executed in {} ms", execution_duration.as_millis());
-
-        // Toggle LED for heartbeat (every 10 cycles = 1 Hz blink at 10 Hz loop)
-        if flight_loop.flight_state.cycle_count % 10 == 0 {
-            led.toggle();
+    #[cfg(feature = "test_mav")]
+    {
+        log::info!("Starting MAV Test Mode...");
+        loop {
+            log::info!("Actuating MAV OPEN for {}ms", constants::MAV_OPEN_DURATION_MS);
+            flight_state.open_mav(constants::MAV_OPEN_DURATION_MS).await;
+            flight_state.update_actuators().await;
+            Timer::after_millis(constants::MAV_OPEN_DURATION_MS + 2000).await;
+            
+            log::info!("Actuating MAV CLOSE");
+            flight_state.close_mav().await;
+            flight_state.update_actuators().await;
+            Timer::after_millis(5000).await;
         }
-        // Timer::after_millis(constants::MAIN_LOOP_DELAY_MS).await; // Removed to test max speed
+    }
+
+    #[cfg(feature = "test_sv")]
+    {
+        log::info!("Starting SV Test Mode...");
+        loop {
+            log::info!("Actuating SV OPEN for 2000ms");
+            flight_state.open_sv(2000).await;
+            flight_state.update_actuators().await;
+            Timer::after_millis(4000).await;
+            
+            log::info!("Actuating SV CLOSE");
+            flight_state.close_sv().await;
+            flight_state.update_actuators().await;
+            Timer::after_millis(5000).await;
+        }
+    }
+
+    #[cfg(feature = "test_ssa")]
+    {
+        log::info!("Starting SSA Test Mode (Drogue and Main)...");
+        loop {
+            log::info!("Firing Drogue SSA for {}ms", constants::SSA_THRESHOLD_MS);
+            flight_state.trigger_drogue().await;
+            flight_state.update_actuators().await;
+            Timer::after_millis(constants::SSA_THRESHOLD_MS + 2000).await;
+            
+            log::info!("Firing Main SSA for {}ms", constants::SSA_THRESHOLD_MS);
+            flight_state.trigger_main().await;
+            flight_state.update_actuators().await;
+            Timer::after_millis(5000).await;
+        }
+    }
+
+    #[cfg(feature = "test_sensors")]
+    {
+        log::info!("Starting Sensor Test Mode...");
+        loop {
+            flight_state.read_sensors().await;
+            flight_state.cycle_count += 1;
+            led.toggle();
+            Timer::after_millis(500).await; // Fast loop for sensor readouts
+        }
+    }
+
+    #[cfg(feature = "test_all")]
+    {
+        log::info!("Starting Combined Hardware Test Sequence...");
+        let mut test_cycle = 0;
+        loop {
+            log::info!("--- Combined Test Cycle {} ---", test_cycle);
+            
+            // 1. Read Sensors
+            log::info!("1. Testing Sensors...");
+            flight_state.read_sensors().await;
+            Timer::after_millis(1000).await;
+
+            // 2. Test MAV
+            log::info!("2. Testing MAV...");
+            flight_state.open_mav(constants::MAV_OPEN_DURATION_MS).await;
+            flight_state.update_actuators().await;
+            Timer::after_millis(constants::MAV_OPEN_DURATION_MS + 1000).await;
+            flight_state.close_mav().await;
+            flight_state.update_actuators().await;
+            Timer::after_millis(1000).await;
+
+            // 3. Test SV
+            log::info!("3. Testing SV...");
+            flight_state.open_sv(1000).await;
+            flight_state.update_actuators().await;
+            Timer::after_millis(2000).await;
+            flight_state.close_sv().await;
+            flight_state.update_actuators().await;
+            Timer::after_millis(1000).await;
+
+            // 4. Test SSA (Drogue only to save time)
+            log::info!("4. Testing Drogue SSA...");
+            flight_state.trigger_drogue().await;
+            flight_state.update_actuators().await;
+            Timer::after_millis(constants::SSA_THRESHOLD_MS + 1000).await;
+
+            test_cycle += 1;
+            led.toggle();
+            log::info!("Cycle complete. Waiting 3 seconds before repeating...");
+            Timer::after_millis(3000).await;
+        }
+    }
+
+    // --- NORMAL FLIGHT LOOP --- //
+    #[cfg(not(any(feature = "test_mav", feature = "test_sv", feature = "test_ssa", feature = "test_sensors", feature = "test_all")))]
+    {
+        let mut flight_loop = flight_loop::FlightLoop::new(flight_state);
+        
+        // STEP 4: Run actual flight loop with real telemetry
+        loop {
+            flight_loop.flight_state.cycle_count += 1;
+            flight_loop.execute().await;
+    
+            // Toggle LED for heartbeat (every 10 cycles = 1 Hz blink at 10 Hz loop)
+            if flight_loop.flight_state.cycle_count % 10 == 0 {
+                led.toggle();
+            }
+            Timer::after_millis(constants::MAIN_LOOP_DELAY_MS).await;
+        }
     }
 }
