@@ -17,16 +17,11 @@ mod flight_loop;
 pub mod actuator;
 pub mod umbilical;
 
-// Include simulation module
-#[path = "../test/flight_sim.rs"]
-mod flight_sim;
-
-const SIMULATION_MODE: bool = true;
-
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
-    // Initialize USB subsystem (logger in debug, umbilical in release)
+
+    // Initialize USB subsystem (umbilical in release mode)
     let usb_driver = module::init_usb_driver(p.USB);
     umbilical::setup(&spawner, usb_driver);
 
@@ -74,7 +69,7 @@ async fn main(spawner: Spawner) {
 
     // Arming Switch and Umbilical Sense
     let arming_switch = embassy_rp::gpio::Input::new(p.PIN_10, embassy_rp::gpio::Pull::Down);
-    let umbilical = embassy_rp::gpio::Input::new(p.PIN_24, embassy_rp::gpio::Pull::Down);
+    let umbilical_sense = embassy_rp::gpio::Input::new(p.PIN_24, embassy_rp::gpio::Pull::Down);
 
     // Actuators
     let (ssa, buzzer, mav, sv) = module::init_actuators(
@@ -89,7 +84,7 @@ async fn main(spawner: Spawner) {
     
     log::info!("Initializing Flight State (Sensors & Actuators)...");
     let mut flight_state = state::FlightState::new(
-        i2c_bus, spi_bus, fram_cs, altimeter_cs, arming_switch, umbilical, uart,
+        i2c_bus, spi_bus, fram_cs, altimeter_cs, arming_switch, umbilical_sense, uart,
         ssa,
         buzzer,
         mav,
@@ -97,55 +92,169 @@ async fn main(spawner: Spawner) {
         flash,
     ).await;
     log::info!("Flight State Initialized.");
-     
-    // Reset FRAM for testing COMMENT OUT FOR REAL FLIGHT
-    flight_state.reset_fram().await;
-    
-    let mut flight_loop = flight_loop::FlightLoop::new(flight_state);
 
-    if SIMULATION_MODE {
-        Timer::after_secs(2).await;
-        /*
-        log::info!("\nStarting Simulation Mode...");
-        flight_sim::simulate_flight_simple(&mut flight_loop).await;
-        
-        Timer::after_secs(2).await;
-        flight_sim::simulate_fault_scenarios(&mut flight_loop).await;
-        
-        Timer::after_secs(2).await;
-        flight_sim::simulate_stability_scenarios(&mut flight_loop).await;
-        
-        Timer::after_secs(2).await;
-        flight_sim::simulate_extra_features(&mut flight_loop).await;
+    // Reset FRAM for testing (COMMENT OUT FOR REAL FLIGHT)
+    flight_state.reset_fram().await;
+
+    // --- HARDWARE TEST MODES --- //
+
+    #[cfg(feature = "test_mav")]
+    {
+        log::info!("Starting MAV Test Mode...");
         loop {
-            // Blink rapidly to indicate sim complete
-            led.toggle();
-            Timer::after_millis(100).await;
+            log::info!("Actuating MAV OPEN for {}ms", constants::MAV_OPEN_DURATION_MS);
+            flight_state.open_mav(constants::MAV_OPEN_DURATION_MS).await;
+            flight_state.update_actuators().await;
+            Timer::after_millis(constants::MAV_OPEN_DURATION_MS + 2000).await;
+            
+            log::info!("Actuating MAV CLOSE");
+            flight_state.close_mav().await;
+            flight_state.update_actuators().await;
+            Timer::after_millis(5000).await;
         }
-        */
-        log::info!("\nStarting Hardware Simulation Mode...");
+    }
+
+    #[cfg(feature = "test_sv")]
+    {
+        log::info!("Starting SV Test Mode...");
+        loop {
+            log::info!("Actuating SV OPEN for 2000ms");
+            flight_state.open_sv(2000).await;
+            flight_state.update_actuators().await;
+            Timer::after_millis(4000).await;
+            
+            log::info!("Actuating SV CLOSE");
+            flight_state.close_sv().await;
+            flight_state.update_actuators().await;
+            Timer::after_millis(5000).await;
+        }
+    }
+
+    #[cfg(feature = "test_ssa")]
+    {
+        log::info!("Starting SSA Test Mode (Drogue and Main)...");
+        loop {
+            log::info!("Firing Drogue SSA for {}ms", constants::SSA_THRESHOLD_MS);
+            flight_state.trigger_drogue().await;
+            flight_state.update_actuators().await;
+            Timer::after_millis(constants::SSA_THRESHOLD_MS + 2000).await;
+            
+            log::info!("Firing Main SSA for {}ms", constants::SSA_THRESHOLD_MS);
+            flight_state.trigger_main().await;
+            flight_state.update_actuators().await;
+            Timer::after_millis(5000).await;
+        }
+    }
+
+    #[cfg(feature = "test_buzzer")]
+    {
+        log::info!("Starting Buzzer Test Mode...");
+        loop {
+            log::info!("Actuating Buzzer 3 times");
+            flight_state.buzz(3);
+            // Loop calling update_actuators repeatedly to allow the buzzer state machine to process buzzes
+            for _ in 0..20 {
+                flight_state.update_actuators().await;
+                Timer::after_millis(50).await;
+            }
+            log::info!("Wait 2 seconds...");
+            Timer::after_millis(2000).await;
+            log::info!("Actuating Buzzer 2 times");
+            flight_state.buzz(2);
+            for _ in 0..15 {
+                flight_state.update_actuators().await;
+                Timer::after_millis(50).await;
+            }
+            log::info!("Wait 5 seconds...");
+            Timer::after_millis(5000).await;
+        }
+    }
+
+    #[cfg(feature = "test_sensors")]
+    {
+        log::info!("Starting Sensor Test Mode...");
+        loop {
+            flight_state.read_sensors().await;
+            flight_state.cycle_count += 1;
+            led.toggle();
+            Timer::after_millis(500).await; // Fast loop for sensor readouts
+        }
+    }
+
+
+    #[cfg(feature = "test_all")]
+    {
+        log::info!("Starting Combined Hardware Test Sequence...");
+        let mut test_cycle = 0;
+        loop {
+            log::info!("--- Combined Test Cycle {} ---", test_cycle);
+            
+            // 1. Read Sensors
+            log::info!("1. Testing Sensors...");
+            flight_state.read_sensors().await;
+            Timer::after_millis(1000).await;
+
+            // 2. Test MAV
+            log::info!("2. Testing MAV...");
+            flight_state.open_mav(constants::MAV_OPEN_DURATION_MS).await;
+            flight_state.update_actuators().await;
+            Timer::after_millis(constants::MAV_OPEN_DURATION_MS + 1000).await;
+            flight_state.close_mav().await;
+            flight_state.update_actuators().await;
+            Timer::after_millis(1000).await;
+
+            // 3. Test SV
+            log::info!("3. Testing SV...");
+            flight_state.open_sv(1000).await;
+            flight_state.update_actuators().await;
+            Timer::after_millis(2000).await;
+            flight_state.close_sv().await;
+            flight_state.update_actuators().await;
+            Timer::after_millis(1000).await;
+
+            // 4. Test SSA (Drogue only to save time)
+            log::info!("4. Testing Drogue SSA...");
+            flight_state.trigger_drogue().await;
+            flight_state.update_actuators().await;
+            Timer::after_millis(constants::SSA_THRESHOLD_MS + 1000).await;
+
+            // 5. Test Buzzer
+            log::info!("5. Testing Buzzer 3 times...");
+            flight_state.buzz(3);
+            for _ in 0..20 {
+                flight_state.update_actuators().await;
+                Timer::after_millis(50).await;
+            }
+            Timer::after_millis(2000).await;
+            log::info!("Actuating Buzzer 2 times");
+            flight_state.buzz(2);
+            for _ in 0..15 {
+                flight_state.update_actuators().await;
+                Timer::after_millis(50).await;
+            }
+
+            test_cycle += 1;
+            led.toggle();
+            log::info!("Cycle complete. Waiting 3 seconds before repeating...");
+            Timer::after_millis(3000).await;
+        }
+    }
+
+    // --- NORMAL FLIGHT LOOP --- //
+    #[cfg(not(any(feature = "test_mav", feature = "test_sv", feature = "test_ssa", feature = "test_sensors", feature = "test_buzzer", feature = "test_all")))]
+    {
+        let mut flight_loop = flight_loop::FlightLoop::new(flight_state);
         
-        // This runs an infinite loop reading real sensors, but overwriting Altitude data
-        //flight_sim::simulate_flight_hsim(&mut flight_loop).await;
-        
-        // --- INDIVIDUAL ACTUATOR HARDWARE TESTS ---
-        // Uncomment ONE of the lines below to bypass the flight loop and 
-        // infinitely test a specific physical actuator on the breadboard instead.
-        
-        // flight_sim::simulate_hsim_mav(&mut flight_loop).await;
-        // flight_sim::simulate_hsim_sv(&mut flight_loop).await;
-        flight_sim::simulate_hsim_drogue(&mut flight_loop).await;
-        //flight_sim::simulate_hsim_main(&mut flight_loop).await;
-        
-    } else {
+        // STEP 4: Run actual flight loop with real telemetry
         loop {
             flight_loop.flight_state.cycle_count += 1;
             flight_loop.execute().await;
-
-            // Toggle LED
-            led.toggle();
+    
+            // Toggle LED for heartbeat (every 10 cycles = 1 Hz blink at 10 Hz loop)
+            if flight_loop.flight_state.cycle_count % 10 == 0 {
+                led.toggle();
+            }
             Timer::after_millis(constants::MAIN_LOOP_DELAY_MS).await;
         }
     }
 }
-

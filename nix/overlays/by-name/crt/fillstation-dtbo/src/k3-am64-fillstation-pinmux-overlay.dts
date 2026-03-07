@@ -1,0 +1,43 @@
+/dts-v1/;
+/plugin/;
+
+#include "k3.h"
+#include "sysconfig-pinmux.dtsi"
+
+/* Attach pinctrl to actual consumers */
+
+&main_i2c2 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&senseboard_pins_default>; 
+    clock-frequency = <400000>;
+};
+
+&epwm4 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&myepwm1_pins_default>; 
+};
+
+&main_pmx0 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&allgpio0_pins_default &allgpio1_pins_default>;
+};
+
+/* Enable USB0 in host mode for Pico 2 umbilical (CDC-ACM).
+ * Delete phys/phy-names inherited from the base k3-am642-sk DTB
+ * to remove the SerDes PHY dependency — we only need USB 2.0. */
+&usbss0 {
+    ti,vbus-divider;
+    ti,usb2-only;
+};
+
+&usb0 {
+    status = "okay";
+    dr_mode = "host";
+    maximum-speed = "high-speed";
+    pinctrl-names = "default";
+    pinctrl-0 = <&myusb1_pins_default>;
+    /delete-property/ phys;
+    /delete-property/ phy-names;
+};

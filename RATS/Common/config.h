@@ -41,7 +41,7 @@
 #define LINK_LOST_TIMEOUT_MS 500  // Consider link lost after 500ms no packets
 
 // Ground station location (update with actual coordinates)
-// TODO: Set these to actual launch site coordinates
+// Because we are using gps module, these are just defaults for testing
 #define GROUND_STATION_LAT_DEG 42.356000  // Cornell area default
 #define GROUND_STATION_LON_DEG -76.497000
 #define GROUND_STATION_ALT_M 100.0        // meters above sea level
@@ -57,7 +57,7 @@
 
 // Buffer sizes
 #define RFD_RX_BUFFER_SIZE 512
-#define RADIO_PACKET_SIZE 107
+#define RADIO_PACKET_SIZE 107  // Full Radio Packet structure per RATS specification
 #define TRACKING_DATA_SIZE 12
 
 // SD card logging

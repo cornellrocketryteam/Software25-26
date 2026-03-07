@@ -13,164 +13,111 @@ T PacketParser::readValue(const uint8_t* buffer, size_t& offset) {
 }
 
 bool PacketParser::parseRadioPacket(const uint8_t* buffer, size_t length, RadioPacket& packet) {
-    if (length < 107) return false;  // Radio packet is 107 bytes
-    
+    // Full 107-byte Radio Packet per RATS specification
+    if (length < 107) return false;
+
     size_t offset = 0;
-    
+
+    // Byte 0-3: Sync word
     packet.sync_word = readValue<uint32_t>(buffer, offset);
-    
-    // Read raw bits from metadata and events
-    packet.raw_metadata = readValue<uint16_t>(buffer, offset);    
-    
+
+    // Byte 4-5: Metadata
+    packet.metadata = readValue<uint16_t>(buffer, offset);
+
+    // Byte 6-9: Milliseconds since boot
     packet.ms_since_boot = readValue<uint32_t>(buffer, offset);
 
-    packet.raw_events = readValue<uint32_t>(buffer, offset);   
+    // Byte 10-13: Events
+    packet.events = readValue<uint32_t>(buffer, offset);
 
+    // Byte 14-21: Altimeter data
     packet.altitude = readValue<float>(buffer, offset);
     packet.temperature = readValue<float>(buffer, offset);
-    
-    packet.latitude_udeg = readValue<int32_t>(buffer, offset);
-    packet.longitude_udeg = readValue<int32_t>(buffer, offset);
-    packet.satellites = readValue<uint8_t>(buffer, offset);
-    packet.unix_time = readValue<uint32_t>(buffer, offset);
-    packet.horizontal_accuracy_mm = readValue<uint32_t>(buffer, offset);
-    
+
+    // Byte 22-38: GPS data
+    packet.latitude = readValue<int32_t>(buffer, offset);
+    packet.longitude = readValue<int32_t>(buffer, offset);
+    packet.num_satellites = readValue<uint8_t>(buffer, offset);
+    packet.gps_unix_time = readValue<uint32_t>(buffer, offset);
+    packet.gps_horizontal_accuracy = readValue<uint32_t>(buffer, offset);
+
+    // Byte 39-74: IMU data
+    packet.imu_accel_x = readValue<float>(buffer, offset);
+    packet.imu_accel_y = readValue<float>(buffer, offset);
+    packet.imu_accel_z = readValue<float>(buffer, offset);
+    packet.imu_gyro_x = readValue<float>(buffer, offset);
+    packet.imu_gyro_y = readValue<float>(buffer, offset);
+    packet.imu_gyro_z = readValue<float>(buffer, offset);
+    packet.imu_orient_x = readValue<float>(buffer, offset);
+    packet.imu_orient_y = readValue<float>(buffer, offset);
+    packet.imu_orient_z = readValue<float>(buffer, offset);
+
+    // Byte 75-86: Accelerometer data
     packet.accel_x = readValue<float>(buffer, offset);
     packet.accel_y = readValue<float>(buffer, offset);
     packet.accel_z = readValue<float>(buffer, offset);
-    packet.gyro_x = readValue<float>(buffer, offset);
-    packet.gyro_y = readValue<float>(buffer, offset);
-    packet.gyro_z = readValue<float>(buffer, offset);
-    packet.orient_x = readValue<float>(buffer, offset);
-    packet.orient_y = readValue<float>(buffer, offset);
-    packet.orient_z = readValue<float>(buffer, offset);
-    
-    packet.accel2_x = readValue<float>(buffer, offset);
-    packet.accel2_y = readValue<float>(buffer, offset);
-    packet.accel2_z = readValue<float>(buffer, offset);
-    
+
+    // Byte 87-106: ADC and BLiMS data
     packet.battery_voltage = readValue<float>(buffer, offset);
     packet.pt3_pressure = readValue<float>(buffer, offset);
     packet.pt4_pressure = readValue<float>(buffer, offset);
     packet.rtd_temperature = readValue<float>(buffer, offset);
-    packet.motor_state = readValue<float>(buffer, offset);
-    
+    packet.blims_motor_state = readValue<float>(buffer, offset);
+
     return true;
 }
 
 void PacketParser::radioPacketToJSON(const RadioPacket& packet, char* json_buffer, size_t buffer_size) {
-    // --- Format Events Array ---
-    char events_buf[128] = "[";
-    bool first_event = true;
-    for (int i = 0; i < 32; i++) {
-        // Check which bits in raw_events are 1
-        if ((packet.raw_events >> i) & 1) {
-            if (!first_event) {
-                strncat(events_buf, ",", sizeof(events_buf) - strlen(events_buf) - 1);
-            }
-            char event_num[4];
-            snprintf(event_num, 4, "%d", i);
-            strncat(events_buf, event_num, sizeof(events_buf) - strlen(events_buf) - 1);
-            first_event = false;
-        }
-    }
-    strncat(events_buf, "]", sizeof(events_buf) - strlen(events_buf) - 1);
+    // Full JSON output for complete Radio Packet structure
+    // Extract flight mode from metadata (bits 13-15)
+    uint8_t flight_mode = (packet.metadata >> 13) & 0x07;
 
+    // Convert GPS coordinates from micro-degrees to decimal degrees
+    float lat_deg = packet.latitude / 1000000.0f;
+    float lon_deg = packet.longitude / 1000000.0f;
 
-    // --- Build Final JSON ---
-    // Using snprintf for safe string formatting
-    int offset = 0;
-    offset += snprintf(json_buffer + offset, buffer_size - offset, "{");
-    
-    // Main time field
-    offset += snprintf(json_buffer + offset, buffer_size - offset, "\"time\":%u,", packet.unix_time);
-    
-    // Other non-struct fields
-    offset += snprintf(json_buffer + offset, buffer_size - offset,
-        "\"sync_word\":%u,"
-        "\"ms_since_boot\":%u,",
-        packet.sync_word,
-        packet.ms_since_boot
-    );
-
-    // Metadata as individual booleans
-    offset += snprintf(json_buffer + offset, buffer_size - offset,
-        "\"metadata_altitude_armed\":%s,"
-        "\"metadata_altimeter_is_valid\":%s,"
-        "\"metadata_gps_is_valid\":%s,"
-        "\"metadata_imu_is_valid\":%s,"
-        "\"metadata_accelerometer_is_valid\":%s,"
-        "\"metadata_umbilical_lock\":%s,"
-        "\"metadata_adc_is_valid\":%s,"
-        "\"metadata_fram_is_valid\":%s,"
-        "\"metadata_sd_card_is_valid\":%s,"
-        "\"metadata_gps_message_fresh\":%s,"
-        "\"metadata_rocket_was_safed\":%s,"
-        "\"metadata_mav_state\":%s,"
-        "\"metadata_sv_state\":%s,"
-        "\"metadata_flight_mode\":%d,",
-        (packet.raw_metadata >> 0 & 1) ? "true" : "false",
-        (packet.raw_metadata >> 1 & 1) ? "true" : "false",
-        (packet.raw_metadata >> 2 & 1) ? "true" : "false",
-        (packet.raw_metadata >> 3 & 1) ? "true" : "false",
-        (packet.raw_metadata >> 4 & 1) ? "true" : "false",
-        (packet.raw_metadata >> 5 & 1) ? "true" : "false",
-        (packet.raw_metadata >> 6 & 1) ? "true" : "false",
-        (packet.raw_metadata >> 7 & 1) ? "true" : "false",
-        (packet.raw_metadata >> 8 & 1) ? "true" : "false",
-        (packet.raw_metadata >> 9 & 1) ? "true" : "false",
-        (packet.raw_metadata >> 10 & 1) ? "true" : "false",
-        (packet.raw_metadata >> 11 & 1) ? "true" : "false",
-        (packet.raw_metadata >> 12 & 1) ? "true" : "false",
-        (packet.raw_metadata >> 13) & 0x7
-    );
-
-    // Events as array
-    offset += snprintf(json_buffer + offset, buffer_size - offset, "\"events\":%s,", events_buf);
-
-    // Rest of the data
-    offset += snprintf(json_buffer + offset, buffer_size - offset,
+    snprintf(json_buffer, buffer_size,
+        "{"
+        "\"metadata\":%u,"
+        "\"flight_mode\":%u,"
+        "\"ms_since_boot\":%u,"
+        "\"events\":%u,"
         "\"altitude\":%.2f,"
         "\"temperature\":%.2f,"
-        "\"latitude\":%d,"
-        "\"longitude\":%d,"
-        "\"satellites_in_view\":%u,"
-        "\"unix_time\":%u,"
-        "\"horizontal_accuracy\":%u,"
-        "\"acceleration_x\":%.4f,"
-        "\"acceleration_y\":%.4f,"
-        "\"acceleration_z\":%.4f,"
-        "\"gyro_x\":%.4f,"
-        "\"gyro_y\":%.4f,"
-        "\"gyro_z\":%.4f,"
-        "\"orientation_x\":%.4f,"
-        "\"orientation_y\":%.4f,"
-        "\"orientation_z\":%.4f,"
-        "\"accelerometer_x\":%.4f,"
-        "\"accelerometer_y\":%.4f,"
-        "\"accelerometer_z\":%.4f,"
+        "\"latitude\":%.6f,"
+        "\"longitude\":%.6f,"
+        "\"num_satellites\":%u,"
+        "\"gps_unix_time\":%u,"
+        "\"gps_h_accuracy\":%u,"
+        "\"imu_accel\":[%.3f,%.3f,%.3f],"
+        "\"imu_gyro\":[%.3f,%.3f,%.3f],"
+        "\"imu_orient\":[%.3f,%.3f,%.3f],"
+        "\"accel\":[%.3f,%.3f,%.3f],"
         "\"battery_voltage\":%.2f,"
-        "\"pt_3_pressure\":%.2f,"
-        "\"pt_4_pressure\":%.2f,"
-        "\"rtd_temperature\":%.2f,"
-        "\"motor_state\":%.2f",
+        "\"pt3_pressure\":%.2f,"
+        "\"pt4_pressure\":%.2f,"
+        "\"rtd_temp\":%.2f,"
+        "\"blims_motor\":%.2f"
+        "}",
+        packet.metadata,
+        flight_mode,
+        packet.ms_since_boot,
+        packet.events,
         packet.altitude,
         packet.temperature,
-        packet.latitude_udeg,
-        packet.longitude_udeg,
-        packet.satellites,
-        packet.unix_time,
-        packet.horizontal_accuracy_mm,
+        lat_deg,
+        lon_deg,
+        packet.num_satellites,
+        packet.gps_unix_time,
+        packet.gps_horizontal_accuracy,
+        packet.imu_accel_x, packet.imu_accel_y, packet.imu_accel_z,
+        packet.imu_gyro_x, packet.imu_gyro_y, packet.imu_gyro_z,
+        packet.imu_orient_x, packet.imu_orient_y, packet.imu_orient_z,
         packet.accel_x, packet.accel_y, packet.accel_z,
-        packet.gyro_x, packet.gyro_y, packet.gyro_z,
-        packet.orient_x, packet.orient_y, packet.orient_z,
-        packet.accel2_x, packet.accel2_y, packet.accel2_z,
         packet.battery_voltage,
         packet.pt3_pressure,
         packet.pt4_pressure,
         packet.rtd_temperature,
-        packet.motor_state
+        packet.blims_motor_state
     );
-
-    snprintf(json_buffer + offset, buffer_size - offset, "}");
 }

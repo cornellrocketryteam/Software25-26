@@ -114,7 +114,7 @@ bool RFD900xUART::findSyncWord(uint32_t& position) {
 
 bool RFD900xUART::packetAvailable() {
     uint32_t sync_pos;
-    
+
     // Look for sync word
     if (!findSyncWord(sync_pos)) {
         // No sync word found - if buffer is getting full, discard old data
@@ -127,13 +127,13 @@ bool RFD900xUART::packetAvailable() {
         }
         return false;
     }
-    
+
     // Discard bytes before sync word
     for (uint32_t i = 0; i < sync_pos; i++) {
         readBufferByte();
     }
-    
-    // Check if we have a full packet (107 bytes starting from sync word)
+
+    // Check if we have a full packet (40 bytes starting from sync word)
     return bufferAvailable() >= RADIO_PACKET_SIZE;
 }
 

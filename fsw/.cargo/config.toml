@@ -4,7 +4,7 @@ runner = "picotool load -u -v -x -t elf"
 [build]
 target = "thumbv8m.main-none-eabihf"
 # Use a target directory outside OneDrive to avoid sync/permission issues
-target-dir = "C:/tmp/fsw-target"
+target-dir = "/tmp/fsw-target"
 
 [env]
 DEFMT_LOG = "info"

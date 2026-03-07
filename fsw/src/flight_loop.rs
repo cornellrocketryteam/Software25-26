@@ -9,6 +9,8 @@ use crate::umbilical::{self, UmbilicalCommand};
 // TODO: Add //CHALLENGE_# to each fault with its solution
 // TODO: Remove some bools and edit FlightLoop to be able to trigger events with methods 
 // ex: a function to say that the umbilical is connected, or umbilical launch, etc.
+
+// GPIO 32 for TX UART, GPIO 33 for RX UART
 pub struct FlightLoop {
     pub flight_state: FlightState,
     pub key_armed: bool,

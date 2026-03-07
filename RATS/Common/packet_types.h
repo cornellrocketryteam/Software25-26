@@ -65,48 +65,54 @@ struct Events {
     bool umbilical_disconnected;
 };
 
-// Main radio packet structure (107 bytes)
+// Full Radio Packet Structure (107 bytes)
+// Per RATS specification document
 struct RadioPacket {
-    uint32_t sync_word;
-    uint32_t ms_since_boot;
-    uint16_t raw_metadata;
-    uint32_t raw_events;
-    
-    // Altimeter
-    float altitude;
-    float temperature;
-    
-    // GPS
-    int32_t latitude_udeg;      // microdegrees
-    int32_t longitude_udeg;     // microdegrees
-    uint8_t satellites;
-    uint32_t unix_time;
-    uint32_t horizontal_accuracy_mm;
-    
-    // IMU
-    float accel_x;
-    float accel_y;
-    float accel_z;
-    float gyro_x;
-    float gyro_y;
-    float gyro_z;
-    float orient_x;
-    float orient_y;
-    float orient_z;
-    
-    // Accelerometer
-    float accel2_x;
-    float accel2_y;
-    float accel2_z;
-    
-    // ADC
-    float battery_voltage;
-    float pt3_pressure;
-    float pt4_pressure;
-    float rtd_temperature;
-    
-    // BLiMS
-    float motor_state;
+    // Byte 0-3: Sync word
+    uint32_t sync_word;              // "CRT!" identifier
+
+    // Byte 4-5: Metadata (16-bit bitfield)
+    uint16_t metadata;               // See Metadata structure for bit definitions
+
+    // Byte 6-9: Milliseconds since boot
+    uint32_t ms_since_boot;          // Timestamp in milliseconds
+
+    // Byte 10-13: Events (32-bit bitfield)
+    uint32_t events;                 // See Events structure for bit definitions
+
+    // Byte 14-21: Altimeter data
+    float altitude;                  // meters
+    float temperature;               // Celsius
+
+    // Byte 22-38: GPS data
+    int32_t latitude;                // micro-degrees (µdeg)
+    int32_t longitude;               // micro-degrees (µdeg)
+    uint8_t num_satellites;          // Satellites in view
+    uint32_t gps_unix_time;          // Unix timestamp in seconds
+    uint32_t gps_horizontal_accuracy; // millimeters
+
+    // Byte 39-74: IMU data
+    float imu_accel_x;               // m/s^2
+    float imu_accel_y;               // m/s^2
+    float imu_accel_z;               // m/s^2
+    float imu_gyro_x;                // deg/s
+    float imu_gyro_y;                // deg/s
+    float imu_gyro_z;                // deg/s
+    float imu_orient_x;              // degrees
+    float imu_orient_y;              // degrees
+    float imu_orient_z;              // degrees
+
+    // Byte 75-86: Accelerometer data
+    float accel_x;                   // g (gravity)
+    float accel_y;                   // g
+    float accel_z;                   // g
+
+    // Byte 87-106: ADC and BLiMS data
+    float battery_voltage;           // Volts
+    float pt3_pressure;              // PSI
+    float pt4_pressure;              // PSI
+    float rtd_temperature;           // Celsius
+    float blims_motor_state;         // inches
 };
 
 #endif // PACKET_TYPES_H

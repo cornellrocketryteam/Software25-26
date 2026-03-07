@@ -1,214 +1,307 @@
-# Beamformer Sim Linux Setup
+# Fill Station Server
 
-This repository contains Nix flake configurations for building U-Boot and associated firmware components for the Texas Instruments SK-AM64B evaluation board.
+Ground-side service for Cornell Rocketry Team's rocket fill operations. This Rust application provides a WebSocket-based control interface for hardware components including igniters, ADCs, valves, and sensors.
 
-## Overview
+## Quick Start
 
-The TI AM64x is a dual-core Cortex-A53 processor with additional Cortex-R5F cores for real-time processing. This flake provides a reproducible build environment for the complete boot chain required by the AM64x platform.
+### Development (macOS/Linux)
+```bash
+cargo run --release
+```
 
-## AM64x Boot Flow
+### Production (Nix Build)
+```bash
+# Build the entire system image including fill-station
+cd /path/to/Software25-26
+nix build .#mixosConfigurations.fill-station.config.system.build.sdImage
+```
 
-The AM64x follows a multi-stage boot process as documented in the [official U-Boot documentation](https://docs.u-boot.org/en/latest/board/ti/am64x_evm.html):
+The server listens on `ws://0.0.0.0:9000` for WebSocket connections. The service starts **automatically on boot**.
 
-### Boot Stages
+## Architecture
 
-1. **ROM Boot Loader (RBL)**
-   - First stage executed from on-chip ROM
-   - Loads the R5 SPL from boot media (SD card, eMMC, OSPI, etc.)
-   - Performs minimal hardware initialization
+```
+fill-station/
+├── src/
+│   ├── main.rs              # WebSocket server & background tasks
+│   ├── command.rs           # Command/response protocol definitions
+│   ├── hardware.rs          # Hardware initialization & aggregation
+│   ├── lib.rs               # Public API exports
+│   └── components/          # Individual hardware drivers
+│       ├── igniter.rs       # GPIO-based igniter control
+│       ├── ads1015.rs       # I2C ADC driver (pressure sensors)
+│       └── mod.rs           # Component exports
+├── docs/                    # Documentation
+│   ├── ADDING_FEATURES.md   # Guide to extending the system
+│   ├── ADC_STREAMING.md     # ADC background monitoring docs
+│   ├── ADC_MONITOR_GUIDE.md # ADC hardware setup
+│   ├── QUICKSTART_ADC.md    # Quick ADC testing guide
+│   ├── TROUBLESHOOTING.md   # Common issues & solutions
+│   └── UMBILICAL.md         # FSW Umbilical connection details
+└── test_adc_stream.py       # WebSocket client test script
+```
 
-2. **R5 SPL (Secondary Program Loader)**
-   - Runs on the Cortex-R5F cores
-   - Exists in the `tiboot3-am64x_sr2-*-evm.bin` files
-   - Initializes DDR memory
-   - Loads TF-A, OP-TEE, and A53 SPL
+## Features
 
-3. **Cortex-A53 Boot Chain**
-   - **TF-A (Trusted Firmware-A)**: Provides secure boot and runtime services
-   - **OP-TEE**: Trusted Execution Environment for secure applications
-   - **A53 SPL**: Secondary bootloader for Cortex-A53
-   - **U-Boot Proper**: Full U-Boot with all features enabled
+### ✅ WebSocket Server
+- Async WebSocket server using `smol` runtime
+- JSON-based command/response protocol
+- Multiple concurrent client support
+- Robust error handling (doesn't crash on client errors)
 
-## AM64x Security Modes
+### ✅ Hardware Control
+- **Igniters**: GPIO-based control with continuity checking and concurrent firing
+- **Solenoid Valves**: 5x GPIO control (SV1-SV5) with NO/NC logic
+- **MAV**: Servo control (PWM) for Mechanically Actuated Valve
+- **ADC Monitoring**: Dual ADS1015 12-bit ADCs (8 channels total)
+- **Pressure Sensors**: Calibrated scaling for ADC channels
+- **Umbilical**: CDC-ACM Serial connection for FSW command/telemetry linking
+- Platform-aware: Compiles on macOS for dev, runs on Linux
 
-The TI AM64x processors can be booted in three different security "modes", each with different capabilities and requirements:
+### ✅ Background Tasks
+- **ADC Monitoring**: Continuous 100 Hz sampling with retry logic
+- **Umbilical Task**: Real-time background processing of 80-byte binary FSW telemetry over USB serialization
+- **Streaming**: Real-time ADC data pushed to WebSocket clients
+- Thread-safe shared state using `Arc<Mutex<>>`
 
-### GP (General Purpose)
+### ✅ Logging
+- Dual output: stdout + rotating file logs
+- Structured logging with `tracing` crate
+- Per-connection span tracking
 
-This is a SoC/board state where there is no devie protection and authentication is not enabled for booting the device.
+## WebSocket Commands
 
-### HS-FS (High Security - Field Securable)
+### Igniter Control
+```json
+{"command": "ignite"}
+```
+*Note: This command fires both Igniter 1 and Igniter 2 concurrently for 3 seconds.*
 
-This is a SoC/board state before a customer has blown the keys in the device. i.e. the state at which HS device leaves TI factory. In this state, the device protects the ROM code, TI keys and certain security peripherals. In this state, device do not force authentication for booting, however DMSC is locked.
+### Solenoid Valve Control
+```json
+{"command": "actuate_valve", "valve": "SV1", "state": true}
+{"command": "get_valve_state", "valve": "SV1"}
+```
 
-### HS-SE (High Security - Security Enforced)
+### ADC Streaming
+```json
+{"command": "start_adc_stream"}
+{"command": "stop_adc_stream"}
+```
 
-This is a SoC/board state after a customer has successfully blown the keys and set “customer Keys enable”. In HS-SE device all security features enabled. All secrets within the device are fully protected and all of the security goals are fully enforced. The device also enforces secure booting.
+### MAV Control
+```json
+{"command": "set_mav_angle", "valve": "MAV", "angle": 45.0}
+{"command": "mav_open", "valve": "MAV"}
+```
 
-> [!NOTE]
-> The flake by default builds the "GP" and "HS-FS" variants. It does not build the "HS-SE" variant by default to prevent accidentally blowing the keys into the chip which could (maybe?) brick the device. To build the "HS-SE" variant, enable the `buildHS` option in `uboot-r5.nix`.
+See [`docs/ADC_STREAMING.md`](docs/ADC_STREAMING.md) for detailed protocol specification.
 
-## What is OP-TEE?
+## Hardware Configuration
 
-**OP-TEE (Open Portable Trusted Execution Environment)** is an open-source Trusted Execution Environment (TEE) that provides a secure operating system running alongside the normal Linux kernel.
+### ADC Settings
+- **I2C Bus**: `/dev/i2c-2`
+- **ADC1 Address**: `0x48`
+- **ADC2 Address**: `0x49`
+- **Gain**: ±4.096V (configurable)
+- **Sample Rate**: 100 Hz (configurable)
 
-### Key Features:
-- **Isolation**: Runs in ARM TrustZone secure world, isolated from the normal world OS
-- **Secure Services**: Provides cryptographic operations, secure storage, and key management
-- **Trusted Applications**: Supports running secure applications (TAs) that handle sensitive operations
-- **Standards Compliant**: Implements GlobalPlatform TEE specifications
+### GPIO Pins
+- **Igniter 1**: GPIO Chip 0, Pin 38 (signal), Pin 39 (continuity)
+- **Igniter 1**: GPIO Chip 0, Pin 38 (signal), Pin 39 (continuity)
+- **Igniter 2**: GPIO Chip 0, Pin 40 (signal), GPIO Chip 1, Pin 42 (continuity)
+- **Valves**:
+  - **SV1**: Actuate (Chip 0, 42), Sense (Chip 1, 51) - NC
+  - **SV2**: Actuate (Chip 0, 32), Sense (Chip 0, 34) - NC
+  - **SV3**: Actuate (Chip 1, 44), Sense (Chip 0, 37) - NC
+  - **SV4**: Actuate (Chip 1, 65), Sense (Chip 0, 36) - NC
+  - **SV5**: Actuate (Chip 1, 48), Sense (Chip 1, 46) - NO
+- **MAV**: PWM Chip 0, Channel 0 (330 Hz)
+- **Ball Valve**:
+  - **Signal**: Chip 1, Line 62
+  - **ON_OFF**: Chip 1, Line 63
 
-### Why We Use OP-TEE:
+See [`src/hardware.rs`](src/hardware.rs) for pin mappings.
 
-1. **Secure Boot Chain**: OP-TEE is part of the trusted boot sequence, ensuring system integrity from power-on. It is required by any of the `HS` boot modes.
-2. **Protected Resources**: Manages access to secure hardware resources and cryptographic accelerators
-3. **Secure Storage**: Provides encrypted storage for sensitive data like keys and certificates
-4. **Runtime Security**: Offers secure services to Linux applications through the TEE Client API
-5. **Hardware Features**: Leverages AM64x security features like:
-   - Hardware crypto accelerators
-   - Secure timers
-   - True random number generator (TRNG)
-   - Secure memory regions
+## Configuration
 
-### Boot Image Files
+All configuration constants are at the top of `src/main.rs`:
 
-In order to boot we need tiboot3.bin, tispl.bin and u-boot.img. Each SoC variant (GP, HS-FS, HS-SE) requires a different source for these files.
+```rust
+// ADC sampling rate
+const ADC_SAMPLE_RATE_HZ: u64 = 100;
 
-- GP
-   - `tiboot3-am64x-gp-evm.bin` - R5 SPL firmware (first stage)
-   - `tispl.bin` or `tispl.bin_unsigned` - Combined A53 SPL + TF-A + OP-TEE image
-   - `u-boot.img` or `u-boot.img_unsigned` - U-Boot proper image
-- HS-FS (recommended)
-   - `tiboot3-am64x_sr2-hs-fs-evm.bin` - R5 SPL firmware (first stage)
-   - `tispl.bin` - Combined A53 SPL + TF-A + OP-TEE image
-   - `u-boot.img` - U-Boot proper image
-- HS-SE
-   - `tiboot3-am64x_sr2-hs-se-evm.bin` - R5 SPL firmware (first stage)
-   - `tispl.bin` - Combined A53 SPL + TF-A + OP-TEE image
-   - `u-boot.img` - U-Boot proper image
+// Pressure sensor calibration
+// Pressure sensor scaling for PT1500
+const PT1500_SCALE: f32 = 0.909754;
+const PT1500_OFFSET: f32 = 5.08926;
 
-## Prerequisites
+// Pressure sensor scaling for PT2000
+const PT2000_SCALE: f32 = 1.22124;
+const PT2000_OFFSET: f32 = 5.37052;
 
-- Nix with flakes enabled
-- Supported build platforms: x86_64-linux, aarch64-linux, x86_64-darwin, aarch64-darwin
+// Load Cell scaling
+const LOADCELL_SCALE: f32 = 1.69661;
+const LOADCELL_OFFSET: f32 = 75.37882;
+```
 
-> [!WARNING]
-> Only aarch64-darwin has been tested so far.
+Easy to modify without diving into code logic.
+
+## Safety Features
+
+### Connection Monitoring
+The system implements a **deadman switch** safety feature:
+- If a client is connected but sends no messages for **15 seconds** (connection timeout):
+  - All Solenoid Valves (SV1-SV5) are closed.
+  - The MAV is closed.
+  - The client is disconnected.
+- Clients should send a `{"command": "heartbeat"}` message periodically (e.g., every 5-10 seconds) if they are not sending other commands.
+
+
+## Testing
+
+### Test ADC Streaming
+```bash
+./test_adc_stream.py
+```
+
+Or use `websocat`:
+```bash
+websocat ws://localhost:9000
+# Then type commands:
+{"command": "start_adc_stream"}
+```
+
+### Unit ADC Testing
+```bash
+cargo run --bin adc_test       # Test I2C communication
+cargo run --bin adc_monitor    # Monitor with scaling
+cargo run --bin dual_adc_monitor  # Basic dual ADC monitor
+```
+
+## Development
+
+### Adding New Features
+
+See the comprehensive guide: **[`docs/ADDING_FEATURES.md`](docs/ADDING_FEATURES.md)**
+
+This covers:
+- Creating new hardware components
+- Adding WebSocket commands
+- Implementing background tasks
+- Integration with main server
+- Complete valve controller example
+
+### Adding New Hardware Component
+
+1. Create driver in `src/components/your_component.rs`
+2. Export in `src/components/mod.rs`
+3. Add to `Hardware` struct in `src/hardware.rs`
+4. Add commands to `src/command.rs`
+5. Handle in `execute_command()` in `src/main.rs`
+
+Detailed walkthrough in [`docs/ADDING_FEATURES.md`](docs/ADDING_FEATURES.md).
+
+### Dependencies
+
+Core:
+- `smol` - Async runtime
+- `async-tungstenite` - WebSocket server
+- `serde` / `serde_json` - JSON serialization
+- `tracing` - Structured logging
+- `anyhow` - Error handling
+
+Hardware (Linux only):
+- `async-gpiod` - GPIO control
+- `i2cdev` - I2C communication
 
 ## Building
 
-To build all U-Boot components:
-
+### Local Development
 ```bash
-nix build
+cargo build --release
 ```
 
-To build individual components:
-
-```bash
-# Build both the R5 SPL and A53 U-Boot (this is the default)
-nix build .#uboot-all
-
-# Build only the R5 SPL
-nix build .#uboot-r5
-
-# Build only the A53 U-Boot
-nix build .#uboot-a53
-
-# Build TF-A
-nix build .#tfa
-
-# Build OP-TEE
-nix build .#optee
+### Nix-based Build
+The fill station is built as a Nix package defined in:
+```
+nix/overlays/by-name/crt/fill-station/package.nix
 ```
 
-## Accessing the serial port
-
-To access the serial port, use either `screen` or `tio`. To use `tio` (recommended), run the following command:
-
+Build the package alone:
 ```bash
-export SERIAL_PORT=/dev/cu.usbserial-0136E7AD1
-nix shell "nixpkgs#tio" -c tio $SERIAL_PORT
+nix build .#crt.fill-station
 ```
 
-## Flashing Instructions
-
-After building, all the boot images can be found in the `result` directory:
-
-1. **For SD Card Boot:**
-Follow the instructions in the [official TI documentation](https://software-dl.ti.com/processor-sdk-linux/esd/AM64X/07_03_00_02/exports/docs/devices/AM64X/Overview/Create_SD_Card.html#create-sd-card-with-custom-images)
-
-> [!WARNING]
-> This has not been tested.
-
-2. **For OSPI Flash (recommended):**
-Follow the instructions in the [official U-Boot documentation](https://docs.u-boot.org/en/latest/board/ti/am64x_evm.html#ospi)
-
+Build full system SD card image:
 ```bash
-=> sf probe
-=> tftp  ${loadaddr} tiboot3.bin
-=> sf update $loadaddr 0x0 $filesize
-=> tftp $floadaddr} tispl.bin
-=> sf update $loadaddr 0x100000 $filesize
-=> tftp ${loadaddr} u-boot.img
-=> sf update $loadaddr 0x300000 $filesize
+nix build .#mixosConfigurations.fill-station.config.system.build.sdImage
 ```
 
-Instead of using `tftp`, you can use `loadx` and Xmodem to transfer the files (this is what I did). Using Xmodem you would run the below files in U-Boot shell:
+The SD image is at `./result/fill-station.img` and can be flashed directly to an SD card.
 
-```bash
-=> sf probe
-=> loadx  ${loadaddr}
-=> sf update $loadaddr 0x0 $filesize
-=> loadx ${loadaddr}
-=> sf update $loadaddr 0x100000 $filesize
-=> loadx ${loadaddr}
-=> sf update $loadaddr 0x300000 $filesize
+## Deployment
+
+The fill-station runs on the **TI AM64x SK board** with a custom MixOS-based Linux system.
+
+**Init System**: MixOS uses a minimal init system (not systemd). The service is configured in:
+```
+nix/mixos-configurations/fill-station/default.nix
 ```
 
-And **at the same time** run these commands on your computer to send the files (replace the serial port with your OS specific port and the files if you are not using the recommended HS-FS mode):
-
-```bash
-$ export SERIAL_PORT=/dev/cu.usbserial-0136E7AD1
-$ nix shell nixpkgs#lrzsz -c sx -kb ./result/tiboot3-am64x_sr2-hs-fs-evm.bin < $SERIAL_PORT > $SERIAL_PORT
-$ nix shell nixpkgs#lrzsz -c sx -kb ./result/tispl.bin < $SERIAL_PORT > $SERIAL_PORT
-$ nix shell nixpkgs#lrzsz -c sx -kb ./result/u-boot.img < $SERIAL_PORT > $SERIAL_PORT
+**Service Configuration**:
+```nix
+init = {
+  fill-station = {
+    action = "once";
+    process = lib.getExe pkgs.crt.fill-station;
+  };
+};
 ```
 
-> [!NOTE]
-> If you are setting the Boot Mode Switches to boot using OSPI, *do not* set them to be OSPI. Instead switch the boot mode to be xSPI. On the SK-AM64B, this corrsponds to [ON, ON, ON, OFF] for the primary boot mode bits.
+**Logs**:
+- **stdout**: Visible if running manually.
+- **File**: Rotating logs in `/tmp/fill-station/logs/` (Linux) or `logs/` (macOS).
 
-## Cross-Compilation
-
-The flake handles cross-compilation automatically (and can be compiled from MacOS):
-- R5 components use ARMv7 toolchain (32-bit)
-- A53 components use AArch64 toolchain (64-bit)
-
-## Customization
-
-### Modifying U-Boot Configuration
-
-To add custom U-Boot configurations, edit the `am64x_evm_extra.config` file:
-
+**SD Card Image**: The complete bootable system is built with:
 ```bash
-CONFIG_BOOTCOMMAND="bootflow scan -lb"
-CONFIG_BOOTDELAY=0
-# Add your custom configs here
+nix build .#mixosConfigurations.fill-station.config.system.build.sdImage
 ```
 
-This file gets imported into the A53 U-Boot configuration.
+See [LINUX_IMAGE_BUILD_PROCESS.md](docs/LINUX_IMAGE_BUILD_PROCESS.md) for complete build system documentation.
 
-### Switching Board Support
+## Troubleshooting
 
-To support different boards, modify:
-- Defconfig names in `uboot-r5.nix` and `uboot-a53.nix`
-- Target board settings in `tfa.nix`
-- Platform configurations in `optee.nix`
+See [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) for:
+- I2C permission issues
+- GPIO access problems
+- WebSocket connection errors
+- ADC reading issues
 
-## References
+## Documentation
 
-- [TI Official Bootflow Guide for AM64X](https://software-dl.ti.com/mcu-plus-sdk/esd/AM64X/latest/exports/docs/api_guide_am64x/BOOTFLOW_GUIDE.html)
-- [U-Boot AM64x Documentation](https://docs.u-boot.org/en/latest/board/ti/am64x_evm.html)
-- [TI Processor SDK Documentation for U-Boot](https://software-dl.ti.com/processor-sdk-linux/esd/AM64X/08_06_00_42/exports/docs/linux/Foundational_Components/U-Boot/UG-General-Info.html)
-- [OP-TEE Documentation](https://optee.readthedocs.io/)
-- [TF-A Documentation](https://trustedfirmware-a.readthedocs.io/en/latest/index.html)
+- **[INDEX.md](docs/INDEX.md)** - Documentation hub with navigation
+- **[ADDING_FEATURES.md](docs/ADDING_FEATURES.md)** - Complete guide to extending the system
+- **[ADC_STREAMING.md](docs/ADC_STREAMING.md)** - ADC background monitoring & streaming
+- **[ADC_MONITOR_GUIDE.md](docs/ADC_MONITOR_GUIDE.md)** - ADC hardware setup
+- **[QUICKSTART_ADC.md](docs/QUICKSTART_ADC.md)** - Quick ADC testing
+- **[TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Common issues & fixes
+- **[UMBILICAL.md](docs/UMBILICAL.md)** - Ground-system to FSW USB serial communication
+- **[DTBO_BUILDER.md](docs/DTBO_BUILDER.md)** - Device tree overlay automation
+- **[LINUX_IMAGE_BUILD_PROCESS.md](docs/LINUX_IMAGE_BUILD_PROCESS.md)** - Complete build system guide
+
+## License
+
+Cornell Rocketry Team - Internal Use
+
+## Contributing
+
+When adding features:
+1. Follow the patterns in existing components
+2. Use `#[cfg]` for platform-specific code
+3. Add comprehensive error handling
+4. Document your commands and protocol
+5. Test on both macOS (dev) and Linux (target)
+6. Update this README if adding major features
+
+See [`docs/ADDING_FEATURES.md`](docs/ADDING_FEATURES.md) for detailed contribution guidelines.

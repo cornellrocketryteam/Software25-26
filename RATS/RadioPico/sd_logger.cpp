@@ -1,11 +1,10 @@
 #include "sd_logger.h"
 #include "packet_parser.h"
-#include "hardware/spi.h"
-#include "hardware/gpio.h"
-#include "ff.h"  // FatFS library
+#include "hw_config.h"  // SD card hardware configuration
+#include "f_util.h"     // FatFS utility functions
+#include "ff.h"         // FatFS library
 #include <stdio.h>
 #include <string.h>
-#include <time.h>
 
 // Static member initialization
 bool SDLogger::sd_mounted = false;
@@ -15,45 +14,35 @@ uint32_t SDLogger::total_bytes_written = 0;
 uint32_t SDLogger::write_error_count = 0;
 void* SDLogger::file_handle = nullptr;
 
-// FatFS objects
-static FATFS fs;
+// FatFS file object
 static FIL fil;
+static sd_card_t *pSD = nullptr;
+
+// Stub function for FatFS - RP2350 doesn't have hardware RTC
+// Returns a dummy timestamp (Jan 1, 2025, 00:00:00)
+extern "C" DWORD get_fattime(void) {
+    // FAT timestamp format: bits 0-4=day, 5-8=month, 9-15=year from 1980
+    // bits 16-20=second/2, 21-26=minute, 27-31=hour
+    // Year 2025 = 45 years since 1980
+    return ((DWORD)(2025 - 1980) << 25) | ((DWORD)1 << 21) | ((DWORD)1 << 16);
+}
 
 bool SDLogger::init() {
     printf("[SD] Initializing SD card on SPI1...\n");
 
-    // Check if card is present (Card Detect pin)
-    gpio_init(SD_CD_PIN);
-    gpio_set_dir(SD_CD_PIN, GPIO_IN);
-    gpio_pull_up(SD_CD_PIN);
+    // Note: RP2350 doesn't have hardware RTC, using boot time for filenames
 
-    // CD pin is active low (0 = card present)
-    if (gpio_get(SD_CD_PIN) != 0) {
-        printf("[SD] No card detected (CD pin high)\n");
+    // Get SD card object (configured in hw_config.c)
+    pSD = sd_get_by_num(0);
+    if (!pSD) {
+        printf("[SD] Failed to get SD card object\n");
         return false;
     }
-    printf("[SD] Card detected\n");
-
-    // Initialize SPI for SD card
-    spi_init(SD_SPI_ID, 10 * 1000 * 1000);  // Start at 10MHz
-
-    // Set up SPI pins
-    gpio_set_function(SD_CLK_PIN, GPIO_FUNC_SPI);
-    gpio_set_function(SD_MOSI_PIN, GPIO_FUNC_SPI);
-    gpio_set_function(SD_MISO_PIN, GPIO_FUNC_SPI);
-
-    // CS pin as output, start high
-    gpio_init(SD_CS_PIN);
-    gpio_set_dir(SD_CS_PIN, GPIO_OUT);
-    gpio_put(SD_CS_PIN, 1);
-
-    printf("[SD] SPI initialized (CLK=GP%d, MOSI=GP%d, MISO=GP%d, CS=GP%d)\n",
-           SD_CLK_PIN, SD_MOSI_PIN, SD_MISO_PIN, SD_CS_PIN);
 
     // Mount the filesystem
-    FRESULT fr = f_mount(&fs, "", 1);
+    FRESULT fr = f_mount(&pSD->fatfs, pSD->pcName, 1);
     if (fr != FR_OK) {
-        printf("[SD] Failed to mount filesystem (error %d)\n", fr);
+        printf("[SD] Failed to mount filesystem: %s (%d)\n", FRESULT_str(fr), fr);
         return false;
     }
     printf("[SD] Filesystem mounted\n");
@@ -64,8 +53,9 @@ bool SDLogger::init() {
     // Create and open the log file
     fr = f_open(&fil, current_filename, FA_CREATE_ALWAYS | FA_WRITE);
     if (fr != FR_OK) {
-        printf("[SD] Failed to create file '%s' (error %d)\n", current_filename, fr);
-        f_unmount("");
+        printf("[SD] Failed to create file '%s': %s (%d)\n",
+               current_filename, FRESULT_str(fr), fr);
+        f_unmount(pSD->pcName);
         return false;
     }
 
@@ -74,10 +64,8 @@ bool SDLogger::init() {
 
     printf("[SD] Created log file: %s\n", current_filename);
 
-    // Write CSV header
-    const char* header = "timestamp_ms,latitude,longitude,altitude,satellites,temperature,"
-                        "accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,"
-                        "orient_x,orient_y,orient_z,battery_v,flight_mode\n";
+    // TEMPORARY: Write simplified CSV header for test packet structure
+    const char* header = "flight_mode,pt3_pressure,temperature,altitude,latitude_deg,longitude_deg,num_satellites,ms_since_boot\n";
 
     if (!writeString(header)) {
         printf("[SD] Failed to write header\n");
@@ -99,29 +87,22 @@ bool SDLogger::logPacket(const RadioPacket& packet) {
         return false;
     }
 
-    // Format packet as CSV line
-    char line[256];
+    // TEMPORARY: Format simplified test packet as CSV line
+    char line[128];
+    uint8_t flight_mode = (packet.metadata >> 13) & 0x07;
+    float lat_deg = packet.latitude / 1000000.0f;
+    float lon_deg = packet.longitude / 1000000.0f;
+
     int len = snprintf(line, sizeof(line),
-        "%u,%d,%d,%.2f,%u,%.2f,"
-        "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,"
-        "%.2f,%.2f,%.2f,%.2f,%u\n",
-        packet.ms_since_boot,
-        packet.latitude_udeg,
-        packet.longitude_udeg,
-        packet.altitude,
-        packet.satellites,
+        "%u,%.2f,%.2f,%.2f,%.6f,%.6f,%u,%u\n",
+        flight_mode,
+        packet.pt3_pressure,
         packet.temperature,
-        packet.accel_x,
-        packet.accel_y,
-        packet.accel_z,
-        packet.gyro_x,
-        packet.gyro_y,
-        packet.gyro_z,
-        packet.orient_x,
-        packet.orient_y,
-        packet.orient_z,
-        packet.battery_voltage,
-        (packet.raw_metadata >> 13) & 0x07  // Extract flight mode bits
+        packet.altitude,
+        lat_deg,
+        lon_deg,
+        packet.num_satellites,
+        packet.ms_since_boot
     );
 
     if (len < 0 || len >= (int)sizeof(line)) {
@@ -168,8 +149,8 @@ void SDLogger::close() {
         file_handle = nullptr;
     }
 
-    if (sd_mounted) {
-        f_unmount("");
+    if (sd_mounted && pSD) {
+        f_unmount(pSD->pcName);
         sd_mounted = false;
     }
 
