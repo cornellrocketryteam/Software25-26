@@ -16,9 +16,9 @@ If you have entirely fresh hardware and want to run these tests, follow these st
    cd Software25-26/fsw
    ```
 
-2. **Checkout the Testing Branch**
+2. **Checkout the FSW Branch**
    ```bash
-   git checkout cfc-test
+   git checkout fsw-spring26
    ```
 
 3. **Install Dependencies**
@@ -32,7 +32,7 @@ If you have entirely fresh hardware and want to run these tests, follow these st
 
 ---
 
-## 🛠️ Testing Commands
+## 🛠️ Hardware Testing Commands
 
 Run the following commands while inside the `fsw/` directory.
 
@@ -40,7 +40,7 @@ Run the following commands while inside the `fsw/` directory.
 Tests all major sensors, actuates the Main Valve, actuates the Solenoid Valve, and fires the Drogue parachute in a repeating loop.
 
 ```bash
-cargo run --features "test_all"
+cargo run --features "test_hw_all"
 ```
 
 ### 2. Main Actuation Valve (MAV)
@@ -79,6 +79,56 @@ cargo run --features "test_sensors"
 ```
 
 ---
+## 💻 Simulation Testing Commands
+
+Software-in-the-loop tests validate the logic transitions without requiring physical sensors.
+
+### 1. Simple Flight Simulation
+Simulates an ideal flight profile with normal state transitions.
+```bash
+cargo run --features "sim_simple"
+```
+
+### 2. Fault Simulation
+Injects sensor faults to ensure the flight state transitions to Fault correctly.
+```bash
+cargo run --features "sim_fault"
+```
+
+### 3. Stability Simulation
+Validates that the software doesn't unexpectedly transition to a mode when the condition isn't satisfied.
+```bash
+cargo run --features "sim_stability"
+```
+
+### 4. Extra Features Simulation
+Tests MAV timeout, manual mode changes, and payload communication works with flight loop.
+```bash
+cargo run --features "sim_extra"
+```
+
+### 5. Hardware-in-the-loop Simulation (HSIM)
+Fakes the altimeter data while running the flight loop and actuating the hardware.
+```bash
+cargo run --features "sim_hsim"
+```
+
+### 6. Combined Full Simulation Sequence
+Runs all of the above simulations sequentially.
+```bash
+cargo run --features "sim_all"
+```
+
+---
+
+## 🌐 Unified Testing Command
+
+### Test Everything (Software & Hardware)
+Sequentially runs all software simulations (`sim_all`) and then enters the continuous hardware testing loop (`test_hw_all`).
+
+```bash
+cargo run --features "test_all"
+```
 
 ## ✈️ Returning to Normal Flight Mode
 

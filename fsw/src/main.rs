@@ -16,6 +16,9 @@ mod state;
 mod flight_loop;
 pub mod actuator;
 pub mod umbilical;
+#[cfg(any(feature = "sim_simple", feature = "sim_fault", feature = "sim_stability", feature = "sim_extra", feature = "sim_hsim"))]
+#[path = "../Test/flight_sim.rs"]
+mod flight_sim;
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
@@ -95,6 +98,55 @@ async fn main(spawner: Spawner) {
 
     // Reset FRAM for testing (COMMENT OUT FOR REAL FLIGHT)
     flight_state.reset_fram().await;
+
+    // --- FLIGHT SIMULATIONS --- //
+    #[cfg(any(feature = "sim_simple", feature = "sim_fault", feature = "sim_stability", feature = "sim_extra", feature = "sim_hsim"))]
+    let mut flight_state = {
+        let mut flight_loop = flight_loop::FlightLoop::new(flight_state);
+        
+        #[cfg(feature = "sim_simple")]
+        {
+            log::info!("Starting Flight Simulation (Simple)...");
+            flight_sim::simulate_flight_simple(&mut flight_loop).await;
+            log::info!("Simulation Complete.");
+        }
+
+        #[cfg(feature = "sim_fault")]
+        {
+            log::info!("Starting Flight Simulation (Fault)...");
+            flight_sim::simulate_fault_scenarios(&mut flight_loop).await;
+            log::info!("Simulation Complete.");
+        }
+
+        #[cfg(feature = "sim_stability")]
+        {
+            log::info!("Starting Flight Simulation (Stability)...");
+            flight_sim::simulate_stability_scenarios(&mut flight_loop).await;
+            log::info!("Simulation Complete.");
+        }
+
+        #[cfg(feature = "sim_extra")]
+        {
+            log::info!("Starting Flight Simulation (Extra Features)...");
+            flight_sim::simulate_extra_features(&mut flight_loop).await;
+            log::info!("Simulation Complete.");
+        }
+
+        #[cfg(feature = "sim_hsim")]
+        {
+            log::info!("Starting Hardware-in-the-Loop Flight Simulation (HSIM)...");
+            flight_sim::simulate_flight_hsim(&mut flight_loop).await;
+            log::info!("Simulation Complete.");
+        }
+
+        #[cfg(not(any(feature = "test_mav", feature = "test_sv", feature = "test_ssa", feature = "test_sensors", feature = "test_buzzer", feature = "test_all")))]
+        {
+            log::info!("All Simulations Complete. Halting.");
+            loop { Timer::after_millis(1000).await; }
+        }
+
+        flight_loop.flight_state
+    };
 
     // --- HARDWARE TEST MODES --- //
 
@@ -182,7 +234,7 @@ async fn main(spawner: Spawner) {
     }
 
 
-    #[cfg(feature = "test_all")]
+    #[cfg(any(feature = "test_all", feature = "test_hw_all"))]
     {
         log::info!("Starting Combined Hardware Test Sequence...");
         let mut test_cycle = 0;
@@ -241,7 +293,7 @@ async fn main(spawner: Spawner) {
     }
 
     // --- NORMAL FLIGHT LOOP --- //
-    #[cfg(not(any(feature = "test_mav", feature = "test_sv", feature = "test_ssa", feature = "test_sensors", feature = "test_buzzer", feature = "test_all")))]
+    #[cfg(not(any(feature = "test_mav", feature = "test_sv", feature = "test_ssa", feature = "test_sensors", feature = "test_buzzer", feature = "test_all", feature = "test_hw_all", feature = "sim_simple", feature = "sim_fault", feature = "sim_stability", feature = "sim_extra", feature = "sim_hsim")))]
     {
         let mut flight_loop = flight_loop::FlightLoop::new(flight_state);
         

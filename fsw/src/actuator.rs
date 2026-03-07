@@ -3,7 +3,7 @@ use embassy_rp::pwm::Pwm;
 use embassy_time::{Instant, Duration};
 use embedded_hal::pwm::SetDutyCycle;
 // 360 ms use duty cycle 330 Hz for period
-// 1520/3300 for duty cycle
+// 1520/3030 for duty cycle
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Chute {
     Drogue,

@@ -576,8 +576,3 @@ pub async fn simulate_hsim_main(flight_loop: &mut FlightLoop) {
         Timer::after_millis(100).await;
     }
 }
-/*
-pub async fn simulate_hsim_buzzer(flight_loop: &mut FlightLoop) {
-    log::info
-}
-*/
