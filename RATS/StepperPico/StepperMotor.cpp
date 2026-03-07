@@ -1,67 +1,71 @@
 #include "StepperMotor.h"
 #include <cmath>
 
-StepperMotor::StepperMotor(uint8_t DIR, uint8_t STEP, int stepsPerRev, int microsteps)
-    : DIR_(DIR), STEP_(STEP), stepsPerRev_(stepsPerRev), microsteps_(microsteps), currentAngle_(0.0), motor_(AccelStepper::DRIVER, STEP, DIR)
-    {
-        motor_.setMaxSpeed(1000);
-        motor_.setAcceleration(500);
-    }
+StepperMotor::StepperMotor(uint8_t DIR, uint8_t STEP, uint8_t EN,
+                           int stepsPerRev, int microsteps)
+    : DIR_(DIR), STEP_(STEP), stepsPerRev_(stepsPerRev),
+      microsteps_(microsteps), currentAngle_(0.0),
+      motor_(AccelStepper::DRIVER, STEP, DIR) {
+  motor_.setMaxSpeed(1000);
+  motor_.setAcceleration(500);
+
+  if (EN != 255) {
+    motor_.setEnablePin(EN);
+    // Default active low enable for most stepper drivers (e.g. TMC, A4988)
+    motor_.setPinsInverted(false, false, true);
+  }
+}
+
+void StepperMotor::begin() {
+  pinMode(DIR_, OUTPUT);
+  pinMode(STEP_, OUTPUT);
+  motor_.enableOutputs();
+}
 
 long StepperMotor::angleToSteps(double angle) const {
-    double stepsPerDegree = (stepsPerRev_ * microsteps_) / 360.0;
-    return lround(angle * stepsPerDegree);
+  double stepsPerDegree = ((double)stepsPerRev_ * (double)microsteps_) / 360.0;
+  return (long)round(angle * stepsPerDegree);
 }
 
 void StepperMotor::moveAngleTo(double targetAngle) {
-    targetAngle = fmod(targetAngle, 360.0);
-    if (targetAngle < 0) targetAngle += 360.0;
+  // Constrain incoming target to [0, 360)
+  targetAngle = fmod(targetAngle, 360.0);
+  if (targetAngle < 0) {
+    targetAngle += 360.0;
+  }
 
-    double difference = targetAngle - currentAngle_;
+  // Calculate shortest path difference
+  double difference = targetAngle - currentAngle_;
+  if (difference > 180.0) {
+    difference -= 360.0;
+  } else if (difference < -180.0) {
+    difference += 360.0;
+  }
 
-    if (difference > 180.0) difference -= 360.0;
-    if (difference < -180.0) difference += 360.0;
+  // Move by the difference
+  long stepsToMove = angleToSteps(difference);
+  motor_.move(stepsToMove); // move() is relative, moveTo() is absolute
 
-    long targetSteps =
-        motor_.currentPosition() + angleToSteps(difference);
-
-    motor_.moveTo(targetSteps);
+  currentAngle_ = targetAngle;
 }
 
-bool StepperMotor::isRunning() {
-    return motor_.isRunning();
-}
+bool StepperMotor::isRunning() { return motor_.distanceToGo() != 0; }
 
-void StepperMotor::run() {
-    motor_.run();
+long StepperMotor::currentPosition() { return motor_.currentPosition(); }
 
-    // Update angle only when done moving
-    if (motor_.distanceToGo() == 0) {
-        long steps = motor_.currentPosition();
-        double degreesPerStep =
-            360.0 / (stepsPerRev_ * microsteps_);
-        currentAngle_ = fmod(steps * degreesPerStep, 360.0);
-        if (currentAngle_ < 0) currentAngle_ += 360.0;
-    }
-}
+double StepperMotor::currentAngle() { return currentAngle_; }
+
+void StepperMotor::update() { motor_.run(); }
 
 void StepperMotor::setMaxSpeed(float stepsPerSec) {
-    motor_.setMaxSpeed(stepsPerSec);
+  motor_.setMaxSpeed(stepsPerSec);
 }
 
 void StepperMotor::setAcceleration(float stepsPerSec2) {
-    motor_.setAcceleration(stepsPerSec2);
+  motor_.setAcceleration(stepsPerSec2);
 }
 
 void StepperMotor::reset() {
-    motor_.setCurrentPosition(0);
-    currentAngle_ = 0.0;
-}
-
-void StepperMotor::home() {
-    motor_.moveTo(0);
-}
-
-double StepperMotor::getCurrentAngle() {
-    return currentAngle_;
+  motor_.setCurrentPosition(0);
+  currentAngle_ = 0.0;
 }
