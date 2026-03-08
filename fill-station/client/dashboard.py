@@ -353,7 +353,24 @@ with col_left:
         client.send_command({"command": "bv_on_off", "state": "low"})
 
     st.divider()
-    
+
+    st.subheader("QD Stepper")
+    qd1, qd2 = st.columns(2)
+    if qd1.button("QD OPEN", type="primary", use_container_width=True):
+        client.send_command({"command": "qd_open"})
+    if qd2.button("QD CLOSE", use_container_width=True):
+        client.send_command({"command": "qd_close"})
+
+    st.caption("Manual Step")
+    qd_steps = st.number_input("Steps", min_value=1, value=200, step=1, key="qd_steps")
+    qd_dir_col1, qd_dir_col2 = st.columns(2)
+    if qd_dir_col1.button("Step CW", use_container_width=True):
+        client.send_command({"command": "qd_move", "steps": qd_steps, "direction": True})
+    if qd_dir_col2.button("Step CCW", use_container_width=True):
+        client.send_command({"command": "qd_move", "steps": qd_steps, "direction": False})
+
+    st.divider()
+
     st.subheader("Igniters")
     i1 = client.igniters.get(1, False)
     i2 = client.igniters.get(2, False)
