@@ -288,7 +288,7 @@ impl FlightState {
         // Read from FRAM
         match self.fram.read_u32(0).await {
             Ok(raw) => {
-                log::info!("FlightMode read from FRAM: {:?}", FlightMode::from_u32(raw));
+                log::info!("\nFlightMode read from FRAM: {:?}", FlightMode::from_u32(raw));
             }
             Err(_) => {
                 log::warn!("Failed to read the FlightMode from FRAM!");
