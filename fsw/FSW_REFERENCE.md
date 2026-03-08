@@ -28,7 +28,7 @@ The FSW runs a 7-phase state machine defined in `state.rs` (`FlightMode` enum) w
 |--------|-------------|-----|---------|---------------|
 | **BMP390** (altimeter) | `driver/bmp390.rs` | SPI | 0x77 | Pressure (Pa), temperature (°C), altitude (m) |
 | **LSM6DSOX** (IMU) | `driver/lsm6dsox.rs` | I2C0 | 0x6A | Accel XYZ (m/s²), gyro XYZ (°/s) |
-| **LIS6MDL** (magnetometer) | `driver/lis6mdl.rs` | I2C0 | idk | Mag field XYZ (µT) — primary magnetometer |
+| **LIS3MDL** (magnetometer) | `driver/lis3mdl.rs` | I2C0 | idk | Mag field XYZ (µT) |
 | **u-blox MAX-M10S** (GPS) | `driver/ublox_max_m10s.rs` | I2C0 | 0x42 | Latitude, longitude, satellite count, timestamp |
 
 All I2C sensors share a single bus (GPIO 0 SDA / GPIO 1 SCL, 400 kHz) through `embassy_embedded_hal::shared_bus`.
@@ -40,7 +40,7 @@ All I2C sensors share a single bus (GPIO 0 SDA / GPIO 1 SCL, 400 kHz) through `e
 | **SSA Drogue** | `actuator.rs` → `Ssa` | GPIO 36 | Digital output | Fire drogue e-match (1 s pulse) |
 | **SSA Main** | `actuator.rs` → `Ssa` | GPIO 39 | Digital output | Fire main e-match (1 s pulse) |
 | **Buzzer** | `actuator.rs` → `Buzzer` | GPIO 21 | Digital output | Audio status beeps (100 ms on/off) |
-| **MAV** (vent servo) | `actuator.rs` → `Mav` | GPIO 40 | PWM (~50 Hz) | Motor Actuated Vent, servo position 0.0–1.0 |
+| **MAV** (vent servo) | `actuator.rs` → `Mav` | GPIO 40 | PWM (~330 Hz) | Motor Actuated Vent, servo position 0.0–1.0 |
 | **SV** (separation valve) | `actuator.rs` → `SV` | GPIO 47 | Digital output (active low) | Binary valve open/close |
 
 ### Communications
@@ -121,7 +121,7 @@ state.rs (FlightState)
 driver/
   ├── bmp390.rs          — altimeter
   ├── lsm6dsox.rs        — IMU
-  ├── lis6mdl.rs         — magnetometer (primary)
+  ├── lis3mdl.rs         — magnetometer
   ├── ublox_max_m10s.rs  — GPS
   ├── rfd900x.rs         — radio
   └── main_fram.rs       — non-volatile storage
