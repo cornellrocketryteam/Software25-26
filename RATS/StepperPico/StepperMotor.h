@@ -22,5 +22,12 @@ private:
   uint8_t DIR_, STEP_;
   int stepsPerRev_, microsteps_;
   double currentAngle_;
+  double continuousTargetAngle_;
+
+  float maxSpeed_;
+  float acceleration_;
+  float currentSpeed_;
+  unsigned long lastUpdateTime_;
+
   long angleToSteps(double angle) const;
 };
