@@ -79,7 +79,7 @@ Commands are sent from the ground station as ASCII byte strings over the USB ser
 
 | Token | Command | What It Does |
 |-------|---------|-------------|
-| `<L>` | **Launch** | Sets the `umbilical_launch` flag. When the FSW is in **Standby** mode, this triggers the Standby-to-Ascent transition: opens MAV (for 530 ms), opens SV, records reference pressure, and transitions to Ascent. |
+| `<L>` | **Launch** | Sets the `umbilical_launch` flag. When the FSW is in **Standby** mode, this triggers the Standby-to-Ascent transition: opens MAV (for a duration), opens SV, records reference pressure, and transitions to Ascent. |
 | `<M>` | **Open MAV** | Opens the Motor Actuated Vent servo immediately. Sets the MAV timer and `mav_open` flag. MAV state is persisted to FRAM (address 20). |
 | `<m>` | **Close MAV** | Closes the MAV servo immediately. Clears the MAV timer and `mav_open` flag. MAV state is persisted to FRAM. |
 | `<S>` | **Open SV** | Opens the Separation Valve (active-low GPIO 8). Sets `sv_open` flag. SV state is persisted to FRAM (address 24). |
@@ -100,13 +100,7 @@ These tokens are recognized by the parser but currently do nothing because they 
 
 | Token | Intended Purpose |
 |-------|-----------------|
-| `<C1>` | Change target latitude |
-| `<C2>` | Change target longitude |
-| `<C3>` | Change reference pressure |
-| `<C4>` | Change altimeter state |
-| `<C5>` | Change SD card state |
-| `<C6>` | Change altimeter armed flag |
-| `<C7>` | Change flight mode |
+
 
 ### Command Timing
 
