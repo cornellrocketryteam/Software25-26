@@ -116,6 +116,9 @@ impl FlightLoop {
             self.flight_state.flight_mode_name(),
             self.flight_state.cycle_count
         );
+
+        // Save packet to QSPI Flash
+        self.flight_state.save_packet_to_flash().await;
     }
     
     pub async fn check_ground_commands(&mut self) {

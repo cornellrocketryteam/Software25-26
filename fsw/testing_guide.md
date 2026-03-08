@@ -1,6 +1,6 @@
-# Pico 2 Flight Software Hardware Testing Guide
+# Pico 2 Flight Software Testing Guide
 
-This guide details how to compile and run specific hardware verification test loops directly on the Raspberry Pi Pico 2.
+This guide details how to compile and run specific verification test loops directly on the Raspberry Pi Pico 2.
 
 We use **Cargo Feature Flags** to isolate these tests. This guarantees that test code is completely isolated and never accidentally compiled into the production flight software binary. Once you run a given test command, the microcontroller will bypass its normal flight loop and execute the isolated test loop indefinitely until disconnected.
 
@@ -113,7 +113,13 @@ Fakes the altimeter data while running the flight loop and actuating the hardwar
 cargo run --features "sim_hsim"
 ```
 
-### 6. Combined Full Simulation Sequence
+### 6. QSPI Flash Storage Simulation
+Writes mock flight packet data to the onboard Flash memory chip and reads it back to verify data.
+```bash
+cargo run --features "sim_flash"
+```
+
+### 7. Combined Full Simulation Sequence
 Runs all of the above simulations sequentially.
 ```bash
 cargo run --features "sim_all"

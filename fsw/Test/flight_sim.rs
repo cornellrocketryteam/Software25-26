@@ -133,7 +133,7 @@ pub async fn simulate_fault_scenarios(flight_loop: &mut FlightLoop) {
     log::info!("\n--- STARTING FAULT SIMULATION ---");
 
     // 1. Startup -> Fault (Invalid Altimeter)
-    log::info!("[FAULT SIM] Testing Startup -> Fault");
+    log::info!("\n[FAULT SIM] Testing Startup -> Fault");
     // Reset state
     flight_loop.flight_state.flight_mode = FlightMode::Startup;
     flight_loop.set_key_switch(true);
@@ -146,8 +146,23 @@ pub async fn simulate_fault_scenarios(flight_loop: &mut FlightLoop) {
         log::error!("[FAULT SIM] FAILED: Startup -> Fault. Mode: {:?}", flight_loop.flight_state.flight_mode);
     }
 
-    // 2. Ascent -> Fault (Invalid Altimeter)
-    log::info!("[FAULT SIM] Testing Ascent -> Fault");
+    Timer::after_millis(100).await;
+
+    // 2. Standby -> Fault (Invalid Altimeter)
+    log::info!("\n[FAULT SIM] Testing Standby -> Fault");
+    flight_loop.flight_state.flight_mode = FlightMode::Standby;
+    flight_loop.set_altimeter_state(SensorState::INVALID);
+    flight_loop.simulate_cycle().await;
+
+    if flight_loop.flight_state.flight_mode == FlightMode::Fault {
+        log::info!("[FAULT SIM] SUCCESS: Transitioned to Fault from Standby");
+    } else {
+        log::error!("[FAULT SIM] FAILED: Standby -> Fault. Mode: {:?}", flight_loop.flight_state.flight_mode);
+    }
+    Timer::after_millis(100).await;
+
+    // 3. Ascent -> Fault (Invalid Altimeter)
+    log::info!("\n[FAULT SIM] Testing Ascent -> Fault");
     flight_loop.flight_state.flight_mode = FlightMode::Ascent;
     flight_loop.set_altimeter_state(SensorState::INVALID);
     flight_loop.simulate_cycle().await;
@@ -158,8 +173,10 @@ pub async fn simulate_fault_scenarios(flight_loop: &mut FlightLoop) {
         log::error!("[FAULT SIM] FAILED: Ascent -> Fault. Mode: {:?}", flight_loop.flight_state.flight_mode);
     }
     
-    // 3. Coast -> Fault (Invalid Altimeter)
-    log::info!("[FAULT SIM] Testing Coast -> Fault");
+    Timer::after_millis(100).await;
+    
+    // 4. Coast -> Fault (Invalid Altimeter)
+    log::info!("\n[FAULT SIM] Testing Coast -> Fault");
     flight_loop.flight_state.flight_mode = FlightMode::Coast;
     flight_loop.set_altimeter_state(SensorState::INVALID);
     flight_loop.simulate_cycle().await;
@@ -170,8 +187,10 @@ pub async fn simulate_fault_scenarios(flight_loop: &mut FlightLoop) {
         log::error!("[FAULT SIM] FAILED: Coast -> Fault. Mode: {:?}", flight_loop.flight_state.flight_mode);
     }
     
-    // 4. DrogueDeployed -> Fault (Invalid Altimeter)
-    log::info!("[FAULT SIM] Testing DrogueDeployed -> Fault");
+    Timer::after_millis(100).await;
+    
+    // 5. DrogueDeployed -> Fault (Invalid Altimeter)
+    log::info!("\n[FAULT SIM] Testing DrogueDeployed -> Fault");
     flight_loop.flight_state.flight_mode = FlightMode::DrogueDeployed;
     flight_loop.set_altimeter_state(SensorState::INVALID);
     flight_loop.simulate_cycle().await;
@@ -182,8 +201,10 @@ pub async fn simulate_fault_scenarios(flight_loop: &mut FlightLoop) {
         log::error!("[FAULT SIM] FAILED: DrogueDeployed -> Fault. Mode: {:?}", flight_loop.flight_state.flight_mode);
     }
 
-    // 5. MainDeployed -> Fault (Invalid Altimeter)
-    log::info!("[FAULT SIM] Testing MainDeployed -> Fault");
+    Timer::after_millis(100).await;
+
+    // 6. MainDeployed -> Fault (Invalid Altimeter)
+    log::info!("\n[FAULT SIM] Testing MainDeployed -> Fault");
     flight_loop.flight_state.flight_mode = FlightMode::MainDeployed;
     flight_loop.set_altimeter_state(SensorState::INVALID);
     flight_loop.simulate_cycle().await;
@@ -194,7 +215,10 @@ pub async fn simulate_fault_scenarios(flight_loop: &mut FlightLoop) {
         log::error!("[FAULT SIM] FAILED: MainDeployed -> Fault. Mode: {:?}", flight_loop.flight_state.flight_mode);
     }
 
-    log::info!("\n--- FAULT SIMULATION COMPLETE ---");
+    Timer::after_millis(100).await;
+
+    log::info!("\nFAULT SIMULATION FULLY COMPLETE ");
+    Timer::after_millis(1000).await; // Flush logs before halting
 }
 
 // Runs stability scenario tests (dwelling in modes and backtracking)
@@ -225,6 +249,7 @@ pub async fn simulate_stability_scenarios(flight_loop: &mut FlightLoop) {
     // 2. Standby Stability
     log::info!("[STABILITY SIM] Testing Standby Stability");
     flight_loop.set_key_switch(true);
+    flight_loop.set_umbilical(true); // Umbilical must be connected to transition to Standby
     flight_loop.set_launch_command(false);
     flight_loop.simulate_cycle().await; // Transition to Standby
     if flight_loop.flight_state.flight_mode != FlightMode::Standby {
@@ -357,9 +382,11 @@ pub async fn simulate_extra_features(flight_loop: &mut FlightLoop) {
          } else {
               log::error!("[EXTRA FEATURE SIM] FAILED: Did not transition to Coast");
          }
-    } else {
+     } else {
         log::error!("[EXTRA FEATURE SIM] Setup Failed: Could not enter Ascent properly");
     }
+
+    Timer::after_millis(100).await;
 
     // 2. Test Mode Change
     log::info!("[EXTRA FEATURE SIM] Testing Manual Flight Mode Change");
@@ -377,6 +404,8 @@ pub async fn simulate_extra_features(flight_loop: &mut FlightLoop) {
         log::error!("[EXTRA FEATURE SIM] FAILED: Manual set to MainDeployed");
     }
 
+    Timer::after_millis(100).await;
+
     // 3. Test Payload comms logging
     log::info!("[EXTRA FEATURE SIM] Testing Payload Comms Logging");
     flight_loop.flight_state.payload_comms_ok = false;
@@ -388,7 +417,45 @@ pub async fn simulate_extra_features(flight_loop: &mut FlightLoop) {
     flight_loop.flight_state.payload_comms_ok = true;
     flight_loop.flight_state.recovery_comms_ok = true;
 
-    log::info!("\n--- EXTRA FEATURES SIMULATION COMPLETE ---");
+    Timer::after_millis(100).await;
+
+    log::info!("  EXTRA FEATURES SIMULATION FULLY COMPLETE ");
+    Timer::after_millis(1000).await; // Flush logs before stopping
+}
+
+// Runs a test for Onboard QSPI Flash storage
+pub async fn simulate_flash_storage(flight_loop: &mut FlightLoop) {
+    log::info!("\n--- STARTING QSPI FLASH SIMULATION ---");
+    
+    // 1. Write simulated data
+    log::info!("[FLASH SIM] Writing fake packet data to Flash...");
+    flight_loop.set_altitude(6767.0); 
+    flight_loop.flight_state.packet.flight_mode = FlightMode::Ascent as u32;
+    
+    // Explicitly command a flash write
+    flight_loop.flight_state.save_packet_to_flash().await;
+    
+    Timer::after_millis(100).await;
+    
+    // 2. Read it back
+    log::info!("[FLASH SIM] Reading packet back from Flash...");
+    match flight_loop.flight_state.read_flash_packet().await {
+        Ok(recovered_packet) => {
+            if recovered_packet.altitude == 6767.0 && recovered_packet.flight_mode == FlightMode::Ascent as u32 {
+                log::info!("[FLASH SIM] SUCCESS: Recovered packet matches written data! Alt: {:.2}", recovered_packet.altitude);
+            } else {
+                log::error!("[FLASH SIM] FAILED: Recovered packet data mismatch. Alt: {:.2}", recovered_packet.altitude);
+            }
+        }
+        Err(e) => {
+            log::error!("[FLASH SIM] FAILED: Could not read from QSPI Flash: {:?}", e);
+        }
+    }
+
+    Timer::after_millis(100).await;
+
+    log::info!("       FLASH SIMULATION FULLY COMPLETE     ");
+    Timer::after_millis(1000).await;
 }
 
 // Runs a Hardware physical simulation.
@@ -482,97 +549,10 @@ pub async fn simulate_flight_hsim(flight_loop: &mut FlightLoop) {
         );
         flight_loop.flight_state.cycle_count += 1;
 
+        // Save packet to QSPI Flash
+        flight_loop.flight_state.save_packet_to_flash().await;
+
         // Delay to match the real timing cycle
         Timer::after_millis(constants::MAIN_LOOP_DELAY_MS).await;
-    }
-}
-
-// -------------------------------------------------------------
-// INDIVIDUAL ACTUATOR HARDWARE SIMULATIONS
-// These bypass the flight logic entirely, testing physical pins
-// -------------------------------------------------------------
-
-/// Tests the physical Main Actuation Valve (MAV) pin by opening and closing it.
-pub async fn simulate_hsim_mav(flight_loop: &mut FlightLoop) {
-    log::info!("\n--- STARTING HSIM: MAV VALVE TEST ---");
-    log::info!("This simulation will repeatedly open MAV, wait, and close it.");
-    
-    loop {
-        log::info!("[HSIM] Actuating MAV OPEN for {}ms...", constants::MAV_OPEN_DURATION_MS);
-        // Should be ~1.08 V
-        flight_loop.flight_state.open_mav(constants::MAV_OPEN_DURATION_MS).await;
-        
-        // Wait long enough to observe it open + a buffer
-        Timer::after_millis(constants::MAV_OPEN_DURATION_MS + 2000).await;
-        
-        log::info!("[HSIM] Actuating MAV CLOSE...");
-        // Should be ~2.17 V
-        flight_loop.flight_state.close_mav().await;
-        
-        log::info!("[HSIM] Waiting 5 seconds before next cycle...");
-        Timer::after_millis(5000).await;
-    }
-}
-
-/// Tests the physical Solenoid Valve (SV) pin by opening and closing it.
-pub async fn simulate_hsim_sv(flight_loop: &mut FlightLoop) {
-    log::info!("\n--- STARTING HSIM: SV VALVE TEST ---");
-    log::info!("This simulation will repeatedly open SV, wait, and close it.");
-    
-    loop {
-        // SV doesn't have a specific duration constant yet, using 2 seconds
-        let sv_test_duration = 2000;
-        
-        log::info!("[HSIM] Actuating SV OPEN for {}ms...", sv_test_duration);
-        flight_loop.flight_state.open_sv(sv_test_duration).await;
-        
-        Timer::after_millis(sv_test_duration + 2000).await;
-        
-        log::info!("[HSIM] Actuating SV CLOSE...");
-        flight_loop.flight_state.close_sv().await;
-        
-        log::info!("[HSIM] Waiting 5 seconds before next cycle...");
-        Timer::after_millis(5000).await;
-    }
-}
-
-/// Tests the physical Drogue parachute (SSA) pin.
-pub async fn simulate_hsim_drogue(flight_loop: &mut FlightLoop) {
-    log::info!("\n--- STARTING HSIM: DROGUE CHUTE TEST ---");
-    log::info!("This simulation will fire the drogue ssa.");
-    
-    log::info!("[HSIM] Firing Drogue for {}ms...", constants::SSA_THRESHOLD_MS);
-    flight_loop.flight_state.trigger_drogue().await;
-    
-    // Let the flight state update the actuators to trigger the pin
-    flight_loop.flight_state.update_actuators().await;
-    
-    Timer::after_millis(constants::SSA_THRESHOLD_MS).await;
-    
-    log::info!("[HSIM] Drogue deploy complete. Waiting 5 seconds...");
-    
-    for _ in 0..50 {
-        flight_loop.flight_state.update_actuators().await;
-        Timer::after_millis(100).await;
-    }
-}
-
-/// Tests the physical Main parachute ematch (SSA) pin.
-pub async fn simulate_hsim_main(flight_loop: &mut FlightLoop) {
-    log::info!("\n--- STARTING HSIM: MAIN CHUTE TEST ---");
-    log::info!("This simulation will repeatedly fire the main ssa.");
-    
-    log::info!("[HSIM] Firing Main for {}ms...", constants::SSA_THRESHOLD_MS);
-    flight_loop.flight_state.trigger_main().await;
-    
-    flight_loop.flight_state.update_actuators().await;
-    
-    Timer::after_millis(constants::SSA_THRESHOLD_MS).await;
-    
-    log::info!("[HSIM] Main deploy complete. Waiting 5 seconds...");
-    
-    for _ in 0..50 {
-        flight_loop.flight_state.update_actuators().await;
-        Timer::after_millis(100).await;
     }
 }

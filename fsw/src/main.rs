@@ -16,7 +16,7 @@ mod state;
 mod flight_loop;
 pub mod actuator;
 pub mod umbilical;
-#[cfg(any(feature = "sim_simple", feature = "sim_fault", feature = "sim_stability", feature = "sim_extra", feature = "sim_hsim"))]
+#[cfg(any(feature = "sim_simple", feature = "sim_fault", feature = "sim_stability", feature = "sim_extra", feature = "sim_flash", feature = "sim_hsim"))]
 #[path = "../Test/flight_sim.rs"]
 mod flight_sim;
 
@@ -100,7 +100,7 @@ async fn main(spawner: Spawner) {
     flight_state.reset_fram().await;
 
     // --- FLIGHT SIMULATIONS --- //
-    #[cfg(any(feature = "sim_simple", feature = "sim_fault", feature = "sim_stability", feature = "sim_extra", feature = "sim_hsim"))]
+    #[cfg(any(feature = "sim_simple", feature = "sim_fault", feature = "sim_stability", feature = "sim_extra", feature = "sim_flash", feature = "sim_hsim"))]
     let mut flight_state = {
         let mut flight_loop = flight_loop::FlightLoop::new(flight_state);
         
@@ -132,6 +132,13 @@ async fn main(spawner: Spawner) {
             log::info!("Simulation Complete.");
         }
 
+        #[cfg(feature = "sim_flash")]
+        {
+            log::info!("Starting Flight Simulation (QSPI Flash Storage)...");
+            flight_sim::simulate_flash_storage(&mut flight_loop).await;
+            log::info!("Simulation Complete.");
+        }
+
         #[cfg(feature = "sim_hsim")]
         {
             log::info!("Starting Hardware-in-the-Loop Flight Simulation (HSIM)...");
@@ -141,7 +148,7 @@ async fn main(spawner: Spawner) {
 
         #[cfg(not(any(feature = "test_mav", feature = "test_sv", feature = "test_ssa", feature = "test_sensors", feature = "test_buzzer", feature = "test_all")))]
         {
-            log::info!("All Simulations Complete. Halting.");
+            log::info!("All Simulations Complete.");
             loop { Timer::after_millis(1000).await; }
         }
 
@@ -293,7 +300,7 @@ async fn main(spawner: Spawner) {
     }
 
     // --- NORMAL FLIGHT LOOP --- //
-    #[cfg(not(any(feature = "test_mav", feature = "test_sv", feature = "test_ssa", feature = "test_sensors", feature = "test_buzzer", feature = "test_all", feature = "test_hw_all", feature = "sim_simple", feature = "sim_fault", feature = "sim_stability", feature = "sim_extra", feature = "sim_hsim")))]
+    #[cfg(not(any(feature = "test_mav", feature = "test_sv", feature = "test_ssa", feature = "test_sensors", feature = "test_buzzer", feature = "test_all", feature = "test_hw_all", feature = "sim_simple", feature = "sim_fault", feature = "sim_stability", feature = "sim_extra", feature = "sim_flash", feature = "sim_hsim")))]
     {
         let mut flight_loop = flight_loop::FlightLoop::new(flight_state);
         

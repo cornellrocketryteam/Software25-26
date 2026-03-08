@@ -413,21 +413,19 @@ impl FlightState {
     }
     */
 
-    pub async fn execute(&mut self) {
-        // Read sensors and update packet
-        self.read_sensors().await;
-        log::info!("\n");
-
-        // Transmit packet via radio
-        self.transmit().await;
-
-        // Save packet to QSPI Flash 
+    // Writes the current packet to the onboard QSPI Flash memory
+    pub async fn save_packet_to_flash(&mut self) {
         // NOTE(Flash): This requires a blocking 4KB Sector Erase that takes ~45ms.
         // As a result, when flash writing is active, the absolute fastest this
         // flight loop can execute is ~20Hz (50ms).
         if let Err(e) = self.flash.write_packet(&self.packet).await {
             log::warn!("Failed to write packet to QSPI Flash: {:?}", e);
         }
+    }
+
+    /// Reads the packet currently stored in the onboard QSPI Flash
+    pub async fn read_flash_packet(&mut self) -> Result<Packet, crate::driver::onboard_flash::Error> {
+        self.flash.read_packet().await
     }
 
     pub fn flight_mode_name(&mut self) -> &'static str {
