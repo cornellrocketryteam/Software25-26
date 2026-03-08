@@ -7,3 +7,4 @@ pub mod ads1015;
 pub mod mav;
 pub mod ball_valve;
 pub mod umbilical;
+pub mod qd_stepper;

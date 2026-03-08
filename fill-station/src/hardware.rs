@@ -10,6 +10,7 @@ use crate::components::solenoid_valve::{SolenoidValve, LinePull};
 use crate::components::ads1015::Ads1015;
 use crate::components::mav::Mav;
 use crate::components::ball_valve::BallValve;
+use crate::components::qd_stepper::QdStepper;
 
 const GPIO_CHIP0: &str = "gpiochip1";
 const GPIO_CHIP1: &str = "gpiochip2";
@@ -36,6 +37,7 @@ pub struct Hardware {
     pub sv5: SolenoidValve,
     pub mav: Mav,
     pub ball_valve: BallValve,
+    pub qd_stepper: QdStepper,
 }
 
 impl Hardware {
@@ -96,7 +98,15 @@ impl Hardware {
             "BallValve"
         ).await?;
 
-        Ok(Self { ig1, ig2, adc1, adc2, sv1, sv2, sv3, sv4, sv5, mav, ball_valve })
+        // QD Stepper (EHRPWM4 Channel A = PWM chip 0 channel 0, DIR/ENA on chip1)
+        let qd_stepper = QdStepper::new(
+            0, 0,         // PWM chip 0, channel 0 (Channel A)
+            &chip1, 43,   // DIR: gpiochip2, line 43
+            &chip1, 64,   // ENA: gpiochip2, line 64
+            "QD"
+        ).await?;
+
+        Ok(Self { ig1, ig2, adc1, adc2, sv1, sv2, sv3, sv4, sv5, mav, ball_valve, qd_stepper })
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
@@ -105,7 +115,8 @@ impl Hardware {
         let adc2 = Ads1015::new(I2C_BUS, ADC2_ADDRESS)?;
         let mav = Mav::new(0, 0, "MAV").await?;
         let ball_valve = BallValve::new(&(), 0, &(), 0, "BallValve").await?;
-        
-        Ok(Self { adc1, adc2, mav, ball_valve })
+        let qd_stepper = QdStepper::new(0, 0, &(), 0, &(), 0, "QD").await?;
+
+        Ok(Self { adc1, adc2, mav, ball_valve, qd_stepper })
     }
 }

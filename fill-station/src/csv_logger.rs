@@ -64,7 +64,8 @@ ADC1_0_Raw,ADC1_0_Scaled,ADC1_1_Raw,ADC1_1_Scaled,ADC1_2_Raw,ADC1_2_Scaled,ADC1_
 ADC2_0_Raw,ADC2_0_Scaled,ADC2_1_Raw,ADC2_1_Scaled,ADC2_2_Raw,ADC2_2_Scaled,ADC2_3_Raw,ADC2_3_Scaled,\
 FSW_Connected,FSW_Mode,FSW_Pressure,FSW_Temp,FSW_Altitude,FSW_Lat,FSW_Lon,FSW_Sats,FSW_Timestamp,\
 FSW_MagX,FSW_MagY,FSW_MagZ,FSW_AccelX,FSW_AccelY,FSW_AccelZ,FSW_GyroX,FSW_GyroY,FSW_GyroZ,\
-FSW_PT3,FSW_PT4,FSW_RTD\n";
+FSW_PT3,FSW_PT4,FSW_RTD,\
+QD_Enabled,QD_Direction\n";
     
     if let Err(e) = file.write_all(header.as_bytes()).await {
         error!("Failed to write header to log file: {}", e);
@@ -162,6 +163,21 @@ FSW_PT3,FSW_PT4,FSW_RTD\n";
                 // 21 FSW columns: connected + 20 telemetry fields
                 let nas = std::iter::repeat("N/A").take(21).collect::<Vec<_>>().join(",");
                 line.push_str(&nas);
+            }
+        }
+
+        // 4. Gather QD Stepper state
+        {
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            {
+                let hw = _hardware.lock().await;
+                let qd_enabled = hw.qd_stepper.is_enabled().await;
+                let qd_direction = hw.qd_stepper.get_direction().await;
+                line.push_str(&format!(",{},{}", qd_enabled, qd_direction));
+            }
+            #[cfg(not(any(target_os = "linux", target_os = "android")))]
+            {
+                line.push_str(",false,false");
             }
         }
 

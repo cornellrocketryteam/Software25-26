@@ -348,6 +348,57 @@ Set the Ball Valve ON_OFF line state manually.
 
 ---
 
+## QD Stepper Commands
+
+### `qd_move`
+Move the QD stepper motor a specific number of steps. Runs as a **non-blocking background task** (returns immediately).
+
+**Format:**
+```json
+{"command": "qd_move", "steps": 100, "direction": true}
+```
+* `steps`: Number of full steps to execute.
+* `direction`: `true` for one direction, `false` for the other.
+
+**Response:**
+```json
+{"type": "success"}
+```
+
+---
+
+### `qd_open`
+Execute the QD open preset (moves a preconfigured number of steps in the open direction). Non-blocking.
+
+**Format:**
+```json
+{"command": "qd_open"}
+```
+
+**Response:**
+```json
+{"type": "success"}
+```
+
+---
+
+### `qd_close`
+Execute the QD close preset (moves a preconfigured number of steps in the close direction). Non-blocking.
+
+**Format:**
+```json
+{"command": "qd_close"}
+```
+
+**Response:**
+```json
+{"type": "success"}
+```
+
+See [QD_STEPPER.md](QD_STEPPER.md) for hardware details, calibration, and configuration.
+
+---
+
 ## FSW Umbilical Commands
 
 These commands interface with the Flight Software over the USB Umbilical. 

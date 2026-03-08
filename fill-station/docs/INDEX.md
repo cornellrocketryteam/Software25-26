@@ -38,6 +38,12 @@ Complete documentation for the Cornell Rocketry Team fill station server.
   - Telemetry formats
   - Command translations
 
+- **[QD_STEPPER.md](QD_STEPPER.md)** - QD Stepper Motor (Quick Disconnect)
+  - ISD02 driver configuration
+  - PWM + GPIO control architecture
+  - Calibration procedure
+  - WebSocket commands
+
 - **[CSV_LOGGING.md](CSV_LOGGING.md)** - Automatic CSV data logger
   - Data column formats
   - File generation behaviors
@@ -89,6 +95,7 @@ fill-station/
 │   ├── ADC_STREAMING.md         # ADC feature documentation
 │   ├── ADC_MONITOR_GUIDE.md     # Hardware setup guide
 │   ├── QUICKSTART_ADC.md        # Quick testing guide
+│   ├── QD_STEPPER.md            # QD stepper motor docs
 │   ├── TROUBLESHOOTING.md       # Problem solving
 │   └── UMBILICAL.md             # Umbilical connection details
 ├── src/
@@ -97,8 +104,12 @@ fill-station/
 │   ├── hardware.rs              # Hardware initialization
 │   └── components/              # Hardware drivers
 │       ├── igniter.rs
+│       ├── solenoid_valve.rs
+│       ├── mav.rs
+│       ├── ball_valve.rs
+│       ├── qd_stepper.rs
 │       ├── ads1015.rs
-│       └── valve.rs (example)
+│       └── umbilical.rs
 └── test_adc_stream.py           # Test client
 ```
 
@@ -128,6 +139,11 @@ fill-station/
 - **Ball Valve** (`src/components/ball_valve.rs`)
   - Two-pin GPIO control (Signal + ON_OFF)
   - Timed sequencing for open/close operations
+
+- **QD Stepper** (`src/components/qd_stepper.rs`)
+  - PWM sysfs for STEP signal + GPIO for DIR/ENA
+  - ISD02 integrated stepper driver (NEMA 17)
+  - Background task execution (non-blocking moves)
 
 ### Example Implementations
 
@@ -211,6 +227,8 @@ main() spawns tasks:
 | `set_mav_angle` | Set MAV servo angle | [WEBSOCKET_API.md](WEBSOCKET_API.md#set_mav_angle) |
 | `mav_open` / `mav_close` | Open or Close MAV fully | [WEBSOCKET_API.md](WEBSOCKET_API.md#mav_open) |
 | `bv_open` / `bv_close` | Open or Close Ball Valve | [WEBSOCKET_API.md](WEBSOCKET_API.md#bv_open) |
+| `qd_move` | Move QD stepper N steps | [QD_STEPPER.md](QD_STEPPER.md) |
+| `qd_open` / `qd_close` | Open or Close QD (preset) | [QD_STEPPER.md](QD_STEPPER.md) |
 | `start_fsw_stream` | Stream FSW telemetry | [UMBILICAL.md](UMBILICAL.md) |
 | `fsw_launch` | Send Launch command to FSW | [UMBILICAL.md](UMBILICAL.md) |
 
@@ -311,5 +329,5 @@ When adding documentation:
 
 ---
 
-**Last Updated**: January 14, 2026 (Updated igniter behavior and pin mappings)  
+**Last Updated**: March 8, 2026 (Added QD Stepper motor component and documentation)  
 **Maintained By**: Cornell Rocketry Team Software Team

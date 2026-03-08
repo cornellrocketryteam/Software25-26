@@ -40,3 +40,7 @@ The CSV file contains the following columns, exactly matching the order below. I
 - `FSW_AccelX`, `FSW_AccelY`, `FSW_AccelZ`: Internal accelerometer.
 - `FSW_GyroX`, `FSW_GyroY`, `FSW_GyroZ`: Internal gyroscope.
 - `FSW_PT3`, `FSW_PT4`, `FSW_RTD`: Remote pressures and RTD temperatures on the vehicle.
+
+**QD Stepper:**
+- `QD_Enabled`: Boolean indicating if the stepper driver ENA pin is high (driver enabled).
+- `QD_Direction`: Boolean indicating the current DIR pin state (`true` = open direction).

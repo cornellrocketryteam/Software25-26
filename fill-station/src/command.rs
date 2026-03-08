@@ -50,6 +50,13 @@ pub enum Command {
         /// Name of the valve (e.g. "SV1")
         valve: String,
     },
+    /// Move QD stepper a specific number of steps in a given direction
+    QdMove { steps: u32, direction: bool },
+    /// Open QD using preset steps
+    QdOpen,
+    /// Close QD using preset steps
+    QdClose,
+
     /// Client heartbeat to indicate connection is alive
     Heartbeat,
 
