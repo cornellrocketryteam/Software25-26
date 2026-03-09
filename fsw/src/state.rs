@@ -399,6 +399,10 @@ impl FlightState {
         // Share telemetry with umbilical sender task (no-op if logger mode)
         crate::umbilical::update_telemetry(&data);
     }
+
+    pub async fn receive_radio(&mut self, buffer: &mut [u8]) -> Result<(), embassy_rp::uart::Error> {
+        self.radio.receive(buffer).await
+    }
     /*
     pub async fn transition(&mut self) {
         self.flight_mode = match self.flight_mode {

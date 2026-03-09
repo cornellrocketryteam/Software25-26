@@ -36,4 +36,11 @@ impl<'a> Rfd900x<'a> {
 
         return Ok(());
     }
+
+    /// Read data from the radio into the provided buffer
+    /// 
+    /// This function reads until the buffer is full or an error occurs.
+    pub async fn receive(&mut self, buffer: &mut [u8]) -> Result<(), Error> {
+        self.uart.read(buffer).await
+    }
 }
