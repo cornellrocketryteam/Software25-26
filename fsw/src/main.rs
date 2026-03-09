@@ -182,6 +182,38 @@ async fn main(spawner: Spawner) {
     }
 
 
+    #[cfg(feature = "test_radio")]
+    {
+        log::info!("Starting Radio Test Mode...");
+        loop {
+            // 1. Send data
+            flight_state.read_sensors().await;
+            log::info!("Transmitting test packet over radio");
+            flight_state.transmit().await;
+
+            // 2. Listen for response
+            log::info!("Listening for 1000ms...");
+            let mut buf = [0u8; 32];
+            // Read with timeout so we don't block forever
+            match embassy_time::with_timeout(
+                embassy_time::Duration::from_millis(1000),
+                flight_state.receive_radio(&mut buf),
+            )
+            .await
+            {
+                Ok(Ok(_)) => {
+                    log::info!("Received data! Raw bytes: {:?}", &buf);
+                }
+                Ok(Err(e)) => log::warn!("Radio receive error: {:?}", e),
+                Err(_) => log::info!("No data received (timeout)"),
+            }
+
+            flight_state.cycle_count += 1;
+            led.toggle();
+        }
+    }
+
+
     #[cfg(feature = "test_all")]
     {
         log::info!("Starting Combined Hardware Test Sequence...");
