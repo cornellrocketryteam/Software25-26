@@ -15,18 +15,37 @@ state = {
     },
     "mav": {"angle": 0.0, "pulse_width_us": 1000},
     "bv": {"signal": "low", "on_off": "low"},
+    "qd": {"steps": 0, "state": "closed"},
     "igniters": {
         1: {"continuity": True},
         2: {"continuity": True},
     },
-    "adc_stream_active": False
+    "adc_stream_active": False,
+    "fsw_stream_active": False,
+    "fsw": {
+        "flight_mode": 1,
+        "pressure": 101325.0,
+        "temp": 25.0,
+        "altitude": 0.0,
+        "latitude": 42.0,
+        "longitude": -71.0,
+        "num_satellites": 8,
+        "timestamp": 0.0,
+        "mag_x": 0.0, "mag_y": 0.0, "mag_z": 0.0,
+        "accel_x": 0.0, "accel_y": 0.0, "accel_z": 9.81,
+        "gyro_x": 0.0, "gyro_y": 0.0, "gyro_z": 0.0,
+        "pt3": 0.0,
+        "pt4": 0.0,
+        "rtd": 25.0,
+    }
 }
 
 async def handler(websocket):
     print(f"Client connected: {websocket.remote_address}")
     try:
-        # Start a background task for ADC streaming if active
+        # Start background tasks for streaming if active
         adc_task = None
+        fsw_task = None
         
         async for message in websocket:
             data = json.loads(message)
@@ -40,6 +59,7 @@ async def handler(websocket):
                 if valve in state["sv"]:
                     response = {
                         "type": "valve_state",
+                        "valve": valve,
                         "actuated": state["sv"][valve]["actuated"],
                         "continuity": state["sv"][valve]["continuity"]
                     }
@@ -65,7 +85,7 @@ async def handler(websocket):
                 angle = data.get("angle")
                 state["mav"]["angle"] = angle
                 # rough conversion for mock
-                state["mav"]["pulse_width_us"] = 1000 + (angle / 90.0) * 1000
+                state["mav"]["pulse_width_us"] = int(1000 + (angle / 90.0) * 1000)
             
             elif command == "mav_open":
                 state["mav"]["angle"] = 90.0
@@ -81,11 +101,6 @@ async def handler(websocket):
                  state["mav"]["angle"] = 27.0
 
             elif command == "get_igniter_continuity":
-                # The real API uses "id" field in request?
-                # "Format: {"command": "get_igniter_continuity", "id": 1}"
-                # But wait, docs say response has ID but request format just has ID.
-                # Let's handle both generic and specific if needed.
-                # Actually docs say: {"command": "get_igniter_continuity", "id": 1}
                 ign_id = data.get("id")
                 if ign_id in state["igniters"]:
                     response = {
@@ -97,8 +112,6 @@ async def handler(websocket):
                     response = {"type": "error", "message": "Unknown igniter ID"}
 
             elif command == "ignite":
-                # Fire!
-                # In a real system this sends success immediately.
                 pass
 
             elif command == "start_adc_stream":
@@ -113,24 +126,62 @@ async def handler(websocket):
             
             # Ball Valve
             elif command == "bv_open":
-                pass
+                state["bv"]["signal"] = "high"
             elif command == "bv_close":
-                pass
+                state["bv"]["signal"] = "low"
+            elif command == "bv_signal":
+                state["bv"]["signal"] = data.get("state", "low")
+            elif command == "bv_on_off":
+                state["bv"]["on_off"] = data.get("state", "low")
             
+            # QD Commands
+            elif command == "qd_move":
+                direction = data.get("direction", True)
+                steps = data.get("steps", 0)
+                if direction:
+                    state["qd"]["steps"] += steps
+                else:
+                    state["qd"]["steps"] -= steps
+            elif command == "qd_open":
+                state["qd"]["state"] = "open"
+                state["qd"]["steps"] = 1000
+            elif command == "qd_close":
+                state["qd"]["state"] = "closed"
+                state["qd"]["steps"] = 0
+
+            # FSW Commands
+            elif command in ["fsw_launch", "fsw_open_mav", "fsw_close_mav", "fsw_open_sv", "fsw_close_sv", "fsw_safe", "fsw_reset_fram", "fsw_reset_card", "fsw_reboot"]:
+                # Simply succeed, we could update fake fsw state if we wanted
+                pass
+
+            elif command == "start_fsw_stream":
+                state["fsw_stream_active"] = True
+                if fsw_task is None or fsw_task.done():
+                    fsw_task = asyncio.create_task(stream_fsw(websocket))
+            
+            elif command == "stop_fsw_stream":
+                state["fsw_stream_active"] = False
+                if fsw_task:
+                    fsw_task.cancel()
+            
+            elif command == "heartbeat":
+                pass
+
             await websocket.send(json.dumps(response))
 
     except websockets.exceptions.ConnectionClosed:
         print("Client disconnected")
+    except Exception as e:
+        print(f"Error: {e}")
     finally:
         state["adc_stream_active"] = False
+        state["fsw_stream_active"] = False
 
 
 async def stream_adc(websocket):
     start_time = time.time()
     try:
         while state["adc_stream_active"]:
-            # Generate fake data
-            # ADC1: 4 channels. ADC2: 4 channels
             msg = {
                 "type": "adc_data",
                 "timestamp_ms": int(time.time() * 1000),
@@ -142,7 +193,7 @@ async def stream_adc(websocket):
                     {"raw": 0, "voltage": 0.0, "scaled": None},
                 ],
                 "adc2": [
-                    {"raw": random.randint(2000, 2047), "voltage": 3.3, "scaled": None}, # Maybe battery?
+                    {"raw": random.randint(2000, 2047), "voltage": 3.3, "scaled": None},
                     {"raw": 0, "voltage": 0.0, "scaled": None},
                     {"raw": 0, "voltage": 0.0, "scaled": None},
                     {"raw": 0, "voltage": 0.0, "scaled": None},
@@ -153,7 +204,28 @@ async def stream_adc(websocket):
     except asyncio.CancelledError:
         pass
     except Exception as e:
-        print(f"Stream error: {e}")
+        print(f"ADC Stream error: {e}")
+
+async def stream_fsw(websocket):
+    try:
+        while state["fsw_stream_active"]:
+            fsw_tel = state["fsw"].copy()
+            fsw_tel["timestamp"] += 0.1
+            state["fsw"]["timestamp"] = fsw_tel["timestamp"] # update state timestamp
+            
+            msg = {
+                "type": "fsw_telemetry",
+                "timestamp_ms": int(time.time() * 1000),
+                "connected": True,
+                "flight_mode": "Standby",
+                "telemetry": fsw_tel
+            }
+            await websocket.send(json.dumps(msg))
+            await asyncio.sleep(0.1) # 10 Hz
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        print(f"FSW Stream error: {e}")
 
 async def main():
     async with websockets.serve(handler, "0.0.0.0", 9000):
