@@ -51,11 +51,11 @@ void setup() {
   azMotor.begin();
   elMotor.begin();
 
-  azMotor.setMaxSpeed(8000);
-  azMotor.setAcceleration(4000);
+  azMotor.setMaxSpeed(1000);
+  azMotor.setAcceleration(500);
 
-  elMotor.setMaxSpeed(8000);
-  elMotor.setAcceleration(4000);
+  elMotor.setMaxSpeed(1000);
+  elMotor.setAcceleration(500);
 
   // Sets current position as 0 degrees
   azMotor.reset();
