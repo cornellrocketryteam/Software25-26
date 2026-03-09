@@ -29,6 +29,18 @@ fn main() {
     // `memory.x` is changed.
     println!("cargo:rerun-if-changed=memory.x");
 
+    // SV test duration configuration (compile-time, since this is #![no_std])
+    let sv_dur_secs = env::var("SV_DURATION_SECS").unwrap_or_else(|_| "2".to_string());
+    let sv_dur_ms: u64 = sv_dur_secs
+        .parse::<u64>()
+        .expect("SV_DURATION_SECS must be a valid integer")
+        * 1000;
+    File::create(out.join("sv_test_config.rs"))
+        .unwrap()
+        .write_all(format!("pub const SV_TEST_DURATION_MS: u64 = {};", sv_dur_ms).as_bytes())
+        .unwrap();
+    println!("cargo:rerun-if-env-changed=SV_DURATION_SECS");
+
     println!("cargo:rustc-link-arg-bins=--nmagic");
     println!("cargo:rustc-link-arg-bins=-Tlink.x");
     println!("cargo:rustc-link-arg-bins=-Tdefmt.x");

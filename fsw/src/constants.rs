@@ -1,3 +1,6 @@
+// Build-time generated test configuration
+include!(concat!(env!("OUT_DIR"), "/sv_test_config.rs"));
+
 // I2C Configuration
 
 /// I2C bus frequency in Hz (400kHz - Fast Mode)

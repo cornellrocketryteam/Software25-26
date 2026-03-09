@@ -51,8 +51,14 @@ cargo run --features "test_mav"
 ```
 
 ### 3. Solenoid Valve (SV)
-Repeatedly actuates the SV Open for 2 seconds, then actuates it Closed, and waits 5 seconds before repeating.
+Cycles the SV Open for a configurable duration, then closes it and waits 30 seconds before repeating. The duration is set via the `SV_DURATION_SECS` environment variable (in seconds). If not provided, it defaults to 2 seconds.
 
+**With custom duration (e.g. 120 seconds):**
+```bash
+SV_DURATION_SECS=120 cargo run --features "test_sv"
+```
+
+**With default duration (2 seconds):**
 ```bash
 cargo run --features "test_sv"
 ```
