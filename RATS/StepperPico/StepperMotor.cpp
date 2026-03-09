@@ -13,8 +13,12 @@ StepperMotor::StepperMotor(uint8_t DIR, uint8_t STEP, uint8_t EN,
   if (EN != 255) {
     motor_.setEnablePin(EN);
     // Default active low enable for most stepper
-    // drivers (e.g. TMC, A4988)
-    motor_.setPinsInverted(false, false, true);
+    // drivers (e.g. TMC, A4988), also step and dir are active low
+    motor_.setPinsInverted(true, true, true);
+
+    // NEMA 23 closed-loop drivers usually have opto-isolated inputs that need a
+    // slightly longer pulse
+    motor_.setMinPulseWidth(10);
   }
 }
 
