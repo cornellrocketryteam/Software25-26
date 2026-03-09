@@ -386,10 +386,15 @@ impl FlightState {
     pub async fn transmit(&mut self) {
         let data = self.packet.to_bytes();
 
-        // Transmit via radio
         match self.radio.send(&data).await {
             Ok(_) => {
                 log::info!("Transmitted packet via radio");
+                // Wait for ACK
+                match self.radio.wait_for_ack(50).await {
+                    Ok(true) => log::info!("Received ACK via radio"),
+                    Ok(false) => log::warn!("No valid ACK received within timeout"),
+                    Err(e) => log::warn!("Error receiving ACK: {:?}", e),
+                }
             }
             Err(e) => {
                 log::warn!("Failed to transmit packet via radio: {:?}", e);
@@ -402,6 +407,10 @@ impl FlightState {
 
     pub async fn receive_radio(&mut self, buffer: &mut [u8]) -> Result<(), embassy_rp::uart::Error> {
         self.radio.receive(buffer).await
+    }
+
+    pub async fn send_radio_ack(&mut self) -> Result<(), embassy_rp::uart::Error> {
+        self.radio.send_ack().await
     }
     /*
     pub async fn transition(&mut self) {

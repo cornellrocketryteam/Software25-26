@@ -8,6 +8,7 @@
 //! - GP5 (Pico) -> RX (UART1) -> TX (RFD900x)
 
 use embassy_rp::uart::{Async, Error, Uart};
+use embassy_time::{with_timeout, Duration};
 
 /// RFD900x radio driver
 pub struct Rfd900x<'a> {
@@ -42,5 +43,28 @@ impl<'a> Rfd900x<'a> {
     /// This function reads until the buffer is full or an error occurs.
     pub async fn receive(&mut self, buffer: &mut [u8]) -> Result<(), Error> {
         self.uart.read(buffer).await
+    }
+
+    /// Wait for an ACK from the radio
+    /// 
+    /// This function waits up to `timeout_ms` for the sequence b"ACK".
+    pub async fn wait_for_ack(&mut self, timeout_ms: u64) -> Result<bool, Error> {
+        let mut buf = [0u8; 3];
+        match with_timeout(Duration::from_millis(timeout_ms), self.uart.read(&mut buf)).await {
+            Ok(Ok(_)) => {
+                if &buf == b"ACK" {
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            }
+            Ok(Err(e)) => Err(e),
+            Err(_) => Ok(false), // Timeout
+        }
+    }
+
+    /// Send an ACK via the radio
+    pub async fn send_ack(&mut self) -> Result<(), Error> {
+        self.uart.write(b"ACK").await
     }
 }
