@@ -192,11 +192,11 @@ async fn main(spawner: Spawner) {
             flight_state.transmit().await;
 
             // 2. Listen for response
-            log::info!("Listening for 1000ms...");
+            log::info!("Listening for 5000ms...");
             let mut buf = [0u8; 32];
             // Read with timeout so we don't block forever
             match embassy_time::with_timeout(
-                embassy_time::Duration::from_millis(1000),
+                embassy_time::Duration::from_millis(5000),
                 flight_state.receive_radio(&mut buf),
             )
             .await

@@ -79,7 +79,7 @@ cargo run --features "test_sensors"
 ```
 
 ### 7. Radio Transceiver (rfd900x)
-Tests the radio transceiver of the RFD900x radio. It transmits a packet featuring the latest sensor state, then listens for 1000ms for an incoming packet from a Ground Station or external terminal. It prints any received data to the Serial Monitor.
+Tests the radio transceiver of the RFD900x radio. It transmits a packet featuring the latest sensor state, then listens for 5000ms for an incoming packet from a Ground Station or external terminal. It prints any received data to the Serial Monitor.
 
 ```bash
 cargo run --features "test_radio"
