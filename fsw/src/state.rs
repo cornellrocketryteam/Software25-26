@@ -369,13 +369,10 @@ impl FlightState {
 
         // Read ADC and update packet
         match self.adc.read_into_packet(&mut self.packet).await {
-            Ok(_) => {
+            Ok(raw) => {
                 log::info!(
-                    "Channel 0: {:.0} | Channel 1: {:.0} | Channel 2: {:.0} | Channel 3: {:.0}",
-                    self.packet.pt3,
-                    self.packet.pt4,
-                    self.packet.rtd,
-                    self.packet.adc_ch3
+                    "Channel 0: {} | Channel 1: {} | Channel 2: {} | Channel 3: {}",
+                    raw[0], raw[1], raw[2], raw[3]
                 );
             }
             Err(e) => {
@@ -496,11 +493,10 @@ impl FlightState {
             //log::warn!("Failed to write Altitude to FRAM");
         }
 
-        // ADC channels (PT3, PT4, RTD, CH3)
+        // ADC channels (PT3, PT4, RTD)
         let pt3_bits = self.packet.pt3.to_bits();
         let pt4_bits = self.packet.pt4.to_bits();
         let rtd_bits = self.packet.rtd.to_bits();
-        let ch3_bits = self.packet.adc_ch3.to_bits();
 
         if let Err(_) = self.fram.write_u32(28, pt3_bits).await {
             //log::warn!("Failed to write PT3 to FRAM");
@@ -510,9 +506,6 @@ impl FlightState {
         }
         if let Err(_) = self.fram.write_u32(36, rtd_bits).await {
             //log::warn!("Failed to write RTD to FRAM");
-        }
-        if let Err(_) = self.fram.write_u32(40, ch3_bits).await {
-            //log::warn!("Failed to write ADC CH3 to FRAM");
         }
     }
 }

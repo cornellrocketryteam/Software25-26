@@ -137,20 +137,19 @@ impl Ads1015Sensor {
         Ok(value)
     }
 
-    /// Read channels 0, 1, 2, and 3 into the packet.
-    /// Stores RAW values. To switch to scaled values, uncomment the scaling lines below.
-    pub async fn read_into_packet(&mut self, packet: &mut Packet) -> Result<(), Ads1015Error<<I2cDevice<'static> as embedded_hal_async::i2c::ErrorType>::Error>> {
+    /// Read all 4 channels into the packet (ch0-ch2) and return all raw values.
+    /// Returns `[ch0, ch1, ch2, ch3]` raw 12-bit values.
+    pub async fn read_into_packet(&mut self, packet: &mut Packet) -> Result<[i16; 4], Ads1015Error<<I2cDevice<'static> as embedded_hal_async::i2c::ErrorType>::Error>> {
         let raw_ch0 = self.read_channel(0).await?;
         let raw_ch1 = self.read_channel(1).await?;
         let raw_ch2 = self.read_channel(2).await?;
         let raw_ch3 = self.read_channel(3).await?;
 
-        // Store raw values (as f32)
+        // Store raw values in packet (ch0-ch2 only, packet unchanged)
         packet.pt3 = raw_ch0 as f32;
         packet.pt4 = raw_ch1 as f32;
         packet.rtd = raw_ch2 as f32;
-        packet.adc_ch3 = raw_ch3 as f32;
 
-        Ok(())
+        Ok([raw_ch0, raw_ch1, raw_ch2, raw_ch3])
     }
 }
