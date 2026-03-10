@@ -11,6 +11,11 @@
 #include "packet_simulator.h"
 #include "packet_types.h"
 
+// To ensure the motors are properly oriented according to GPS data, the motors
+// most be oriented at True North 0 degrees horizontal.
+// Next implentation, we use a magnetomer or IMU to find the true north more
+// easily?
+
 // Set USE_GPS = false to disable Native GPS NMEA Parser for testing without
 // module
 static constexpr bool USE_GPS = false;
@@ -20,8 +25,8 @@ static constexpr bool USE_PACKET_SIMULATOR =
 // Motors (DIR, STEP, EN)
 // Note: Motor UART TX = GP4, RX = GP5 (Unused statically by AccelStepper, but
 // available for TMC UART)
-StepperMotor azMotor(7, 6, 8);
-StepperMotor elMotor(10, 9, 11);
+StepperMotor azMotor(7, 6, 8, 200, 8);
+StepperMotor elMotor(10, 9, 11, 200, 8);
 
 // LLA for RATS and rocket
 LLA ratsLLA = {0.0, 0.0, 0.0};
