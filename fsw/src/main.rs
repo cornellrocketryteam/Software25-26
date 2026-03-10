@@ -206,10 +206,6 @@ async fn main(spawner: Spawner) {
             {
                 Ok(Ok(_)) => {
                     log::info!("Received data! Raw bytes: {:?}", &buf);
-                    log::info!("Sending ACK back...");
-                    if let Err(e) = flight_state.send_radio_ack().await {
-                        log::warn!("Failed to send ACK: {:?}", e);
-                    }
                 }
                 Ok(Err(e)) => log::warn!("Radio receive error: {:?}", e),
                 Err(_) => log::info!("No data received (timeout)"),
