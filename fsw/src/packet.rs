@@ -23,13 +23,14 @@ pub struct Packet {
     pub gyro_y: f32,
     pub gyro_z: f32,
     // adc - ADS1015 (raw ADC counts; swap to scaled when calibration values are known)
-    pub pt3: f32,  // channel 0
-    pub pt4: f32,  // channel 1
-    pub rtd: f32,  // channel 2
+    pub pt3: f32,      // channel 0
+    pub pt4: f32,      // channel 1
+    pub rtd: f32,      // channel 2
+    pub adc_ch3: f32,  // channel 3
 }
 
 impl Packet {
-    pub const SIZE: usize = 80;
+    pub const SIZE: usize = 84;
 
     pub fn to_bytes(&self) -> [u8; Self::SIZE] {
         let mut data = [0u8; Self::SIZE];
@@ -53,6 +54,7 @@ impl Packet {
         data[68..72].copy_from_slice(&self.pt3.to_le_bytes());
         data[72..76].copy_from_slice(&self.pt4.to_le_bytes());
         data[76..80].copy_from_slice(&self.rtd.to_le_bytes());
+        data[80..84].copy_from_slice(&self.adc_ch3.to_le_bytes());
         data
     }
 
@@ -82,6 +84,7 @@ impl Packet {
             pt3: f32::from_le_bytes(bytes[68..72].try_into().unwrap()),
             pt4: f32::from_le_bytes(bytes[72..76].try_into().unwrap()),
             rtd: f32::from_le_bytes(bytes[76..80].try_into().unwrap()),
+            adc_ch3: f32::from_le_bytes(bytes[80..84].try_into().unwrap()),
         }
     }
 }
