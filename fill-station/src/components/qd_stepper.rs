@@ -3,7 +3,7 @@ use std::time::Duration;
 use tracing::info;
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
-use async_gpiod::{Chip, Drive, LineId, Lines, Options, Output};
+use async_gpiod::{Chip, LineId, Lines, Options, Output};
 
 // Stepping Configuration
 const STEP_FREQUENCY_HZ: u32 = 1000; // 1 KHz step rate (max 12 KHz for full-step ISD02)
@@ -44,30 +44,23 @@ impl QdStepper {
         pin_ena: LineId,
         name: &str,
     ) -> Result<Self> {
-        // All three signals drive ISD02 opto-coupler inputs (5V VCC, 499Ω internal).
-        // Must use open-drain so HIGH = floating (opto OFF) instead of 3.3V
-        // (which still pushes ~1.4mA through the opto LED, keeping it partially on).
-
-        // 1. Configure STEP GPIO (open-drain output, start LOW = opto ON is harmless)
+        // 1. Configure STEP GPIO (output, start LOW)
         let opts_step = Options::output([pin_step])
-            .drive(Drive::OpenDrain)
             .values([false])
             .consumer(format!("{}-step", name));
         let step_line = chip_step.request_lines(opts_step).await
             .context("Failed to request STEP GPIO line")?;
 
-        // 2. Configure DIR GPIO (open-drain output, start HIGH = floating = opto OFF)
+        // 2. Configure DIR GPIO (output, start LOW)
         let opts_dir = Options::output([pin_dir])
-            .drive(Drive::OpenDrain)
-            .values([true])
+            .values([false])
             .consumer(format!("{}-dir", name));
         let dir_line = chip_dir.request_lines(opts_dir).await
             .context("Failed to request DIR GPIO line")?;
 
-        // 3. Configure ENA GPIO (open-drain output, start LOW = opto ON = driver enabled)
+        // 3. Configure ENA GPIO (output, start HIGH = driver enabled)
         let opts_ena = Options::output([pin_ena])
-            .drive(Drive::OpenDrain)
-            .values([false])
+            .values([true])
             .consumer(format!("{}-ena", name));
         let ena_line = chip_ena.request_lines(opts_ena).await
             .context("Failed to request ENA GPIO line")?;
@@ -116,25 +109,24 @@ impl QdStepper {
 
         #[cfg(any(target_os = "linux", target_os = "android"))]
         {
-            // ISD02 opto-coupler logic is inverted: LOW = opto ON, HIGH = opto OFF (floating).
             // Set direction first and let it settle through the opto-coupler
-            self.dir_line.set_values([!direction]).await
+            self.dir_line.set_values([direction]).await
                 .context("Failed to set DIR GPIO")?;
             smol::Timer::after(Duration::from_millis(DIR_SETUP_MS)).await;
 
-            // Ensure driver is enabled (ENA LOW = opto ON), then wait for wake
-            self.ena_line.set_values([false]).await
+            // Ensure driver is enabled (ENA HIGH), then wait for wake
+            self.ena_line.set_values([true]).await
                 .context("Failed to set ENA GPIO")?;
             smol::Timer::after(Duration::from_millis(ENABLE_WAKE_MS)).await;
 
-            // Bit-bang step pulses (LOW = opto ON = pulse active)
+            // Bit-bang step pulses
             let half_period = Duration::from_micros(HALF_PERIOD_US);
             for _ in 0..steps {
-                self.step_line.set_values([false]).await
-                    .context("Failed to set STEP active")?;
-                smol::Timer::after(half_period).await;
                 self.step_line.set_values([true]).await
-                    .context("Failed to set STEP inactive")?;
+                    .context("Failed to set STEP HIGH")?;
+                smol::Timer::after(half_period).await;
+                self.step_line.set_values([false]).await
+                    .context("Failed to set STEP LOW")?;
                 smol::Timer::after(half_period).await;
             }
         }
