@@ -64,6 +64,7 @@ CREATE TABLE telemetry_data (
     sv_2_open BOOLEAN,                 -- State of Solenoid Valve 2
     load_cell DOUBLE PRECISION,        -- Load cell reading float
     ignition BOOLEAN                   -- Ignition Command Status
+    qd_state SMALLINT                  -- Quick Disconnect step/state integer
 );
 
 -- Turn the 'telemetry_data' table into a TimescaleDB hypertable partitioned by 'time'.
