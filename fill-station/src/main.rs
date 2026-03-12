@@ -589,24 +589,26 @@ async fn execute_command(
         Command::QdMove { steps, direction } => {
             let hw_bg = hardware.clone();
             smol::spawn(async move {
-                info!("QD move started (background): {} steps, direction={}", steps, direction);
-
                 let hw = hw_bg.lock().await;
-                if let Err(e) = hw.qd_stepper.begin_stepping(direction).await {
+                let qd = match hw.qd_stepper.as_ref() {
+                    Some(qd) => qd,
+                    None => { error!("QD stepper not initialized"); return; }
+                };
+                info!("QD move started (background): {} steps, direction={}", steps, direction);
+                if let Err(e) = qd.begin_stepping(direction).await {
                     error!("Failed to start QD move: {}", e);
                     return;
                 }
                 for i in 0..steps {
-                    if let Err(e) = hw.qd_stepper.step_pulse().await {
+                    if let Err(e) = qd.step_pulse().await {
                         error!("QD step pulse failed at step {}: {}", i, e);
                         break;
                     }
                     smol::Timer::after(Duration::from_micros(500)).await;
                 }
-                if let Err(e) = hw.qd_stepper.stop_stepping().await {
+                if let Err(e) = qd.stop_stepping().await {
                     error!("Failed to stop QD move: {}", e);
                 }
-
                 info!("QD move complete ({} steps)", steps);
             }).detach();
 
@@ -616,24 +618,26 @@ async fn execute_command(
             use crate::components::qd_stepper::{QD_OPEN_STEPS, QD_OPEN_DIRECTION};
             let hw_bg = hardware.clone();
             smol::spawn(async move {
-                info!("QD open sequence started (background): {} steps", QD_OPEN_STEPS);
-
                 let hw = hw_bg.lock().await;
-                if let Err(e) = hw.qd_stepper.begin_stepping(QD_OPEN_DIRECTION).await {
+                let qd = match hw.qd_stepper.as_ref() {
+                    Some(qd) => qd,
+                    None => { error!("QD stepper not initialized"); return; }
+                };
+                info!("QD open sequence started (background): {} steps", QD_OPEN_STEPS);
+                if let Err(e) = qd.begin_stepping(QD_OPEN_DIRECTION).await {
                     error!("Failed to start QD open: {}", e);
                     return;
                 }
                 for i in 0..QD_OPEN_STEPS {
-                    if let Err(e) = hw.qd_stepper.step_pulse().await {
+                    if let Err(e) = qd.step_pulse().await {
                         error!("QD open pulse failed at step {}: {}", i, e);
                         break;
                     }
                     smol::Timer::after(Duration::from_micros(500)).await;
                 }
-                if let Err(e) = hw.qd_stepper.stop_stepping().await {
+                if let Err(e) = qd.stop_stepping().await {
                     error!("Failed to stop QD open: {}", e);
                 }
-
                 info!("QD open sequence complete");
             }).detach();
 
@@ -643,24 +647,26 @@ async fn execute_command(
             use crate::components::qd_stepper::{QD_CLOSE_STEPS, QD_CLOSE_DIRECTION};
             let hw_bg = hardware.clone();
             smol::spawn(async move {
-                info!("QD close sequence started (background): {} steps", QD_CLOSE_STEPS);
-
                 let hw = hw_bg.lock().await;
-                if let Err(e) = hw.qd_stepper.begin_stepping(QD_CLOSE_DIRECTION).await {
+                let qd = match hw.qd_stepper.as_ref() {
+                    Some(qd) => qd,
+                    None => { error!("QD stepper not initialized"); return; }
+                };
+                info!("QD close sequence started (background): {} steps", QD_CLOSE_STEPS);
+                if let Err(e) = qd.begin_stepping(QD_CLOSE_DIRECTION).await {
                     error!("Failed to start QD close: {}", e);
                     return;
                 }
                 for i in 0..QD_CLOSE_STEPS {
-                    if let Err(e) = hw.qd_stepper.step_pulse().await {
+                    if let Err(e) = qd.step_pulse().await {
                         error!("QD close pulse failed at step {}: {}", i, e);
                         break;
                     }
                     smol::Timer::after(Duration::from_micros(500)).await;
                 }
-                if let Err(e) = hw.qd_stepper.stop_stepping().await {
+                if let Err(e) = qd.stop_stepping().await {
                     error!("Failed to stop QD close: {}", e);
                 }
-
                 info!("QD close sequence complete");
             }).detach();
 

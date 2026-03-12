@@ -37,7 +37,7 @@ pub struct Hardware {
     pub sv5: SolenoidValve,
     pub mav: Mav,
     pub ball_valve: BallValve,
-    pub qd_stepper: QdStepper,
+    pub qd_stepper: Option<QdStepper>,
 }
 
 impl Hardware {
@@ -99,12 +99,19 @@ impl Hardware {
         ).await?;
 
         // QD Stepper (STEP via GPIO bit-bang, DIR/ENA via GPIO)
-        let qd_stepper = QdStepper::new(
+        // Non-fatal: if QD init fails, the rest of the system still works
+        let qd_stepper = match QdStepper::new(
             &chip0, 33,   // STEP: gpiochip1 (SoC GPIO0), line 33
             &chip1, 43,   // DIR:  gpiochip2 (SoC GPIO1), line 43
             &chip1, 64,   // ENA:  gpiochip2 (SoC GPIO1), line 64
             "QD"
-        ).await?;
+        ).await {
+            Ok(qd) => Some(qd),
+            Err(e) => {
+                warn!("QD Stepper init failed (non-fatal): {}", e);
+                None
+            }
+        };
 
         Ok(Self { ig1, ig2, adc1, adc2, sv1, sv2, sv3, sv4, sv5, mav, ball_valve, qd_stepper })
     }
@@ -115,7 +122,7 @@ impl Hardware {
         let adc2 = Ads1015::new(I2C_BUS, ADC2_ADDRESS)?;
         let mav = Mav::new(0, 0, "MAV").await?;
         let ball_valve = BallValve::new(&(), 0, &(), 0, "BallValve").await?;
-        let qd_stepper = QdStepper::new(&(), 0, &(), 0, &(), 0, "QD").await?;
+        let qd_stepper = QdStepper::new(&(), 0, &(), 0, &(), 0, "QD").await.ok();
 
         Ok(Self { adc1, adc2, mav, ball_valve, qd_stepper })
     }
