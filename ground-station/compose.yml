@@ -1,5 +1,13 @@
-version: '3.8'
 services:
+  go2rtc:
+    image: alexxit/go2rtc
+    network_mode: host
+    privileged: true
+    restart: unless-stopped
+    environment:
+      - TZ=America/New_York
+    volumes:
+      - "~/go2rtc:/config"
   emqx:
     image: emqx/emqx:latest
     container_name: emqx
@@ -38,7 +46,8 @@ services:
       - grafana_data:/var/lib/grafana
     networks:
       - rats-net
-    depends_on: timescaledb
+    depends_on: 
+      - timescaledb
   portainer:
     image: portainer/portainer-ce:latest
     container_name: portainer
@@ -46,7 +55,7 @@ services:
       - "9443:9443"
     volumes:
       - portainer_data:/data
-      - /var/run/docker.sock:/var/run/docker.sock # Gives Portainer control of Docker
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - rats-net
     restart: unless-stopped
