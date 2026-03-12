@@ -1,13 +1,12 @@
 SELECT
-    -- === Shared Data ===
+    -- === Core Shared Data (from both RATS & Umbilical) ===
     payload.ms_since_boot as ms_since_boot,
     payload.battery_voltage as battery_voltage,
     payload.pt_3_pressure as pt_3_pressure,
-    payload.pt_4_pressure as pt_4_pressure,
     payload.rtd_temperature as rtd_temperature,
     payload.altitude as altitude,
 
-    -- === Shared Metadata ===
+    -- === Shared Metadata (from both RATS & Umbilical) ===
     payload.metadata_altitude_armed as metadata_altitude_armed,
     payload.metadata_altimeter_is_valid as metadata_altimeter_is_valid,
     payload.metadata_gps_is_valid as metadata_gps_is_valid,
@@ -23,10 +22,10 @@ SELECT
     payload.metadata_sv_state as metadata_sv_state,
     payload.metadata_flight_mode as metadata_flight_mode,
 
-    -- === Shared Events ===
+    -- === Shared Events (from both RATS & Umbilical) ===
     payload.events as events,
 
-    -- === Additional Shared Data ===
+    -- === Additional Shared Data (from both RATS & Umbilical) ===
     payload.sync_word as sync_word,
     payload.temperature as temperature,
     payload.latitude as latitude,
@@ -34,6 +33,7 @@ SELECT
     payload.satellites_in_view as satellites_in_view,
     payload.unix_time as unix_time,
     payload.horizontal_accuracy as horizontal_accuracy,
+    payload.pt_4_pressure as pt_4_pressure,
     payload.acceleration_x as acceleration_x,
     payload.acceleration_y as acceleration_y,
     payload.acceleration_z as acceleration_z,
@@ -52,10 +52,11 @@ SELECT
     payload.pt_1_pressure as pt_1_pressure,
     payload.pt_2_pressure as pt_2_pressure,
     payload.ball_valve_open as ball_valve_open,
-    payload.sv_1_open as sv_1_open,      -- Added SV 1
-    payload.sv_2_open as sv_2_open,      -- Added SV 2
+    payload.sv_1_open as sv_1_open,
+    payload.sv_2_open as sv_2_open,
     payload.load_cell as load_cell,
     payload.ignition as ignition,
+    payload.qd_state as qd_state,
 
     -- === Unit ID (from topic) ===
     int(nth(3, split(topic, '/'))) as unit_id
