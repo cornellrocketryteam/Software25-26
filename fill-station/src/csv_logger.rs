@@ -171,13 +171,9 @@ QD_Enabled,QD_Direction\n";
             #[cfg(any(target_os = "linux", target_os = "android"))]
             {
                 let hw = _hardware.lock().await;
-                if let Some(ref qd) = hw.qd_stepper {
-                    let qd_enabled = qd.is_enabled().await;
-                    let qd_direction = qd.get_direction().await;
-                    line.push_str(&format!(",{},{}", qd_enabled, qd_direction));
-                } else {
-                    line.push_str(",false,false");
-                }
+                let qd_enabled = hw.qd_stepper.is_enabled().await;
+                let qd_direction = hw.qd_stepper.get_direction().await;
+                line.push_str(&format!(",{},{}", qd_enabled, qd_direction));
             }
             #[cfg(not(any(target_os = "linux", target_os = "android")))]
             {

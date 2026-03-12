@@ -1,12 +1,13 @@
 use anyhow::{Context, Result};
-use tracing::{info, warn};
+use std::time::Duration;
+use tracing::info;
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use async_gpiod::{Chip, LineId, Lines, Options, Output};
 
 // Stepping Configuration
 const STEP_FREQUENCY_HZ: u32 = 1000; // 1 KHz step rate (max 12 KHz for full-step ISD02)
-const STEP_HALF_PERIOD_US: u64 = 500; // 500 us HIGH + 500 us LOW = 1 KHz
+const HALF_PERIOD_US: u64 = 500; // 500 us HIGH + 500 us LOW = 1 KHz (>> 4 us min pulse)
 const ENABLE_WAKE_MS: u64 = 2; // Wait after enable before pulsing (spec: 1 ms min)
 
 // Preset step counts and directions (TODO: calibrate on hardware)
@@ -16,7 +17,7 @@ pub const QD_OPEN_DIRECTION: bool = true;
 pub const QD_CLOSE_DIRECTION: bool = false;
 
 /// QD Stepper motor controller using ISD02 driver.
-/// STEP signal via GPIO bit-banging, DIR and ENA via GPIO.
+/// STEP signal via GPIO bit-bang, DIR and ENA via GPIO.
 pub struct QdStepper {
     name: String,
     #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -30,8 +31,8 @@ pub struct QdStepper {
 impl QdStepper {
     /// Initialize the QD stepper component.
     ///
-    /// Configures STEP, DIR and ENA GPIO lines.
-    /// STEP starts LOW, DIR starts LOW, ENA starts HIGH (driver enabled).
+    /// Configures STEP, DIR, and ENA GPIO lines.
+    /// ENA is set HIGH (driver enabled) at init. STEP starts LOW.
     #[cfg(any(target_os = "linux", target_os = "android"))]
     pub async fn new(
         chip_step: &Chip,
@@ -87,7 +88,7 @@ impl QdStepper {
         name: &str,
     ) -> Result<Self> {
         info!(
-            "QD '{}' mocked for non-Linux platform ({}Hz bit-bang)",
+            "QD '{}' mocked for non-Linux platform ({}Hz step rate)",
             name, STEP_FREQUENCY_HZ
         );
         Ok(Self {
@@ -95,12 +96,13 @@ impl QdStepper {
         })
     }
 
-    /// Prepare for stepping: set direction, ensure enabled, wait for driver wake.
-    /// Call step_pulse() in a loop after this, then call stop_stepping() when done.
-    pub async fn begin_stepping(&self, direction: bool) -> Result<()> {
+    /// Move the stepper motor a given number of steps in the specified direction.
+    /// Uses GPIO bit-banging for the STEP signal at 1 KHz (500us HIGH + 500us LOW).
+    pub async fn move_steps(&self, steps: u32, direction: bool) -> Result<()> {
         info!(
-            "QD '{}': begin stepping, direction={}",
+            "QD '{}': moving {} steps, direction={}",
             self.name,
+            steps,
             if direction { "OPEN" } else { "CLOSE" }
         );
 
@@ -115,43 +117,27 @@ impl QdStepper {
                 .context("Failed to set ENA GPIO")?;
 
             // Wait for driver to wake from possible idle/shutdown
-            smol::Timer::after(std::time::Duration::from_millis(ENABLE_WAKE_MS)).await;
+            smol::Timer::after(Duration::from_millis(ENABLE_WAKE_MS)).await;
+
+            // Bit-bang step pulses
+            let half_period = Duration::from_micros(HALF_PERIOD_US);
+            for _ in 0..steps {
+                self.step_line.set_values([true]).await
+                    .context("Failed to set STEP HIGH")?;
+                smol::Timer::after(half_period).await;
+                self.step_line.set_values([false]).await
+                    .context("Failed to set STEP LOW")?;
+                smol::Timer::after(half_period).await;
+            }
         }
 
         #[cfg(not(any(target_os = "linux", target_os = "android")))]
         {
-            let _ = direction;
+            let _ = (steps, direction);
+            info!("[Mock] QD '{}' move complete", self.name);
         }
 
-        Ok(())
-    }
-
-    /// Execute one step pulse: HIGH for 500us, then LOW.
-    /// The caller should sleep ~500us after this call before the next pulse
-    /// to maintain 1 KHz step frequency.
-    pub async fn step_pulse(&self) -> Result<()> {
-        #[cfg(any(target_os = "linux", target_os = "android"))]
-        {
-            self.step_line.set_values([true]).await
-                .context("Failed to set STEP HIGH")?;
-            smol::Timer::after(std::time::Duration::from_micros(STEP_HALF_PERIOD_US)).await;
-            self.step_line.set_values([false]).await
-                .context("Failed to set STEP LOW")?;
-        }
-
-        Ok(())
-    }
-
-    /// Stop stepping: ensure STEP pin is LOW.
-    pub async fn stop_stepping(&self) -> Result<()> {
-        info!("QD '{}': stop stepping", self.name);
-
-        #[cfg(any(target_os = "linux", target_os = "android"))]
-        {
-            self.step_line.set_values([false]).await
-                .context("Failed to set STEP LOW")?;
-        }
-
+        info!("QD '{}': move complete ({} steps)", self.name, steps);
         Ok(())
     }
 

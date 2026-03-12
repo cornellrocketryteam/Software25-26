@@ -590,28 +590,10 @@ async fn execute_command(
             let hw_bg = hardware.clone();
             smol::spawn(async move {
                 let hw = hw_bg.lock().await;
-                let qd = match hw.qd_stepper.as_ref() {
-                    Some(qd) => qd,
-                    None => { error!("QD stepper not initialized"); return; }
-                };
-                info!("QD move started (background): {} steps, direction={}", steps, direction);
-                if let Err(e) = qd.begin_stepping(direction).await {
-                    error!("Failed to start QD move: {}", e);
-                    return;
+                if let Err(e) = hw.qd_stepper.move_steps(steps, direction).await {
+                    error!("QD move failed: {}", e);
                 }
-                for i in 0..steps {
-                    if let Err(e) = qd.step_pulse().await {
-                        error!("QD step pulse failed at step {}: {}", i, e);
-                        break;
-                    }
-                    smol::Timer::after(Duration::from_micros(500)).await;
-                }
-                if let Err(e) = qd.stop_stepping().await {
-                    error!("Failed to stop QD move: {}", e);
-                }
-                info!("QD move complete ({} steps)", steps);
             }).detach();
-
             CommandResponse::Success
         }
         Command::QdOpen => {
@@ -619,28 +601,10 @@ async fn execute_command(
             let hw_bg = hardware.clone();
             smol::spawn(async move {
                 let hw = hw_bg.lock().await;
-                let qd = match hw.qd_stepper.as_ref() {
-                    Some(qd) => qd,
-                    None => { error!("QD stepper not initialized"); return; }
-                };
-                info!("QD open sequence started (background): {} steps", QD_OPEN_STEPS);
-                if let Err(e) = qd.begin_stepping(QD_OPEN_DIRECTION).await {
-                    error!("Failed to start QD open: {}", e);
-                    return;
+                if let Err(e) = hw.qd_stepper.move_steps(QD_OPEN_STEPS, QD_OPEN_DIRECTION).await {
+                    error!("QD open failed: {}", e);
                 }
-                for i in 0..QD_OPEN_STEPS {
-                    if let Err(e) = qd.step_pulse().await {
-                        error!("QD open pulse failed at step {}: {}", i, e);
-                        break;
-                    }
-                    smol::Timer::after(Duration::from_micros(500)).await;
-                }
-                if let Err(e) = qd.stop_stepping().await {
-                    error!("Failed to stop QD open: {}", e);
-                }
-                info!("QD open sequence complete");
             }).detach();
-
             CommandResponse::Success
         }
         Command::QdClose => {
@@ -648,28 +612,10 @@ async fn execute_command(
             let hw_bg = hardware.clone();
             smol::spawn(async move {
                 let hw = hw_bg.lock().await;
-                let qd = match hw.qd_stepper.as_ref() {
-                    Some(qd) => qd,
-                    None => { error!("QD stepper not initialized"); return; }
-                };
-                info!("QD close sequence started (background): {} steps", QD_CLOSE_STEPS);
-                if let Err(e) = qd.begin_stepping(QD_CLOSE_DIRECTION).await {
-                    error!("Failed to start QD close: {}", e);
-                    return;
+                if let Err(e) = hw.qd_stepper.move_steps(QD_CLOSE_STEPS, QD_CLOSE_DIRECTION).await {
+                    error!("QD close failed: {}", e);
                 }
-                for i in 0..QD_CLOSE_STEPS {
-                    if let Err(e) = qd.step_pulse().await {
-                        error!("QD close pulse failed at step {}: {}", i, e);
-                        break;
-                    }
-                    smol::Timer::after(Duration::from_micros(500)).await;
-                }
-                if let Err(e) = qd.stop_stepping().await {
-                    error!("Failed to stop QD close: {}", e);
-                }
-                info!("QD close sequence complete");
             }).detach();
-
             CommandResponse::Success
         }
         Command::Heartbeat => {
