@@ -9,7 +9,7 @@ INSERT INTO telemetry_data(
   acceleration_x, acceleration_y, acceleration_z, gyro_x, gyro_y, gyro_z, 
   orientation_x, orientation_y, orientation_z, accelerometer_x, accelerometer_y, 
   accelerometer_z, motor_state, pt_1_pressure, pt_2_pressure, ball_valve_open, 
-  sv_1_open, sv_2_open, load_cell, ignition
+  sv_1_open, sv_2_open, load_cell, ignition, qd_state
 )
 VALUES (
   NOW(), ${unit_id}, ${ms_since_boot}, ${battery_voltage}, ${pt_3_pressure}, ${pt_4_pressure}, 
@@ -22,5 +22,5 @@ VALUES (
   ${acceleration_x}, ${acceleration_y}, ${acceleration_z}, ${gyro_x}, ${gyro_y}, ${gyro_z}, 
   ${orientation_x}, ${orientation_y}, ${orientation_z}, ${accelerometer_x}, ${accelerometer_y}, 
   ${accelerometer_z}, ${motor_state}, ${pt_1_pressure}, ${pt_2_pressure}, ${ball_valve_open}, 
-  ${sv_1_open}, ${sv_2_open}, ${load_cell}, ${ignition}
+  ${sv_1_open}, ${sv_2_open}, ${load_cell}, ${ignition}, ${qd_state}
 )
