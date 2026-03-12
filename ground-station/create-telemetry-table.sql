@@ -1,88 +1,73 @@
--- ============================================================================
--- Create Telemetry Table
--- This single table is designed to hold data from ALL sources
--- (RATS units and the Umbilical/Fill Station).
---
--- - unit_id = 0 (Umbilical)
--- - unit_id = 1 (Primary RATS)
--- - unit_id = 2 (Secondary RATS)
---
--- RATS-specific fields (e.g., latitude, gyro_x) will be NULL for umbilical.
--- Umbilical-specific fields (e.g., load_cell, pt_1_pressure) will be NULL for RATS.
--- ============================================================================
-
 CREATE TABLE telemetry_data (
-    -- === Core Indexes ===
-    "time" TIMESTAMPTZ NOT NULL,
-    unit_id SMALLINT NOT NULL,
-
-    -- === Shared Data (from both RATS & Umbilical) ===
-    ms_since_boot BIGINT,  -- uint32_t
-    battery_voltage DOUBLE PRECISION,
-    pt_3_pressure DOUBLE PRECISION,   -- Shared PT (PT 3)
-    rtd_temperature DOUBLE PRECISION,
-    altitude DOUBLE PRECISION,
-
-    -- === Shared Metadata (from both RATS & Umbilical) ===
-    -- Note: Some fields may always be false/null for one source
-    metadata_altitude_armed BOOLEAN,
-    metadata_altimeter_is_valid BOOLEAN,
-    metadata_gps_is_valid BOOLEAN,
-    metadata_imu_is_valid BOOLEAN,
-    metadata_accelerometer_is_valid BOOLEAN,
-    metadata_umbilical_lock BOOLEAN,
-    metadata_adc_is_valid BOOLEAN,
-    metadata_fram_is_valid BOOLEAN,
-    metadata_sd_card_is_valid BOOLEAN,
-    metadata_gps_message_fresh BOOLEAN,
-    metadata_rocket_was_safed BOOLEAN,
-    metadata_mav_state BOOLEAN,
-    metadata_sv_state BOOLEAN,
-    metadata_flight_mode SMALLINT,
-
-    -- === Shared Events (from both RATS & Umbilical) ===
-    events SMALLINT[], -- Array of event IDs (bit numbers)
-
-    -- === RATS-Specific Data (NULL for Umbilical) ===
-    sync_word BIGINT, -- uint32_t
-    temperature DOUBLE PRECISION,
-    latitude INTEGER, -- int32_t (microdegrees)
-    longitude INTEGER, -- int32_t (microdegrees)
-    satellites_in_view SMALLINT, -- uint8_t
-    unix_time BIGINT, -- uint32_t (from GPS, also used for "time")
-    horizontal_accuracy BIGINT, -- uint32_t (mm)
-    pt_4_pressure DOUBLE PRECISION,   -- RATS-specific PT (PT 4)
+    -- =========================================================================
+    -- CORE / SHARED COLUMNS
+    -- Data provided by all units (Fill Station, Primary RATS, Secondary RATS)
+    -- =========================================================================
+    time TIMESTAMPTZ NOT NULL,         -- Added by MQTT Broker/Rule Engine
+    unit_id SMALLINT NOT NULL,         -- ID of source (0=Fill Station, 1=Primary RATS, etc.)
+    ms_since_boot BIGINT,              -- uint32_t from packet
+    battery_voltage DOUBLE PRECISION,  -- float from packet
+    pt_3_pressure DOUBLE PRECISION,    -- float from packet
+    pt_4_pressure DOUBLE PRECISION,    -- float from packet
+    rtd_temperature DOUBLE PRECISION,  -- float from packet
+    altitude DOUBLE PRECISION,         -- float from packet
     
-    -- IMU (RATS-specific)
-    acceleration_x DOUBLE PRECISION,
-    acceleration_y DOUBLE PRECISION,
-    acceleration_z DOUBLE PRECISION,
-    gyro_x DOUBLE PRECISION,
-    gyro_y DOUBLE PRECISION,
-    gyro_z DOUBLE PRECISION,
-    orientation_x DOUBLE PRECISION,
-    orientation_y DOUBLE PRECISION,
-    orientation_z DOUBLE PRECISION,
-    
-    -- Accelerometer (RATS-specific)
-    accelerometer_x DOUBLE PRECISION,
-    accelerometer_y DOUBLE PRECISION,
-    accelerometer_z DOUBLE PRECISION,
-    
-    -- BLiMS (RATS-specific)
-    motor_state DOUBLE PRECISION,
+    -- Metadata fields (Decoded from 16-bit integer)
+    metadata_altitude_armed BOOLEAN,         -- Bit 0
+    metadata_altimeter_is_valid BOOLEAN,     -- Bit 1
+    metadata_gps_is_valid BOOLEAN,           -- Bit 2
+    metadata_imu_is_valid BOOLEAN,           -- Bit 3
+    metadata_accelerometer_is_valid BOOLEAN, -- Bit 4
+    metadata_umbilical_lock BOOLEAN,         -- Bit 5
+    metadata_adc_is_valid BOOLEAN,           -- Bit 6
+    metadata_fram_is_valid BOOLEAN,          -- Bit 7
+    metadata_sd_card_is_valid BOOLEAN,       -- Bit 8
+    metadata_gps_message_fresh BOOLEAN,      -- Bit 9
+    metadata_rocket_was_safed BOOLEAN,       -- Bit 10
+    metadata_mav_state BOOLEAN,              -- Bit 11
+    metadata_sv_state BOOLEAN,               -- Bit 12
+    metadata_flight_mode SMALLINT,           -- Bits 13-15
 
-    -- === Umbilical-Specific Data (NULL for RATS) ===
-    pt_1_pressure DOUBLE PRECISION,   -- Umbilical-specific PT (PT 1)
-    pt_2_pressure DOUBLE PRECISION,   -- Umbilical-specific PT (PT 2)
-    ball_valve_open BOOLEAN,
-    load_cell DOUBLE PRECISION,
-    ignition BOOLEAN,
+    -- Array of active event bit numbers (e.g., [1, 14])
+    events SMALLINT[],
 
-    -- This ensures that the combination of (time, unit_id) is unique.
-    PRIMARY KEY ("time", unit_id)
+    -- Additional Shared Data (provided by all units including Fill Station)
+    sync_word BIGINT,                  -- uint32_t from packet
+    temperature DOUBLE PRECISION,      -- float from packet
+    latitude INTEGER,                  -- int32_t (microdegrees) from packet
+    longitude INTEGER,                 -- int32_t (microdegrees) from packet
+    satellites_in_view SMALLINT,       -- uint8_t from packet
+    unix_time BIGINT,                  -- uint32_t (raw GPS epoch time)
+    horizontal_accuracy BIGINT,        -- uint32_t (mm) from packet
+    acceleration_x DOUBLE PRECISION,   -- IMU float from packet
+    acceleration_y DOUBLE PRECISION,   -- IMU float from packet
+    acceleration_z DOUBLE PRECISION,   -- IMU float from packet
+    gyro_x DOUBLE PRECISION,           -- IMU float from packet
+    gyro_y DOUBLE PRECISION,           -- IMU float from packet
+    gyro_z DOUBLE PRECISION,           -- IMU float from packet
+    orientation_x DOUBLE PRECISION,    -- IMU float from packet
+    orientation_y DOUBLE PRECISION,    -- IMU float from packet
+    orientation_z DOUBLE PRECISION,    -- IMU float from packet
+    accelerometer_x DOUBLE PRECISION,  -- High-G float from packet
+    accelerometer_y DOUBLE PRECISION,  -- High-G float from packet
+    accelerometer_z DOUBLE PRECISION,  -- High-G float from packet
+    motor_state DOUBLE PRECISION,      -- BLiMS float from packet
+
+    -- =========================================================================
+    -- FILL STATION-SPECIFIC COLUMNS
+    -- Will be NULL when unit_id > 0 (RATS units)
+    -- =========================================================================
+    pt_1_pressure DOUBLE PRECISION,    -- Fill Station PT1 float
+    pt_2_pressure DOUBLE PRECISION,    -- Fill Station PT2 float
+    ball_valve_open BOOLEAN,           -- State of ball valve
+    sv_1_open BOOLEAN,                 -- State of Solenoid Valve 1
+    sv_2_open BOOLEAN,                 -- State of Solenoid Valve 2
+    load_cell DOUBLE PRECISION,        -- Load cell reading float
+    ignition BOOLEAN                   -- Ignition Command Status
 );
 
--- --- TimescaleDB ---
--- Convert the table into a hypertable.
-SELECT create_hypertable('telemetry_data', 'time', 'unit_id', 4, chunk_time_interval => INTERVAL '1 hour');
+-- Turn the 'telemetry_data' table into a TimescaleDB hypertable partitioned by 'time'.
+SELECT create_hypertable('telemetry_data', 'time');
+
+-- Create an index on unit_id and time for fast filtering by tracker/station.
+CREATE INDEX idx_unit_id_time ON telemetry_data (unit_id, time DESC);
