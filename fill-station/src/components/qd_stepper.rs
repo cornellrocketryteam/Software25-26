@@ -9,6 +9,7 @@ use async_gpiod::{Chip, LineId, Lines, Options, Output};
 const STEP_FREQUENCY_HZ: u32 = 1000; // 1 KHz step rate (max 12 KHz for full-step ISD02)
 const HALF_PERIOD_US: u64 = 500; // 500 us HIGH + 500 us LOW = 1 KHz (>> 4 us min pulse)
 const ENABLE_WAKE_MS: u64 = 2; // Wait after enable before pulsing (spec: 1 ms min)
+const DIR_SETUP_MS: u64 = 5; // DIR must be stable before first STEP rising edge
 
 // Preset step counts and directions (TODO: calibrate on hardware)
 pub const QD_OPEN_STEPS: u32 = 200; // 1 full revolution at full-step (200 steps/rev)
@@ -108,15 +109,14 @@ impl QdStepper {
 
         #[cfg(any(target_os = "linux", target_os = "android"))]
         {
-            // Set direction
+            // Set direction first and let it settle through the opto-coupler
             self.dir_line.set_values([direction]).await
                 .context("Failed to set DIR GPIO")?;
+            smol::Timer::after(Duration::from_millis(DIR_SETUP_MS)).await;
 
-            // Ensure driver is enabled (ENA HIGH)
+            // Ensure driver is enabled (ENA HIGH), then wait for wake
             self.ena_line.set_values([true]).await
                 .context("Failed to set ENA GPIO")?;
-
-            // Wait for driver to wake from possible idle/shutdown
             smol::Timer::after(Duration::from_millis(ENABLE_WAKE_MS)).await;
 
             // Bit-bang step pulses
