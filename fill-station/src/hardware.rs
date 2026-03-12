@@ -98,11 +98,11 @@ impl Hardware {
             "BallValve"
         ).await?;
 
-        // QD Stepper (EHRPWM4 Channel A = PWM chip 0 channel 0, DIR/ENA on chip1)
+        // QD Stepper (STEP via GPIO bit-bang, DIR/ENA via GPIO)
         let qd_stepper = QdStepper::new(
-            0, 0,         // PWM chip 0, channel 0 (Channel A)
-            &chip1, 43,   // DIR: gpiochip2, line 43
-            &chip1, 64,   // ENA: gpiochip2, line 64
+            &chip0, 33,   // STEP: gpiochip1 (SoC GPIO0), line 33
+            &chip1, 43,   // DIR:  gpiochip2 (SoC GPIO1), line 43
+            &chip1, 64,   // ENA:  gpiochip2 (SoC GPIO1), line 64
             "QD"
         ).await?;
 
@@ -115,7 +115,7 @@ impl Hardware {
         let adc2 = Ads1015::new(I2C_BUS, ADC2_ADDRESS)?;
         let mav = Mav::new(0, 0, "MAV").await?;
         let ball_valve = BallValve::new(&(), 0, &(), 0, "BallValve").await?;
-        let qd_stepper = QdStepper::new(0, 0, &(), 0, &(), 0, "QD").await?;
+        let qd_stepper = QdStepper::new(&(), 0, &(), 0, &(), 0, "QD").await?;
 
         Ok(Self { adc1, adc2, mav, ball_valve, qd_stepper })
     }
