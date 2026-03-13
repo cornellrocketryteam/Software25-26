@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 /// The receiver scans the byte stream for this pattern to find packet boundaries.
 pub const SYNC_HEADER: [u8; 2] = [0xAA, 0x55];
 
-/// FSW telemetry packet — 80 bytes, little-endian.
-/// Mirrors the Packet struct serialized in fsw/src/state.rs:transmit().
+/// FSW telemetry packet — 82 bytes, little-endian.
+/// Mirrors the Packet struct serialized in fsw/src/packet.rs.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct FswTelemetry {
     pub flight_mode: u32,
@@ -28,13 +28,16 @@ pub struct FswTelemetry {
     pub pt3: f32,            // raw ADC counts
     pub pt4: f32,
     pub rtd: f32,
+    // valve states
+    pub sv_open: bool,
+    pub mav_open: bool,
 }
 
 impl FswTelemetry {
     /// Total serialized size in bytes.
-    pub const SIZE: usize = 80;
+    pub const SIZE: usize = 82;
 
-    /// Deserialize from an 80-byte little-endian buffer.
+    /// Deserialize from an 82-byte little-endian buffer.
     pub fn from_bytes(buf: &[u8; Self::SIZE]) -> Self {
         Self {
             flight_mode:    u32::from_le_bytes(buf[0..4].try_into().unwrap()),
@@ -57,6 +60,8 @@ impl FswTelemetry {
             pt3:            f32::from_le_bytes(buf[68..72].try_into().unwrap()),
             pt4:            f32::from_le_bytes(buf[72..76].try_into().unwrap()),
             rtd:            f32::from_le_bytes(buf[76..80].try_into().unwrap()),
+            sv_open:        buf[80] != 0,
+            mav_open:       buf[81] != 0,
         }
     }
 

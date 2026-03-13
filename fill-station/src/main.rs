@@ -927,7 +927,7 @@ async fn adc_monitoring_task(
 // ============================================================================
 
 /// Background task that manages the serial connection to the FSW Pico 2 via umbilical.
-/// Reads 80-byte telemetry packets and writes command tokens.
+/// Reads 82-byte telemetry packets and writes command tokens.
 #[cfg(any(target_os = "linux", target_os = "android"))]
 async fn umbilical_task(
     umbilical_readings: Arc<Mutex<UmbilicalReadings>>,
@@ -967,7 +967,7 @@ async fn umbilical_task(
         }
 
         // Sync-scanning state machine: finds [0xAA, 0x55] header before
-        // accumulating 80 payload bytes.  This allows the receiver to
+        // accumulating 82 payload bytes.  This allows the receiver to
         // re-synchronise if it connects mid-stream.
         enum ReaderState {
             Syncing,
@@ -1022,7 +1022,7 @@ async fn umbilical_task(
                                 payload_buf[offset] = byte;
                                 let next = offset + 1;
                                 if next >= FswTelemetry::SIZE {
-                                    // Full 80-byte payload received — deserialize
+                                    // Full 82-byte payload received — deserialize
                                     let telemetry = FswTelemetry::from_bytes(&payload_buf);
                                     let timestamp_ms = SystemTime::now()
                                         .duration_since(UNIX_EPOCH)

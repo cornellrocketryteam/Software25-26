@@ -494,6 +494,12 @@ if client.fsw_telemetry and client.fsw_connected:
         st.metric("PT3 (ADC)", f"{t.get('pt3', 0):.2f}")
         st.metric("PT4 (ADC)", f"{t.get('pt4', 0):.2f}")
         st.metric("RTD (ADC)", f"{t.get('rtd', 0):.2f}")
+        sv_state = "OPEN" if t.get('sv_open', False) else "CLOSED"
+        sv_color = "green" if t.get('sv_open', False) else "red"
+        mav_state = "OPEN" if t.get('mav_open', False) else "CLOSED"
+        mav_color = "green" if t.get('mav_open', False) else "red"
+        st.markdown(f"**FSW SV:** :{sv_color}[{sv_state}]")
+        st.markdown(f"**FSW MAV:** :{mav_color}[{mav_state}]")
 
 # FSW Command Buttons
 st.caption("FSW Commands")

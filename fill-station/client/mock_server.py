@@ -37,6 +37,8 @@ state = {
         "pt3": 0.0,
         "pt4": 0.0,
         "rtd": 25.0,
+        "sv_open": False,
+        "mav_open": False,
     }
 }
 
