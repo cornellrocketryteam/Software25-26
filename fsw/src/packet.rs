@@ -23,13 +23,16 @@ pub struct Packet {
     pub gyro_y: f32,
     pub gyro_z: f32,
     // adc - ADS1015 (raw ADC counts; swap to scaled when calibration values are known)
-    pub pt3: f32,  // channel 0
-    pub pt4: f32,  // channel 1
-    pub rtd: f32,  // channel 2
+    pub pt3: f32, // channel 0
+    pub pt4: f32, // channel 1
+    pub rtd: f32, // channel 2
+    // valve states
+    pub sv_open: bool,
+    pub mav_open: bool,
 }
 
 impl Packet {
-    pub const SIZE: usize = 80;
+    pub const SIZE: usize = 82;
 
     pub fn to_bytes(&self) -> [u8; Self::SIZE] {
         let mut data = [0u8; Self::SIZE];
@@ -53,6 +56,8 @@ impl Packet {
         data[68..72].copy_from_slice(&self.pt3.to_le_bytes());
         data[72..76].copy_from_slice(&self.pt4.to_le_bytes());
         data[76..80].copy_from_slice(&self.rtd.to_le_bytes());
+        data[80] = self.sv_open as u8;
+        data[81] = self.mav_open as u8;
         data
     }
 
@@ -60,7 +65,7 @@ impl Packet {
         if bytes.len() < Self::SIZE {
             return Self::default();
         }
-        
+
         Self {
             flight_mode: u32::from_le_bytes(bytes[0..4].try_into().unwrap()),
             pressure: f32::from_le_bytes(bytes[4..8].try_into().unwrap()),
@@ -82,6 +87,8 @@ impl Packet {
             pt3: f32::from_le_bytes(bytes[68..72].try_into().unwrap()),
             pt4: f32::from_le_bytes(bytes[72..76].try_into().unwrap()),
             rtd: f32::from_le_bytes(bytes[76..80].try_into().unwrap()),
+            sv_open: bytes[80] != 0,
+            mav_open: bytes[81] != 0,
         }
     }
 }
