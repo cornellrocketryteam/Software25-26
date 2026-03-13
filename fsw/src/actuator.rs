@@ -1,6 +1,6 @@
 use embassy_rp::gpio::Output;
 use embassy_rp::pwm::Pwm;
-use embassy_time::{Instant, Duration};
+use embassy_time::{Duration, Instant};
 use embedded_hal::pwm::SetDutyCycle;
 // 360 ms use duty cycle 330 Hz for period
 // 1520/3030 for duty cycle
@@ -36,25 +36,25 @@ impl<'a> Ssa<'a> {
             Chute::Drogue => {
                 self.drogue_pin.set_high();
                 self.drogue_off_time = Some(end);
-            },
+            }
             Chute::Main => {
                 self.main_pin.set_high();
                 self.main_off_time = Some(end);
-            },
+            }
         }
     }
 
     // Update loop to turn off pins when duration expires
     pub fn update(&mut self) {
         let now = Instant::now();
-        
+
         if let Some(time) = self.drogue_off_time {
             if now >= time {
                 self.drogue_pin.set_low();
                 self.drogue_off_time = None;
             }
         }
-        
+
         if let Some(time) = self.main_off_time {
             if now >= time {
                 self.main_pin.set_low();
@@ -102,10 +102,11 @@ impl<'a> Buzzer<'a> {
                     self.pin.set_low();
                     self.is_on = false;
                     self.remaining_beeps -= 1;
-                    
+
                     if self.remaining_beeps > 0 {
                         // Wait 100ms before next beep
-                        self.next_toggle_time = Some(Instant::now() + embassy_time::Duration::from_millis(100));
+                        self.next_toggle_time =
+                            Some(Instant::now() + embassy_time::Duration::from_millis(100));
                     } else {
                         // Done
                         self.next_toggle_time = None;
@@ -115,7 +116,8 @@ impl<'a> Buzzer<'a> {
                     if self.remaining_beeps > 0 {
                         self.pin.set_high();
                         self.is_on = true;
-                        self.next_toggle_time = Some(Instant::now() + embassy_time::Duration::from_millis(100));
+                        self.next_toggle_time =
+                            Some(Instant::now() + embassy_time::Duration::from_millis(100));
                     } else {
                         self.next_toggle_time = None;
                     }
@@ -146,6 +148,11 @@ impl<'a> Mav<'a> {
     const SERVO_MAX_US: u16 = 2000;
     const SERVO_NEUTRAL_US: u16 = 1520;
 
+    /// Valve position for "open" (0.0 = min pulse, 1.0 = max pulse)
+    const OPEN_POSITION: f32 = 0.611; // 61% travel
+    /// Valve position for "close"
+    const CLOSE_POSITION: f32 = 0.302; // 30.2% travel
+
     /// Create new MAV servo driver.
     /// Assumes PWM slice already configured for:
     /// - top = 3030
@@ -163,9 +170,13 @@ impl<'a> Mav<'a> {
 
     /// Core low-level function:
     /// Sets pulse width in microseconds directly.
+    /// 61% open
+    /// 30.2% close
     fn set_pulse_width(&mut self, pulse_us: u16) {
         let pulse = pulse_us.clamp(Self::SERVO_MIN_US, Self::SERVO_MAX_US);
-        let _ = self.pwm.set_duty_cycle_fraction(pulse, Self::SERVO_PERIOD_US);
+        let _ = self
+            .pwm
+            .set_duty_cycle_fraction(pulse, Self::SERVO_PERIOD_US);
     }
 
     /// Set servo position as normalized value:
@@ -181,21 +192,20 @@ impl<'a> Mav<'a> {
         self.set_pulse_width((pulse + 0.5) as u16);
     }
 
-    /// Open valve (minimum pulse)
+    /// Open valve to OPEN_POSITION (61%)
     pub fn open(&mut self, duration_ms: u64) {
-        self.set_pulse_width(Self::SERVO_MIN_US);
+        self.set_position(Self::OPEN_POSITION);
 
         if duration_ms > 0 {
-            self.open_deadline =
-                Some(Instant::now() + Duration::from_millis(duration_ms));
+            self.open_deadline = Some(Instant::now() + Duration::from_millis(duration_ms));
         } else {
             self.open_deadline = None;
         }
     }
 
-    /// Close valve (maximum pulse)
+    /// Close valve to CLOSE_POSITION (30.2%)
     pub fn close(&mut self) {
-        self.set_pulse_width(Self::SERVO_MAX_US);
+        self.set_position(Self::CLOSE_POSITION);
         self.open_deadline = None;
     }
 
@@ -208,7 +218,6 @@ impl<'a> Mav<'a> {
         }
     }
 }
-
 
 // SV
 pub struct SV<'a> {

@@ -89,7 +89,7 @@ pub const MAIN_DEPLOY_ALTITUDE: f32 = 610.0;
 pub const MAIN_LOG_TIMEOUT_MS: u64 = 1_200_000; // 20 minutes
 
 pub const UMBILICAL_TIMEOUT_MS: u64 = 15_000; // 15 seconds
-pub const MAV_OPEN_DURATION_MS: u64 = 3000; // 3.5 seconds (gives time to advance altitude array past 100m during 1Hz loop)
+pub const MAV_OPEN_DURATION_MS: u64 = 7880; // 7.88 seconds 
 pub const SSA_THRESHOLD_MS: u64 = 3000; // Duration to fire ematch
 
 // ADS1015 ADC Configuration

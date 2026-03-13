@@ -147,6 +147,7 @@ impl FlightLoop {
                     self.set_launch_command(true);
                 },
                 UmbilicalCommand::OpenMav => {
+                    // CHANGE THIS TO MAV DELAY LATER FOR WET DRESS
                     log::warn!("UMBILICAL CMD: Open MAV");
                     self.flight_state.open_mav(0).await; // 0 = no auto-close timer (manual close only)
                     self.mav_open = true;
