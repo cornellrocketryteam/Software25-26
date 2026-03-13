@@ -148,9 +148,9 @@ impl FlightLoop {
                 },
                 UmbilicalCommand::OpenMav => {
                     log::warn!("UMBILICAL CMD: Open MAV");
-                    self.flight_state.open_mav(constants::MAV_OPEN_DURATION_MS).await;
+                    self.flight_state.open_mav(0).await; // 0 = no auto-close timer (manual close only)
                     self.mav_open = true;
-                    self.mav_open_time = Some(Instant::now());
+                    self.mav_open_time = None; // no timer tracking needed
                 },
                 UmbilicalCommand::CloseMav => {
                     log::warn!("UMBILICAL CMD: Close MAV");
