@@ -2,8 +2,8 @@ use embassy_rp::gpio::Output;
 use embassy_rp::pwm::Pwm;
 use embassy_time::{Duration, Instant};
 use embedded_hal::pwm::SetDutyCycle;
-// 360 ms use duty cycle 330 Hz for period
-// 1520/3030 for duty cycle
+// 330 Hz servo frequency, 3030 µs period
+// open = 2015 µs, close = 995 µs, neutral = 1520 µs
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Chute {
     Drogue,
@@ -133,7 +133,7 @@ impl<'a> Buzzer<'a> {
 /// PWM requirements:
 /// - 330 Hz frame rate
 /// - 3030 µs period
-/// - 1000–2000 µs pulse width
+/// - 800–2200 µs pulse width
 pub struct Mav<'a> {
     pwm: Pwm<'a>,
     open_deadline: Option<Instant>,
@@ -144,19 +144,16 @@ impl<'a> Mav<'a> {
 
     const SERVO_FREQ_HZ: u32 = 330;
     const SERVO_PERIOD_US: u16 = (1_000_000 / Self::SERVO_FREQ_HZ) as u16; // 3030 µs
-    const SERVO_MIN_US: u16 = 1000;
-    const SERVO_MAX_US: u16 = 2000;
+    const SERVO_MIN_US: u16 = 800;
+    const SERVO_MAX_US: u16 = 2200;
+    const SERVO_OPEN_US: u16 = 2015;
+    const SERVO_CLOSE_US: u16 = 995;
     const SERVO_NEUTRAL_US: u16 = 1520;
-
-    /// Valve position for "open" (0.0 = min pulse, 1.0 = max pulse)
-    const OPEN_POSITION: f32 = 0.611; // 61% travel
-    /// Valve position for "close"
-    const CLOSE_POSITION: f32 = 0.302; // 30.2% travel
 
     /// Create new MAV servo driver.
     /// Assumes PWM slice already configured for:
     /// - top = 3030
-    /// - divider ≈ 125
+    /// - divider = 150 (for 150 MHz system clock)
     pub fn new(pwm: Pwm<'a>) -> Self {
         let mut mav = Self {
             pwm,
@@ -170,8 +167,7 @@ impl<'a> Mav<'a> {
 
     /// Core low-level function:
     /// Sets pulse width in microseconds directly.
-    /// 61% open
-    /// 30.2% close
+    /// Clamped to SERVO_MIN_US..SERVO_MAX_US (800–2200 µs).
     fn set_pulse_width(&mut self, pulse_us: u16) {
         let pulse = pulse_us.clamp(Self::SERVO_MIN_US, Self::SERVO_MAX_US);
         let _ = self
@@ -180,8 +176,8 @@ impl<'a> Mav<'a> {
     }
 
     /// Set servo position as normalized value:
-    /// 0.0 = fully open
-    /// 1.0 = fully closed
+    /// 0.0 = min pulse (800 µs)
+    /// 1.0 = max pulse (2200 µs)
     pub fn set_position(&mut self, position: f32) {
         let pos = position.clamp(0.0, 1.0);
 
@@ -192,9 +188,9 @@ impl<'a> Mav<'a> {
         self.set_pulse_width((pulse + 0.5) as u16);
     }
 
-    /// Open valve to OPEN_POSITION (61%)
+    /// Open valve to SERVO_OPEN_US (2015 µs)
     pub fn open(&mut self, duration_ms: u64) {
-        self.set_position(Self::OPEN_POSITION);
+        self.set_pulse_width(Self::SERVO_OPEN_US);
 
         if duration_ms > 0 {
             self.open_deadline = Some(Instant::now() + Duration::from_millis(duration_ms));
@@ -203,9 +199,9 @@ impl<'a> Mav<'a> {
         }
     }
 
-    /// Close valve to CLOSE_POSITION (30.2%)
+    /// Close valve to SERVO_CLOSE_US (995 µs)
     pub fn close(&mut self) {
-        self.set_position(Self::CLOSE_POSITION);
+        self.set_pulse_width(Self::SERVO_CLOSE_US);
         self.open_deadline = None;
     }
 
