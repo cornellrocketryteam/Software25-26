@@ -113,9 +113,9 @@ pub fn init_shared_i2c(
 // Returns a shared SPI instance wrapped in a Mutex that can be used by multiple sensors
 pub fn init_shared_spi(
     spi0: Peri<'static, SPI0>,
-    miso: Peri<'static, PIN_16>,
-    mosi: Peri<'static, PIN_19>,
-    clk: Peri<'static, PIN_18>,
+    miso: Peri<'static, PIN_4>,
+    mosi: Peri<'static, PIN_3>,
+    clk: Peri<'static, PIN_2>,
     tx_dma: Peri<'static, DMA_CH2>,
     rx_dma: Peri<'static, DMA_CH3>,
 ) -> &'static SharedSpi {
@@ -130,13 +130,13 @@ pub fn init_shared_spi(
     SPI_BUS.init(Mutex::new(spi))
 }
 
-// Initialize UART1 for RFD900x radio
+// Initialize UART0 for RFD900x radio
 //
-// Returns async UART instance configured at 9600 baud
-pub fn init_uart1(
-    uart1: Peri<'static, UART1>,
-    tx: Peri<'static, PIN_4>,
-    rx: Peri<'static, PIN_5>,
+// Returns async UART instance configured at 115200 baud
+pub fn init_uart0(
+    uart0: Peri<'static, UART0>,
+    tx: Peri<'static, PIN_30>,
+    rx: Peri<'static, PIN_31>,
     tx_dma: Peri<'static, DMA_CH0>,
     rx_dma: Peri<'static, DMA_CH1>,
 ) -> Uart<'static, uart::Async> {

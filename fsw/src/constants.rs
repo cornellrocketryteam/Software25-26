@@ -19,7 +19,7 @@ pub const SPI_FREQUENCY: u32 = 1_000_000;
 // SPI Pin Assignments
 
 /// SPI0 MISO (Master In, Slave Out) pin
-pub const SPI_MISO_PIN: u8 = 16;
+pub const SPI_MISO_PIN: u8 = 4;
 
 /// SPI0 CS (Chip Select) pin for FRAM
 pub const SPI_CS_PIN: u8 = 17;
@@ -31,23 +31,23 @@ pub const ALTIMETER_CS_PIN: u8 = 7;
 pub const FLASH_CS_PIN: u8 = 6;
 
 /// SPI0 CLK (Clock) pin
-pub const SPI_CLK_PIN: u8 = 18;
+pub const SPI_CLK_PIN: u8 = 2;
 
 /// SPI0 MOSI (Master Out, Slave In) pin
-pub const SPI_MOSI_PIN: u8 = 19;
+pub const SPI_MOSI_PIN: u8 = 3;
 
 // UART Configuration
 
-/// UART1 baudrate for RFD900x radio (115200 baud, 8N1)
+/// UART0 baudrate for RFD900x radio (115200 baud, 8N1)
 pub const UART_BAUDRATE: u32 = 115200;
 
 // UART Pin Assignments
 
-/// UART1 TX (Transmit) pin for RFD900x radio
-pub const UART_TX_PIN: u8 = 4;
+/// UART0 TX (Transmit) pin for RFD900x radio
+pub const UART_TX_PIN: u8 = 30;
 
-/// UART1 RX (Receive) pin for RFD900x radio
-pub const UART_RX_PIN: u8 = 5;
+/// UART0 RX (Receive) pin for RFD900x radio
+pub const UART_RX_PIN: u8 = 31;
 
 // GPIO Pin Assignments
 
