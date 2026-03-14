@@ -5,6 +5,7 @@
 
 use embassy_executor::Spawner;
 use embassy_rp::gpio::{Level, Output};
+use embassy_rp::uart::{Async, UartRx};
 use embassy_time::Timer;
 use {defmt_rtt as _, panic_probe as _};
 
@@ -19,7 +20,8 @@ mod flight_loop;
     feature = "sim_extra",
     feature = "sim_flash",
     feature = "sim_hsim",
-    feature = "sim_launch"
+    feature = "sim_launch",
+    feature = "sim_payload"
 ))]
 #[path = "../Test/flight_sim.rs"]
 mod flight_sim;
@@ -69,6 +71,14 @@ async fn main(spawner: Spawner) {
     let spi_bus =
         module::init_shared_spi(p.SPI0, p.PIN_16, p.PIN_19, p.PIN_18, p.DMA_CH2, p.DMA_CH3);
     let uart = module::init_uart1(p.UART1, p.PIN_4, p.PIN_5, p.DMA_CH0, p.DMA_CH1);
+    let payload_uart = module::init_uart0(p.UART0, p.PIN_32, p.PIN_33, p.DMA_CH5, p.DMA_CH6);
+    let (payload_tx, payload_rx) = payload_uart.split();
+
+    #[cfg(feature = "test_payload_uart")]
+    spawner.spawn(payload_loopback_task(payload_rx).unwrap());
+
+    #[cfg(not(feature = "test_payload_uart"))]
+    drop(payload_rx); // not needed in flight
 
     let fram_cs = Output::new(p.PIN_17, Level::High);
     let _flash_cs = Output::new(p.PIN_6, Level::High); // For onboard flash
@@ -106,6 +116,7 @@ async fn main(spawner: Spawner) {
         mav,
         sv,
         flash,
+        payload_tx,
     )
     .await;
     log::info!("Flight State Initialized.");
@@ -121,7 +132,8 @@ async fn main(spawner: Spawner) {
         feature = "sim_extra",
         feature = "sim_flash",
         feature = "sim_launch",
-        feature = "sim_hsim"
+        feature = "sim_hsim",
+        feature = "sim_payload"
     ))]
     let mut flight_state = {
         let mut flight_loop = flight_loop::FlightLoop::new(flight_state);
@@ -168,6 +180,13 @@ async fn main(spawner: Spawner) {
         {
             log::info!("Starting Hardware-in-the-Loop Flight Simulation (HSIM)...");
             flight_sim::simulate_flight_hsim(&mut flight_loop).await;
+            log::info!("Simulation Complete.");
+        }
+
+        #[cfg(feature = "sim_payload")]
+        {
+            log::info!("Starting Payload Ground Command Simulation...");
+            flight_sim::simulate_payload_commands(&mut flight_loop).await;
             log::info!("Simulation Complete.");
         }
 
@@ -403,6 +422,50 @@ async fn main(spawner: Spawner) {
         }
     }
 
+    #[cfg(feature = "test_payload_uart")]
+    {
+        log::info!("=== Payload UART Loopback Test ===");
+        log::info!("Hardware: Connect GPIO 12 (TX) -> GPIO 13 (RX) with a jumper.");
+
+        let mut flight_loop = flight_loop::FlightLoop::new(flight_state);
+        // N1 only triggers in Startup/Standby
+        flight_loop.set_flight_mode(state::FlightMode::Startup);
+
+        let mut test_cycle: u32 = 0;
+        loop {
+            let cmd = match test_cycle % 4 {
+                0 => {
+                    log::info!("[TEST] Injecting N1 (Camera Deploy)");
+                    crate::umbilical::UmbilicalCommand::PayloadN1
+                }
+                1 => {
+                    log::info!("[TEST] Injecting N2");
+                    crate::umbilical::UmbilicalCommand::PayloadN2
+                }
+                2 => {
+                    log::info!("[TEST] Injecting N3");
+                    crate::umbilical::UmbilicalCommand::PayloadN3
+                }
+                _ => {
+                    log::info!("[TEST] Injecting N4");
+                    crate::umbilical::UmbilicalCommand::PayloadN4
+                }
+            };
+
+            // Simulate ground station pressing button -> USB -> umbilical queue
+            crate::umbilical::push_command(cmd);
+
+            // Run one flight loop tick: check_umbilical_commands will dequeue
+            // the command and write e.g. "N1\n" to GPIO 12.
+            // The spawned payload_loopback_task reads GPIO 13 and logs SUCCESS.
+            flight_loop.execute().await;
+
+            test_cycle += 1;
+            led.toggle();
+            Timer::after_secs(3).await;
+        }
+    }
+
     // --- NORMAL FLIGHT LOOP --- //
     #[cfg(not(any(
         feature = "test_mav",
@@ -413,12 +476,15 @@ async fn main(spawner: Spawner) {
         feature = "test_radio",
         feature = "test_all",
         feature = "test_hw_all",
+        feature = "test_payload_uart",
         feature = "sim_simple",
         feature = "sim_fault",
         feature = "sim_stability",
         feature = "sim_extra",
         feature = "sim_flash",
-        feature = "sim_hsim"
+        feature = "sim_launch",
+        feature = "sim_hsim",
+        feature = "sim_payload"
     )))]
     {
         let mut flight_loop = flight_loop::FlightLoop::new(flight_state);
@@ -433,6 +499,28 @@ async fn main(spawner: Spawner) {
                 led.toggle();
             }
             Timer::after_millis(constants::MAIN_LOOP_DELAY_MS).await;
+        }
+    }
+}
+
+/// Reads every byte that arrives on the RX pin and logs it.
+/// When GPIO 12 (TX) is jumpered to GPIO 13 (RX) this confirms the
+/// real payload signal (e.g. "N1\n") was successfully transmitted.
+#[embassy_executor::task]
+async fn payload_loopback_task(mut rx: UartRx<'static, Async>) -> ! {
+    log::info!("LOOPBACK: Monitor task running. Waiting for signals...");
+    // Signals are "N1\n", "N2\n", "N3\n", "N4\n" — all 3 bytes
+    let mut buf = [0u8; 3];
+    loop {
+        match embassy_time::with_timeout(embassy_time::Duration::from_secs(5), rx.read(&mut buf))
+            .await
+        {
+            Ok(Ok(())) => {
+                let s = core::str::from_utf8(&buf).unwrap_or("<?>");
+                log::info!("LOOPBACK SUCCESS: [{}]", s.trim());
+            }
+            Ok(Err(e)) => log::error!("LOOPBACK RX error: {:?}", e),
+            Err(_) => log::warn!("LOOPBACK: no data in 5s — is the jumper connected?"),
         }
     }
 }

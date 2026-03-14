@@ -52,6 +52,10 @@ pub enum UmbilicalCommand {
     DumpFlash,
     WipeFlash,
     FlashInfo,
+    PayloadN1,
+    PayloadN2,
+    PayloadN3,
+    PayloadN4,
 }
 
 /// Command channel: receiver task pushes commands, flight loop polls them.
@@ -83,6 +87,11 @@ pub fn print_str(s: &str) {
 /// Returns `None` if no command is pending.
 pub fn try_recv_command() -> Option<UmbilicalCommand> {
     COMMANDS.try_receive().ok()
+}
+
+/// Simulation helper: injects a command into the channel as if it came from USB.
+pub fn push_command(cmd: UmbilicalCommand) {
+    let _ = COMMANDS.try_send(cmd);
 }
 
 /// Initialize USB subsystem: logger in debug mode, umbilical in release mode.
@@ -205,6 +214,10 @@ async fn umbilical_receiver_task(mut receiver: Receiver<'static, UsbDriver>) -> 
                 b"<G>" => Some(UmbilicalCommand::DumpFlash),
                 b"<W>" => Some(UmbilicalCommand::WipeFlash),
                 b"<I>" => Some(UmbilicalCommand::FlashInfo),
+                b"<1>" => Some(UmbilicalCommand::PayloadN1),
+                b"<2>" => Some(UmbilicalCommand::PayloadN2),
+                b"<3>" => Some(UmbilicalCommand::PayloadN3),
+                b"<4>" => Some(UmbilicalCommand::PayloadN4),
                 _ => None,
             };
 

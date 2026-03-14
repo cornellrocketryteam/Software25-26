@@ -54,6 +54,11 @@ pub struct FlightLoop {
     // Launch sequence
     pub launch_sequence_stage: LaunchStage,
     launch_stage_start_time: Option<Instant>,
+
+    // Payload Commands tracking
+    low_alt_time: Option<Instant>,
+    n3_sent: bool,
+    n4_sent: bool,
 }
 
 impl FlightLoop {
@@ -87,6 +92,9 @@ impl FlightLoop {
             last_flash_log: None,
             launch_sequence_stage: LaunchStage::None,
             launch_stage_start_time: None,
+            low_alt_time: None,
+            n3_sent: false,
+            n4_sent: false,
         }
     }
 
@@ -101,44 +109,23 @@ impl FlightLoop {
     }
 
     pub fn set_flight_mode(&mut self, mode: FlightMode) {
-        log::warn!(
-            "Manual Override: Force transition from {:?} to {:?}",
-            self.flight_state.flight_mode,
-            mode
-        );
         self.flight_state.flight_mode = mode;
     }
 
     pub async fn execute(&mut self) {
+        // 1. Check for commands (GSE, Umbilical, etc.)
+        self.check_umbilical_commands().await;
+        self.check_ground_commands().await;
+
+        // 2. Read sensor data
         self.flight_state.read_sensors().await;
 
-        // Check subsystem health
-        self.flight_state.check_subsystem_health().await;
-
-        if !self.flight_state.payload_comms_ok {
-            log::warn!("FLAG_PAYLOAD_COMMS_FAIL: Payload communication failure detected!");
-        }
-        if !self.flight_state.recovery_comms_ok {
-            log::warn!("FLAG_RECOVERY_COMMS_FAIL: Recovery communication failure detected!");
-        }
-
-        // Update local loop state from FlightState
-        self.key_armed = self.flight_state.key_armed;
-
-        self.umbilical_state = self.flight_state.umbilical_connected;
-
-        self.check_ground_commands().await;
-        self.check_umbilical_commands().await;
+        // 3. Process logic and transitions
         self.check_transitions().await;
         self.handle_launch_sequence().await;
-        self.flight_state.transmit().await;
 
-        // Log current state
-        log::info!(
-            "Current Flight Mode: {} on cycle {} \n",
-            self.flight_state.flight_mode_name(),
-            self.flight_state.cycle_count
-        );
+        // 4. Update actuators
+        self.flight_state.update_actuators().await;
 
         // Save packet to QSPI Flash
         let now = Instant::now();
@@ -156,21 +143,61 @@ impl FlightLoop {
     }
 
     pub async fn check_ground_commands(&mut self) {
-        // TODO: Implement actual radio command receiving logic here
-        // For now  placeholder for the fill station vent.
-        log::info!("Sent vent command to Fill Station.");
-        // if let Some(cmd) = self.flight_state.radio.receive().await {
-        //     match cmd {
-        //         Command::Vent => {
-        //             log::warn!("CMD: Vent Command Received");
-        //             self.vent_signal_sent = true;
-        //         },
-        //         Command::ForceMode(mode) => {
-        //             self.set_flight_mode(mode);
-        //         },
-        //         _ => {}
-        //     }
-        // }
+        use crate::packet::Command;
+
+        // Poll for radio commands from ground station
+        if let Some(cmd) = self.flight_state.poll_radio_command().await {
+            match cmd {
+                Command::Vent => {
+                    log::warn!("CMD: Vent Command Received");
+                    self.vent_signal_sent = true;
+                }
+                Command::N1 => {
+                    // Start-up sequence for camera deployment
+                    if matches!(
+                        self.flight_state.flight_mode,
+                        FlightMode::Startup | FlightMode::Standby
+                    ) {
+                        let _ = self.flight_state.payload_uart.write(b"N1\n").await;
+                        log::info!("PAYLOAD: Sent N1 (Camera Deploy)");
+                    }
+                }
+                Command::N2 => {
+                    let _ = self.flight_state.payload_uart.write(b"N2\n").await;
+                    log::info!("PAYLOAD: Sent N2");
+                }
+                Command::N3 => {
+                    if self.flight_state.packet.altitude < 250.0 {
+                        if self.low_alt_time.is_none() {
+                            self.low_alt_time = Some(Instant::now());
+                        } else if let Some(low_time) = self.low_alt_time {
+                            if low_time.elapsed().as_millis() as u64 > 1000 && !self.n3_sent {
+                                log::warn!("Low Altitude Detected (>1s).");
+                                let _ = self.flight_state.payload_uart.write(b"N3\n").await;
+                                self.n3_sent = true;
+                            }
+                        }
+                    } else {
+                        self.low_alt_time = None;
+                    }
+                }
+                Command::N4 => {
+                    let ax = self.flight_state.packet.accel_x;
+                    let ay = self.flight_state.packet.accel_y;
+                    let az = self.flight_state.packet.accel_z;
+
+                    if (ax.abs() > 30.0 || ay.abs() > 30.0 || az.abs() > 30.0) && !self.n4_sent {
+                        log::warn!("High Acceleration Detected. Sending N4.");
+                        let _ = self.flight_state.payload_uart.write(b"N4\n").await;
+                        self.n4_sent = true;
+                    }
+                }
+                Command::ForceMode(mode_val) => {
+                    log::warn!("CMD: Force Flight Mode {}", mode_val);
+                    self.set_flight_mode(FlightMode::from_u32(mode_val));
+                }
+            }
+        }
     }
 
     pub async fn check_umbilical_commands(&mut self) {
@@ -235,6 +262,29 @@ impl FlightLoop {
                     log::warn!("UMBILICAL CMD: Flash Storage Info");
                     self.flight_state.print_flash_status().await;
                 }
+                UmbilicalCommand::PayloadN1 => {
+                    if matches!(
+                        self.flight_state.flight_mode,
+                        FlightMode::Startup | FlightMode::Standby
+                    ) {
+                        let _ = self.flight_state.payload_uart.write(b"N1\n").await;
+                        log::info!("UMBILICAL: Sent N1 (Camera Deploy)");
+                    }
+                }
+                UmbilicalCommand::PayloadN2 => {
+                    let _ = self.flight_state.payload_uart.write(b"N2\n").await;
+                    log::info!("UMBILICAL: Sent N2");
+                }
+                UmbilicalCommand::PayloadN3 => {
+                    let _ = self.flight_state.payload_uart.write(b"N3\n").await;
+                    log::info!("UMBILICAL: Sent N3");
+                    self.n3_sent = true;
+                }
+                UmbilicalCommand::PayloadN4 => {
+                    let _ = self.flight_state.payload_uart.write(b"N4\n").await;
+                    log::info!("UMBILICAL: Sent N4");
+                    self.n4_sent = true;
+                }
             }
         }
     }
@@ -273,7 +323,6 @@ impl FlightLoop {
                             log::warn!("Umbilical Disconnected > 15s. Opening SV to vent.");
                             self.flight_state.open_sv(0).await;
                             self.sv_open = true;
-                            self.vent_signal_sent = true;
                             self.vent_signal_sent = true;
                         }
                     }
@@ -666,6 +715,7 @@ impl FlightLoop {
 
         // Process any commands sent over USB during simulation
         self.check_umbilical_commands().await;
+        self.check_ground_commands().await;
 
         // Run logic
         self.check_transitions().await;

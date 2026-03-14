@@ -711,3 +711,82 @@ pub async fn simulate_launch_sequence(flight_loop: &mut FlightLoop) {
 
     log::info!("\n--- LAUNCH SEQUENCE SIMULATION COMPLETE ---");
 }
+
+// Simulation for Payload Specialized Ground Commands
+pub async fn simulate_payload_commands(flight_loop: &mut FlightLoop) {
+    log::info!("\n--- STARTING PAYLOAD COMMAND SIMULATION ---");
+
+    // 1. Test Command::N1 in Startup
+    log::info!("[SIM] Testing N1 command in Startup mode...");
+    flight_loop.set_flight_mode(FlightMode::Startup);
+    flight_loop.flight_state.sim_radio_command = Some(crate::packet::Command::N1);
+    flight_loop.simulate_cycle().await;
+    // (Manual check: logs should show "PAYLOAD: Sent N1")
+
+    // 2. Test Command::N2
+    log::info!("[SIM] Testing N2 command...");
+    flight_loop.flight_state.sim_radio_command = Some(crate::packet::Command::N2);
+    flight_loop.simulate_cycle().await;
+    // (Manual check: logs should show "PAYLOAD: Sent N2")
+
+    // 3. Test Command::N3 (Altitude Timeout)
+    log::info!("[SIM] Testing N3 command (Altitude Trigger < 250m)...");
+    flight_loop.set_altitude(200.0);
+    flight_loop.flight_state.sim_radio_command = Some(crate::packet::Command::N3);
+    
+    // Cycle 1: Start timer
+    flight_loop.simulate_cycle().await;
+    log::info!("[SIM] N3 Cycle 1 (Timer started)");
+    
+    // Cycle 2: Wait > 1s
+    Timer::after_millis(1100).await;
+    flight_loop.flight_state.sim_radio_command = Some(crate::packet::Command::N3);
+    flight_loop.simulate_cycle().await;
+    log::info!("[SIM] N3 Cycle 2 (Triggered)");
+    // (Manual check: logs should show "Low Altitude Detected (>1s). Sending N3.")
+
+    // 4. Test Command::N4 (Acceleration Trigger)
+    log::info!("[SIM] Testing N4 command (Acceleration Trigger > 30m/s^2)...");
+    flight_loop.flight_state.packet.accel_x = 35.0;
+    flight_loop.flight_state.sim_radio_command = Some(crate::packet::Command::N4);
+    flight_loop.simulate_cycle().await;
+    // (Manual check: logs should show "High Dynamics Detected. Sending N4.")
+
+    // 5. Test ForceMode
+    log::info!("[SIM] Testing ForceMode (Startup -> DrogueDeployed)...");
+    flight_loop.flight_state.sim_radio_command = Some(crate::packet::Command::ForceMode(FlightMode::DrogueDeployed.to_u32()));
+    flight_loop.simulate_cycle().await;
+    
+    if flight_loop.flight_state.flight_mode == FlightMode::DrogueDeployed {
+        log::info!("[SIM] SUCCESS: ForceMode effective.");
+    } else {
+        log::error!("[SIM] FAILED: ForceMode did not change flight mode to DrogueDeployed. Current: {:?}", flight_loop.flight_state.flight_mode);
+    }
+
+    // 6. Test Umbilical-based Payload Commands
+    log::info!("[SIM] Testing Umbilical-based Payload Commands...");
+    use crate::umbilical::{self, UmbilicalCommand};
+    
+    log::info!("[SIM] Sending Umbilical N1...");
+    flight_loop.set_flight_mode(FlightMode::Startup);
+    umbilical::push_command(UmbilicalCommand::PayloadN1);
+    flight_loop.simulate_cycle().await;
+    // (Logs confirm "UMBILICAL: Sent N1")
+
+    log::info!("[SIM] Sending Umbilical N2...");
+    umbilical::push_command(UmbilicalCommand::PayloadN2);
+    flight_loop.simulate_cycle().await;
+    // (Logs confirm "UMBILICAL: Sent N2")
+
+    log::info!("[SIM] Sending Umbilical N3...");
+    umbilical::push_command(UmbilicalCommand::PayloadN3);
+    flight_loop.simulate_cycle().await;
+    // (Logs confirm "UMBILICAL: Sent N3")
+
+    log::info!("[SIM] Sending Umbilical N4...");
+    umbilical::push_command(UmbilicalCommand::PayloadN4);
+    flight_loop.simulate_cycle().await;
+    // (Logs confirm "UMBILICAL: Sent N4")
+
+    log::info!("--- PAYLOAD COMMAND SIMULATION COMPLETE ---\n");
+}

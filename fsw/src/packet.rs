@@ -1,3 +1,13 @@
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Command {
+    Vent,
+    N1,
+    N2,
+    N3,
+    N4,
+    ForceMode(u32),
+}
+
 #[derive(Default)]
 pub struct Packet {
     pub flight_mode: u32,

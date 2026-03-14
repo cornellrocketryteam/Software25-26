@@ -12,7 +12,7 @@ use crate::driver::ads1015::Ads1015Sensor;
 use crate::driver::onboard_flash::OnboardFlash;
 
 use embassy_rp::gpio::{Input, Output};
-use embassy_rp::uart::{Async, Uart};
+use embassy_rp::uart::{Async, Uart, UartTx};
 
 use crate::actuator::{Ssa, Buzzer, Mav, SV, Chute};
 
@@ -101,6 +101,12 @@ pub struct FlightState {
 
     // QSPI Flash
     flash: OnboardFlash<'static>,
+
+    // External Comms
+    pub payload_uart: UartTx<'static, Async>,
+
+    #[cfg(feature = "sim_payload")]
+    pub sim_radio_command: Option<crate::packet::Command>,
 }
 
 impl FlightState {
@@ -117,6 +123,7 @@ impl FlightState {
         mav: Mav<'static>,
         sv: SV<'static>,
         mut flash: OnboardFlash<'static>,
+        payload_uart: UartTx<'static, Async>,
     ) -> Self {
         let mut packet = Packet::default();
         let altimeter = Bmp390Sensor::new(spi_bus, altimeter_cs).await;
@@ -207,6 +214,10 @@ impl FlightState {
             mav,
             sv,
             flash,
+            payload_uart,
+
+            #[cfg(feature = "sim_payload")]
+            sim_radio_command: None,
         }
     }
 
@@ -412,6 +423,41 @@ impl FlightState {
             log::info!("ACK: Data received successfully!");
         }
         result
+    }
+
+    pub async fn poll_radio_command(&mut self) -> Option<crate::packet::Command> {
+        #[cfg(feature = "sim_payload")]
+        if let Some(cmd) = self.sim_radio_command.take() {
+            return Some(cmd);
+        }
+
+        let mut buf = [0u8; 32];
+        // Short timeout read to check for commands without blocking the loop
+        if let Ok(Ok(_)) = embassy_time::with_timeout(
+            embassy_time::Duration::from_millis(10),
+            self.radio.receive(&mut buf),
+        )
+        .await
+        {
+            // Simple string-based command parsing
+            if buf.starts_with(b"VNT") {
+                return Some(crate::packet::Command::Vent);
+            } else if buf.starts_with(b"N1") {
+                return Some(crate::packet::Command::N1);
+            } else if buf.starts_with(b"N2") {
+                return Some(crate::packet::Command::N2);
+            } else if buf.starts_with(b"N3") {
+                return Some(crate::packet::Command::N3);
+            } else if buf.starts_with(b"N4") {
+                return Some(crate::packet::Command::N4);
+            } else if buf.starts_with(b"FM") {
+                // Example: "FM2" for Coast
+                if let Some(digit) = (buf[2] as char).to_digit(10) {
+                    return Some(crate::packet::Command::ForceMode(digit as u32));
+                }
+            }
+        }
+        None
     }
     /*
     pub async fn transition(&mut self) {
