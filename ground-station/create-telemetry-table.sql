@@ -40,3 +40,6 @@ CREATE TABLE telemetry_data (
     ignition BOOLEAN,                  -- Ignition Command
     qd_state SMALLINT                  -- Quick Disconnect Integer
 );
+
+SELECT create_hypertable('telemetry_data', 'time');
+CREATE INDEX idx_unit_id_time ON telemetry_data (unit_id, time DESC);
