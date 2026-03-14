@@ -56,9 +56,9 @@ async fn main(spawner: Spawner) {
     */
     
     let spi_bus = module::init_shared_spi(
-        p.SPI0, p.PIN_16, p.PIN_19, p.PIN_18, p.DMA_CH2, p.DMA_CH3,
+        p.SPI0, p.PIN_4, p.PIN_3, p.PIN_2, p.DMA_CH2, p.DMA_CH3,
     );
-    let uart = module::init_uart1(p.UART1, p.PIN_4, p.PIN_5, p.DMA_CH0, p.DMA_CH1);
+    let uart = module::init_uart0(p.UART0, p.PIN_30, p.PIN_31, p.DMA_CH0, p.DMA_CH1);
 
     let fram_cs = Output::new(p.PIN_17, Level::High);
     let _flash_cs = Output::new(p.PIN_6, Level::High); // For onboard flash

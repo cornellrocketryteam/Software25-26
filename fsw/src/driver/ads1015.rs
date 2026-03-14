@@ -60,7 +60,7 @@ impl<E> From<E> for Ads1015Error<E> {
 
 /// ADS1015 12-bit ADC driver
 pub struct Ads1015Sensor {
-    i2c: I2cDevice<'static>,
+    pub i2c: I2cDevice<'static>,
 }
 
 impl Ads1015Sensor {

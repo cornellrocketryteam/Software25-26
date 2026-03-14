@@ -41,7 +41,7 @@ impl<E> From<E> for Mmc56x3Error<E> {
 
 /// MMC56X3 magnetometer driver wrapper
 pub struct Mmc56x3Sensor {
-    i2c: I2cDevice<'static>,
+    pub i2c: I2cDevice<'static>,
 }
 
 impl Mmc56x3Sensor {

@@ -5,7 +5,7 @@ use embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice as SharedSpiDevice;
 use embassy_rp::gpio::Output;
 use embassy_rp::i2c::{Config as I2cConfig, I2c, InterruptHandler as I2cInterruptHandler};
 use embassy_rp::peripherals::{
-    DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, DMA_CH4, FLASH, I2C0, PIN_0, PIN_1, PIN_4, PIN_5, PIN_16, PIN_18, PIN_19, PIN_21, PIN_36, PIN_39, PIN_40, PIN_47, PWM_SLICE8, SPI0, UART1, USB};
+    DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, DMA_CH4, FLASH, I2C0, PIN_0, PIN_1, PIN_2, PIN_3, PIN_4, PIN_16, PIN_19, PIN_21, PIN_30, PIN_31, PIN_36, PIN_39, PIN_40, PIN_47, PWM_SLICE8, SPI0, UART0, USB};
 use embassy_rp::spi::{Config as SpiConfig, Spi};
 use embassy_rp::uart::{Config as UartConfig, InterruptHandler as UartInterruptHandler, Uart};
 use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
@@ -28,7 +28,7 @@ pub type SpiDevice<'a> = SharedSpiDevice<'a, NoopRawMutex, Spi<'static, SPI0, sp
 bind_interrupts!(pub struct Irqs {
     USBCTRL_IRQ => UsbInterruptHandler<USB>;
     I2C0_IRQ => I2cInterruptHandler<I2C0>;
-    UART1_IRQ => UartInterruptHandler<UART1>;
+    UART0_IRQ => UartInterruptHandler<UART0>;
     DMA_IRQ_0 => DmaInterruptHandler<DMA_CH0>, DmaInterruptHandler<DMA_CH1>, DmaInterruptHandler<DMA_CH2>, DmaInterruptHandler<DMA_CH3>, DmaInterruptHandler<DMA_CH4>;
 });
 
@@ -103,9 +103,9 @@ pub fn init_shared_i2c(
 // Returns a shared SPI instance wrapped in a Mutex that can be used by multiple sensors
 pub fn init_shared_spi(
     spi0: Peri<'static, SPI0>,
-    miso: Peri<'static, PIN_16>,
-    mosi: Peri<'static, PIN_19>,
-    clk: Peri<'static, PIN_18>,
+    miso: Peri<'static, PIN_4>,
+    mosi: Peri<'static, PIN_3>,
+    clk: Peri<'static, PIN_2>,
     tx_dma: Peri<'static, DMA_CH2>,
     rx_dma: Peri<'static, DMA_CH3>,
 ) -> &'static SharedSpi {
@@ -120,13 +120,13 @@ pub fn init_shared_spi(
     SPI_BUS.init(Mutex::new(spi))
 }
 
-// Initialize UART1 for RFD900x radio
+// Initialize UART0 for RFD900x radio
 //
 // Returns async UART instance configured at 9600 baud
-pub fn init_uart1(
-    uart1: Peri<'static, UART1>,
-    tx: Peri<'static, PIN_4>,
-    rx: Peri<'static, PIN_5>,
+pub fn init_uart0(
+    uart0: Peri<'static, UART0>,
+    tx: Peri<'static, PIN_30>,
+    rx: Peri<'static, PIN_31>,
     tx_dma: Peri<'static, DMA_CH0>,
     rx_dma: Peri<'static, DMA_CH1>,
 ) -> Uart<'static, uart::Async> {
@@ -134,7 +134,7 @@ pub fn init_uart1(
     let mut uart_config = UartConfig::default();
     uart_config.baudrate = constants::UART_BAUDRATE;
 
-    Uart::new(uart1, tx, rx, Irqs, tx_dma, rx_dma, uart_config)
+    Uart::new(uart0, tx, rx, Irqs, tx_dma, rx_dma, uart_config)
 }
 
 use crate::actuator::Ssa;

@@ -36,7 +36,7 @@ impl<E> From<E> for Lsm6dsoxError<E> {
 
 /// LSM6DSOX 6-axis IMU driver
 pub struct Lsm6dsoxSensor {
-    i2c: I2cDevice<'static>,
+    pub i2c: I2cDevice<'static>,
 }
 
 impl Lsm6dsoxSensor {

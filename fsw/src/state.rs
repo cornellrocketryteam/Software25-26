@@ -127,15 +127,34 @@ impl FlightState {
         };
         let mut fram = Fram::new(spi_bus, fram_cs);
         let mut gps = UbloxMaxM10s::new(i2c_bus);
-
-        // Configure GPS module to output NAV-PVT messages
-        if let Err(e) = gps.configure().await {
-            log::error!("Failed to configure GPS: {:?}", e);
+        
+        #[cfg(not(any(feature = "test_mav", feature = "test_sv", feature = "test_ssa", feature = "test_buzzer")))]
+        {
+            // Configure GPS module to output NAV-PVT messages
+            if let Err(e) = gps.configure().await {
+                log::error!("Failed to configure GPS: {:?}", e);
+            }
         }
 
+        #[cfg(not(any(feature = "test_mav", feature = "test_sv", feature = "test_ssa", feature = "test_buzzer")))]
         let magnetometer = Mmc56x3Sensor::new(i2c_bus).await;
+        
+        #[cfg(any(feature = "test_mav", feature = "test_sv", feature = "test_ssa", feature = "test_buzzer"))]
+        let magnetometer = Mmc56x3Sensor { i2c: embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice::new(i2c_bus) }; // skip init
+
+        
+        #[cfg(not(any(feature = "test_mav", feature = "test_sv", feature = "test_ssa", feature = "test_buzzer")))]
         let imu = Lsm6dsoxSensor::new(i2c_bus).await;
+        
+        #[cfg(any(feature = "test_mav", feature = "test_sv", feature = "test_ssa", feature = "test_buzzer"))]
+        let imu = Lsm6dsoxSensor { i2c: embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice::new(i2c_bus) }; // skip init
+        
+        #[cfg(not(any(feature = "test_mav", feature = "test_sv", feature = "test_ssa", feature = "test_buzzer")))]
         let adc = Ads1015Sensor::new(i2c_bus).await;
+        
+        #[cfg(any(feature = "test_mav", feature = "test_sv", feature = "test_ssa", feature = "test_buzzer"))]
+        let adc = Ads1015Sensor { i2c: embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice::new(i2c_bus) };
+
         let radio = Rfd900x::new(uart);
 
         // Read stored state from FRAM

@@ -142,8 +142,10 @@ impl<'a> Mav<'a> {
 
     const SERVO_FREQ_HZ: u32 = 330;
     const SERVO_PERIOD_US: u16 = (1_000_000 / Self::SERVO_FREQ_HZ) as u16; // 3030 µs
-    const SERVO_MIN_US: u16 = 1000;
-    const SERVO_MAX_US: u16 = 2000;
+    const SERVO_MIN_US: u16 = 800;
+    const SERVO_MAX_US: u16 = 2200;
+    const SERVO_OPEN_US: u16 = 2015;
+    const SERVO_CLOSE_US: u16 = 995;
     const SERVO_NEUTRAL_US: u16 = 1520;
 
     /// Create new MAV servo driver.
@@ -174,16 +176,15 @@ impl<'a> Mav<'a> {
     pub fn set_position(&mut self, position: f32) {
         let pos = position.clamp(0.0, 1.0);
 
-        let span = (Self::SERVO_MAX_US - Self::SERVO_MIN_US) as f32;
-        let pulse = Self::SERVO_MIN_US as f32 + (span * pos);
+        let pulse = Self::SERVO_OPEN_US as f32 + ((Self::SERVO_CLOSE_US as f32 - Self::SERVO_OPEN_US as f32) * pos);
 
         // Add 0.5 for rounding before truncating to integer in no_std
         self.set_pulse_width((pulse + 0.5) as u16);
     }
 
-    /// Open valve (minimum pulse)
+    /// Open valve
     pub fn open(&mut self, duration_ms: u64) {
-        self.set_pulse_width(Self::SERVO_MIN_US);
+        self.set_pulse_width(Self::SERVO_OPEN_US);
 
         if duration_ms > 0 {
             self.open_deadline =
@@ -193,9 +194,9 @@ impl<'a> Mav<'a> {
         }
     }
 
-    /// Close valve (maximum pulse)
+    /// Close valve
     pub fn close(&mut self) {
-        self.set_pulse_width(Self::SERVO_MAX_US);
+        self.set_pulse_width(Self::SERVO_CLOSE_US);
         self.open_deadline = None;
     }
 
