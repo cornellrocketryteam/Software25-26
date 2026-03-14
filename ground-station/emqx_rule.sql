@@ -1,54 +1,32 @@
 SELECT
-    -- === Core Shared Data (from both RATS & Umbilical) ===
-    payload.ms_since_boot as ms_since_boot,
-    payload.battery_voltage as battery_voltage,
-    payload.pt_3_pressure as pt_3_pressure,
-    payload.rtd_temperature as rtd_temperature,
-    payload.altitude as altitude,
-
-    -- === Shared Metadata (from both RATS & Umbilical) ===
-    payload.metadata_altitude_armed as metadata_altitude_armed,
-    payload.metadata_altimeter_is_valid as metadata_altimeter_is_valid,
-    payload.metadata_gps_is_valid as metadata_gps_is_valid,
-    payload.metadata_imu_is_valid as metadata_imu_is_valid,
-    payload.metadata_accelerometer_is_valid as metadata_accelerometer_is_valid,
-    payload.metadata_umbilical_lock as metadata_umbilical_lock,
-    payload.metadata_adc_is_valid as metadata_adc_is_valid,
-    payload.metadata_fram_is_valid as metadata_fram_is_valid,
-    payload.metadata_sd_card_is_valid as metadata_sd_card_is_valid,
-    payload.metadata_gps_message_fresh as metadata_gps_message_fresh,
-    payload.metadata_rocket_was_safed as metadata_rocket_was_safed,
-    payload.metadata_mav_state as metadata_mav_state,
-    payload.metadata_sv_state as metadata_sv_state,
-    payload.metadata_flight_mode as metadata_flight_mode,
-
-    -- === Shared Events (from both RATS & Umbilical) ===
-    payload.events as events,
-
-    -- === Additional Shared Data (from both RATS & Umbilical) ===
+    -- Top-Level Radio
     payload.sync_word as sync_word,
-    payload.temperature as temperature,
+
+    -- Shared Telemetry (Rust 'Packet' Struct)
+    payload.flight_mode as flight_mode,
+    payload.pressure as pressure,
+    payload.temp as temp,
+    payload.altitude as altitude,
     payload.latitude as latitude,
     payload.longitude as longitude,
-    payload.satellites_in_view as satellites_in_view,
-    payload.unix_time as unix_time,
-    payload.horizontal_accuracy as horizontal_accuracy,
-    payload.pt_4_pressure as pt_4_pressure,
-    payload.acceleration_x as acceleration_x,
-    payload.acceleration_y as acceleration_y,
-    payload.acceleration_z as acceleration_z,
+    payload.num_satellites as num_satellites,
+    payload.timestamp as timestamp,
+    payload.mag_x as mag_x,
+    payload.mag_y as mag_y,
+    payload.mag_z as mag_z,
+    payload.accel_x as accel_x,
+    payload.accel_y as accel_y,
+    payload.accel_z as accel_z,
     payload.gyro_x as gyro_x,
     payload.gyro_y as gyro_y,
     payload.gyro_z as gyro_z,
-    payload.orientation_x as orientation_x,
-    payload.orientation_y as orientation_y,
-    payload.orientation_z as orientation_z,
-    payload.accelerometer_x as accelerometer_x,
-    payload.accelerometer_y as accelerometer_y,
-    payload.accelerometer_z as accelerometer_z,
-    payload.motor_state as motor_state,
+    payload.pt3 as pt3,
+    payload.pt4 as pt4,
+    payload.rtd as rtd,
+    payload.sv_open as sv_open,
+    payload.mav_open as mav_open,
 
-    -- === Umbilical-Specific Data (NULL for RATS) ===
+    -- Fill Station Specific
     payload.pt_1_pressure as pt_1_pressure,
     payload.pt_2_pressure as pt_2_pressure,
     payload.ball_valve_open as ball_valve_open,
@@ -58,7 +36,7 @@ SELECT
     payload.ignition as ignition,
     payload.qd_state as qd_state,
 
-    -- === Unit ID (from topic) ===
+    -- Unit ID routing (Dynamically grabbed from topic "rats/raw/0")
     int(nth(3, split(topic, '/'))) as unit_id
   
 FROM
