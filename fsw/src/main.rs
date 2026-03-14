@@ -8,17 +8,24 @@ use embassy_rp::gpio::{Level, Output};
 use embassy_time::Timer;
 use {defmt_rtt as _, panic_probe as _};
 
+pub mod actuator;
 mod constants;
 mod driver;
+mod flight_loop;
+#[cfg(any(
+    feature = "sim_simple",
+    feature = "sim_fault",
+    feature = "sim_stability",
+    feature = "sim_extra",
+    feature = "sim_flash",
+    feature = "sim_hsim"
+))]
+#[path = "../Test/flight_sim.rs"]
+mod flight_sim;
 mod module;
 mod packet;
 mod state;
-mod flight_loop;
-pub mod actuator;
 pub mod umbilical;
-#[cfg(any(feature = "sim_simple", feature = "sim_fault", feature = "sim_stability", feature = "sim_extra", feature = "sim_flash", feature = "sim_hsim"))]
-#[path = "../Test/flight_sim.rs"]
-mod flight_sim;
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
@@ -35,7 +42,7 @@ async fn main(spawner: Spawner) {
     log::info!("Booting Cornell Rocketry FSW...");
     Timer::after_millis(1000).await;
     let i2c_bus = module::init_shared_i2c(p.I2C0, p.PIN_0, p.PIN_1);
-    
+
     // Perform an I2C scan
     /*
     log::info!("Scanning I2C Bus...");
@@ -57,10 +64,9 @@ async fn main(spawner: Spawner) {
         log::info!("I2C scan complete. Found {} devices.", found);
     }
     */
-    
-    let spi_bus = module::init_shared_spi(
-        p.SPI0, p.PIN_16, p.PIN_19, p.PIN_18, p.DMA_CH2, p.DMA_CH3,
-    );
+
+    let spi_bus =
+        module::init_shared_spi(p.SPI0, p.PIN_16, p.PIN_19, p.PIN_18, p.DMA_CH2, p.DMA_CH3);
     let uart = module::init_uart1(p.UART1, p.PIN_4, p.PIN_5, p.DMA_CH0, p.DMA_CH1);
 
     let fram_cs = Output::new(p.PIN_17, Level::High);
@@ -84,26 +90,40 @@ async fn main(spawner: Spawner) {
         p.PIN_47,
     );
     let flash = module::init_onboard_flash(p.FLASH, p.DMA_CH4);
-    
+
     log::info!("Initializing Flight State (Sensors & Actuators)...");
     let mut flight_state = state::FlightState::new(
-        i2c_bus, spi_bus, fram_cs, altimeter_cs, arming_switch, umbilical_sense, uart,
+        i2c_bus,
+        spi_bus,
+        fram_cs,
+        altimeter_cs,
+        arming_switch,
+        umbilical_sense,
+        uart,
         ssa,
         buzzer,
         mav,
         sv,
         flash,
-    ).await;
+    )
+    .await;
     log::info!("Flight State Initialized.");
 
     // Reset FRAM for testing (COMMENT OUT FOR REAL FLIGHT)
     flight_state.reset_fram().await;
 
     // --- FLIGHT SIMULATIONS --- //
-    #[cfg(any(feature = "sim_simple", feature = "sim_fault", feature = "sim_stability", feature = "sim_extra", feature = "sim_flash", feature = "sim_hsim"))]
+    #[cfg(any(
+        feature = "sim_simple",
+        feature = "sim_fault",
+        feature = "sim_stability",
+        feature = "sim_extra",
+        feature = "sim_flash",
+        feature = "sim_hsim"
+    ))]
     let mut flight_state = {
         let mut flight_loop = flight_loop::FlightLoop::new(flight_state);
-        
+
         #[cfg(feature = "sim_simple")]
         {
             log::info!("Starting Flight Simulation (Simple)...");
@@ -146,10 +166,19 @@ async fn main(spawner: Spawner) {
             log::info!("Simulation Complete.");
         }
 
-        #[cfg(not(any(feature = "test_mav", feature = "test_sv", feature = "test_ssa", feature = "test_sensors", feature = "test_buzzer", feature = "test_all")))]
+        #[cfg(not(any(
+            feature = "test_mav",
+            feature = "test_sv",
+            feature = "test_ssa",
+            feature = "test_sensors",
+            feature = "test_buzzer",
+            feature = "test_all"
+        )))]
         {
             log::info!("All Simulations Complete.");
-            loop { Timer::after_millis(1000).await; }
+            loop {
+                Timer::after_millis(1000).await;
+            }
         }
 
         flight_loop.flight_state
@@ -161,11 +190,14 @@ async fn main(spawner: Spawner) {
     {
         log::info!("Starting MAV Test Mode...");
         loop {
-            log::info!("Actuating MAV OPEN for {}ms", constants::MAV_OPEN_DURATION_MS);
+            log::info!(
+                "Actuating MAV OPEN for {}ms",
+                constants::MAV_OPEN_DURATION_MS
+            );
             flight_state.open_mav(constants::MAV_OPEN_DURATION_MS).await;
             flight_state.update_actuators().await;
             Timer::after_millis(constants::MAV_OPEN_DURATION_MS + 2000).await;
-            
+
             log::info!("Actuating MAV CLOSE");
             flight_state.close_mav().await;
             flight_state.update_actuators().await;
@@ -181,7 +213,7 @@ async fn main(spawner: Spawner) {
             flight_state.open_sv(2000).await;
             flight_state.update_actuators().await;
             Timer::after_millis(4000).await;
-            
+
             log::info!("Actuating SV CLOSE");
             flight_state.close_sv().await;
             flight_state.update_actuators().await;
@@ -197,7 +229,7 @@ async fn main(spawner: Spawner) {
             flight_state.trigger_drogue().await;
             flight_state.update_actuators().await;
             Timer::after_millis(constants::SSA_THRESHOLD_MS + 2000).await;
-            
+
             log::info!("Firing Main SSA for {}ms", constants::SSA_THRESHOLD_MS);
             flight_state.trigger_main().await;
             flight_state.update_actuators().await;
@@ -271,13 +303,50 @@ async fn main(spawner: Spawner) {
         }
     }
 
-    #[cfg(any(feature = "test_all", feature = "test_hw_all"))]
+    #[cfg(feature = "test_flash")]
+    {
+        log::info!("Starting QSPI Flash STRESS TEST Mode...");
+        let mut loop_handler = flight_loop::FlightLoop::new(flight_state);
+        let mut test_counter = 0;
+
+        loop {
+            log::info!("--- Stress Test Cycle {} ---", test_counter);
+
+            // Write 10 packets rapidly with varying data
+            for i in 0..10 {
+                loop_handler.flight_state.packet.altitude = 100.0 * test_counter as f32 + i as f32;
+                loop_handler.flight_state.packet.temp = 20.0 + (i as f32 * 0.5);
+                loop_handler.flight_state.packet.pressure = 101325.0 - (test_counter as f32 * 10.0);
+                loop_handler.flight_state.packet.flight_mode = (i % 7) as u32;
+
+                loop_handler.flight_state.save_packet_to_flash().await;
+            }
+
+            // Report status
+            loop_handler.flight_state.print_flash_status().await;
+
+            // Poll for commands while waiting
+            log::info!("Waiting for umbilical commands (e.g. <G>, <W>, <I>)...");
+            for _ in 0..20 {
+                loop_handler.check_umbilical_commands().await;
+                Timer::after_millis(100).await;
+            }
+
+            led.toggle();
+            test_counter += 1;
+        }
+    }
+
+    #[cfg(all(
+        any(feature = "test_all", feature = "test_hw_all"),
+        not(feature = "test_flash")
+    ))]
     {
         log::info!("Starting Combined Hardware Test Sequence...");
         let mut test_cycle = 0;
         loop {
             log::info!("--- Combined Test Cycle {} ---", test_cycle);
-            
+
             // 1. Read Sensors
             log::info!("1. Testing Sensors...");
             flight_state.read_sensors().await;
@@ -330,15 +399,30 @@ async fn main(spawner: Spawner) {
     }
 
     // --- NORMAL FLIGHT LOOP --- //
-    #[cfg(not(any(feature = "test_mav", feature = "test_sv", feature = "test_ssa", feature = "test_sensors", feature = "test_buzzer", feature = "test_radio", feature = "test_all", feature = "test_hw_all", feature = "sim_simple", feature = "sim_fault", feature = "sim_stability", feature = "sim_extra", feature = "sim_flash", feature = "sim_hsim")))]
+    #[cfg(not(any(
+        feature = "test_mav",
+        feature = "test_sv",
+        feature = "test_ssa",
+        feature = "test_sensors",
+        feature = "test_buzzer",
+        feature = "test_radio",
+        feature = "test_all",
+        feature = "test_hw_all",
+        feature = "sim_simple",
+        feature = "sim_fault",
+        feature = "sim_stability",
+        feature = "sim_extra",
+        feature = "sim_flash",
+        feature = "sim_hsim"
+    )))]
     {
         let mut flight_loop = flight_loop::FlightLoop::new(flight_state);
-        
+
         // STEP 4: Run actual flight loop with real telemetry
         loop {
             flight_loop.flight_state.cycle_count += 1;
             flight_loop.execute().await;
-    
+
             // Toggle LED for heartbeat (every 10 cycles = 1 Hz blink at 10 Hz loop)
             if flight_loop.flight_state.cycle_count % 10 == 0 {
                 led.toggle();

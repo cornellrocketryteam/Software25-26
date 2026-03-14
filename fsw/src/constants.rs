@@ -67,6 +67,8 @@ pub const SV_PIN: u8 = 47;
 pub const MAIN_LOOP_DELAY_MS: u64 = 500;
 // set this to 50 for 20 Hz, rn it is 250 for 4 Hz, 1000 is 1 Hz
 
+pub const FLASH_LOGGING_PERIOD_MS: u64 = 1000;
+
 // USB Logger Configuration
 
 /// USB logger ring buffer size in bytes

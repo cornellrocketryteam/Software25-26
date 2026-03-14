@@ -91,4 +91,61 @@ impl Packet {
             mav_open: bytes[81] != 0,
         }
     }
+
+    pub const CSV_HEADER: &'static str = "flight_mode,pressure,temp,altitude,latitude,longitude,num_satellites,timestamp,mag_x,mag_y,mag_z,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,pt3,pt4,rtd,sv_open,mav_open\n";
+
+    pub fn to_csv(&self, buf: &mut [u8]) -> usize {
+        use core::fmt::Write;
+        let mut wrapper = WriteWrapper::new(buf);
+        let _ = write!(
+            wrapper,
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
+            self.flight_mode,
+            self.pressure,
+            self.temp,
+            self.altitude,
+            self.latitude,
+            self.longitude,
+            self.num_satellites,
+            self.timestamp,
+            self.mag_x,
+            self.mag_y,
+            self.mag_z,
+            self.accel_x,
+            self.accel_y,
+            self.accel_z,
+            self.gyro_x,
+            self.gyro_y,
+            self.gyro_z,
+            self.pt3,
+            self.pt4,
+            self.rtd,
+            self.sv_open as u8,
+            self.mav_open as u8
+        );
+        wrapper.offset
+    }
+}
+
+struct WriteWrapper<'a> {
+    buf: &'a mut [u8],
+    offset: usize,
+}
+
+impl<'a> WriteWrapper<'a> {
+    fn new(buf: &'a mut [u8]) -> Self {
+        Self { buf, offset: 0 }
+    }
+}
+
+impl<'a> core::fmt::Write for WriteWrapper<'a> {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        let len = s.len();
+        if self.offset + len > self.buf.len() {
+            return Err(core::fmt::Error);
+        }
+        self.buf[self.offset..self.offset + len].copy_from_slice(s.as_bytes());
+        self.offset += len;
+        Ok(())
+    }
 }

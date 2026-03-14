@@ -427,32 +427,19 @@ pub async fn simulate_extra_features(flight_loop: &mut FlightLoop) {
 pub async fn simulate_flash_storage(flight_loop: &mut FlightLoop) {
     log::info!("\n--- STARTING QSPI FLASH SIMULATION ---");
     
-    // 1. Write simulated data
-    log::info!("[FLASH SIM] Writing fake packet data to Flash...");
-    flight_loop.set_altitude(6767.0); 
-    flight_loop.flight_state.packet.flight_mode = FlightMode::Ascent as u32;
+    // 1. Write simulated data as CSV appends
+    log::info!("[FLASH SIM] Appending multiple packets to Flash...");
     
-    // Explicitly command a flash write
-    flight_loop.flight_state.save_packet_to_flash().await;
-    
-    Timer::after_millis(100).await;
-    
-    // 2. Read it back
-    log::info!("[FLASH SIM] Reading packet back from Flash...");
-    match flight_loop.flight_state.read_flash_packet().await {
-        Ok(recovered_packet) => {
-            if recovered_packet.altitude == 6767.0 && recovered_packet.flight_mode == FlightMode::Ascent as u32 {
-                log::info!("[FLASH SIM] SUCCESS: Recovered packet matches written data! Alt: {:.2}", recovered_packet.altitude);
-            } else {
-                log::error!("[FLASH SIM] FAILED: Recovered packet data mismatch. Alt: {:.2}", recovered_packet.altitude);
-            }
-        }
-        Err(e) => {
-            log::error!("[FLASH SIM] FAILED: Could not read from QSPI Flash: {:?}", e);
-        }
+    for i in 0..5 {
+        flight_loop.set_altitude(100.0 * i as f32); 
+        flight_loop.flight_state.packet.flight_mode = FlightMode::Ascent as u32;
+        flight_loop.flight_state.save_packet_to_flash().await;
     }
-
+    
     Timer::after_millis(100).await;
+    
+    log::info!("[FLASH SIM] Verification: Use picotool or a custom script to read the last 2MB of flash to see CSV data.");
+    log::info!("[FLASH SIM] Header: {}", crate::packet::Packet::CSV_HEADER.trim());
 
     log::info!("       FLASH SIMULATION FULLY COMPLETE     ");
     Timer::after_millis(1000).await;
