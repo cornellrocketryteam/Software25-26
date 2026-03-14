@@ -1,3 +1,5 @@
+# Prerequisite: pip install psycopg2-binary
+
 import psycopg2
 import sys
 
