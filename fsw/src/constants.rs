@@ -99,13 +99,13 @@ pub const SSA_THRESHOLD_MS: u64 = 3000; // Duration to fire ematch
 pub const ADS1015_I2C_ADDR: u8 = 0x48;
 
 // Linear scaling coefficients: scaled = m * raw + b
-// PT3 (channel 0)
+// PT3 (channel 3)
 pub const ADS1015_PT3_SCALE_M: f32 = 1.0;  // TODO: set actual slope
 pub const ADS1015_PT3_SCALE_B: f32 = 0.0;  // TODO: set actual offset
-// PT4 (channel 1)
+// PT4 (channel 2)
 pub const ADS1015_PT4_SCALE_M: f32 = 1.0;  // TODO: set actual slope
 pub const ADS1015_PT4_SCALE_B: f32 = 0.0;  // TODO: set actual offset
-// RTD (channel 2)
+// RTD (channel 1)
 pub const ADS1015_RTD_SCALE_M: f32 = 1.0;  // TODO: set actual slope
 pub const ADS1015_RTD_SCALE_B: f32 = 0.0;  // TODO: set actual offset
 

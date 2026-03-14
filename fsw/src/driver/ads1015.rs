@@ -146,9 +146,10 @@ impl Ads1015Sensor {
         let raw_ch3 = self.read_channel(3).await?;
 
         // Store raw values in packet (ch0-ch2 only, packet unchanged)
-        packet.pt3 = raw_ch0 as f32;
-        packet.pt4 = raw_ch1 as f32;
-        packet.rtd = raw_ch2 as f32;
+        packet.rtd = raw_ch0 as f32; // channel 1
+        packet.pt4 = raw_ch1 as f32; // channel 2
+        packet.pt3 = raw_ch2 as f32; // channel 3
+        packet.ain3 = raw_ch3 as f32; // channel 4
 
         Ok([raw_ch0, raw_ch1, raw_ch2, raw_ch3])
     }

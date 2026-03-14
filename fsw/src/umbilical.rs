@@ -11,9 +11,9 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use core::cell::UnsafeCell;
 
 /// Sync header prepended to every telemetry frame so the receiver can find
-/// packet boundaries in the byte stream.  Total frame = 2 + 80 = 82 bytes.
+/// packet boundaries in the byte stream.  Total frame = 2 + 84 = 86 bytes.
 pub const SYNC_HEADER: [u8; 2] = [0xAA, 0x55];
-const FRAME_SIZE: usize = SYNC_HEADER.len() + 80; // 82
+const FRAME_SIZE: usize = SYNC_HEADER.len() + 84; // 86
 
 /// Global software umbilical connection tracked by embassy-usb.
 static IS_CONNECTED: AtomicBool = AtomicBool::new(false);
@@ -21,14 +21,14 @@ static IS_CONNECTED: AtomicBool = AtomicBool::new(false);
 /// Simple atomic telemetry buffer - no Signal, no blocking
 /// Main loop writes, sender task reads, both non-blocking
 struct TelemetryBuffer {
-    data: UnsafeCell<[u8; 80]>,
+    data: UnsafeCell<[u8; 84]>,
     ready: AtomicBool,
 }
 
 unsafe impl Sync for TelemetryBuffer {}
 
 static TELEMETRY_BUF: TelemetryBuffer = TelemetryBuffer {
-    data: UnsafeCell::new([0; 80]),
+    data: UnsafeCell::new([0; 84]),
     ready: AtomicBool::new(false),
 };
 
@@ -56,7 +56,7 @@ static COMMANDS: Channel<CriticalSectionRawMutex, UmbilicalCommand, 4> = Channel
 
 /// Called by the flight loop to send telemetry
 /// Non-blocking: always succeeds immediately, overwrites previous data if not sent yet
-pub fn update_telemetry(data: &[u8; 80]) {
+pub fn update_telemetry(data: &[u8; 84]) {
     unsafe {
         // Copy data to buffer
         (*TELEMETRY_BUF.data.get()).copy_from_slice(data);
@@ -112,10 +112,10 @@ async fn umbilical_sender_task(mut sender: Sender<'static, UsbDriver>) -> ! {
                 let data = unsafe { *TELEMETRY_BUF.data.get() };
                 TELEMETRY_BUF.ready.store(false, Ordering::Release);
 
-                // Build framed packet: [0xAA, 0x55, ...80 bytes telemetry...] = 82 bytes
+                // Build framed packet: [0xAA, 0x55, ...84 bytes telemetry...] = 86 bytes
                 let mut frame = [0u8; FRAME_SIZE];
                 frame[0..2].copy_from_slice(&SYNC_HEADER);
-                frame[2..82].copy_from_slice(&data);
+                frame[2..86].copy_from_slice(&data);
 
                 // Send first 64 bytes of frame
                 match sender.write_packet(&frame[0..64]).await {
@@ -127,8 +127,8 @@ async fn umbilical_sender_task(mut sender: Sender<'static, UsbDriver>) -> ! {
                     }
                 };
 
-                // Send remaining 18 bytes of frame
-                match sender.write_packet(&frame[64..82]).await {
+                // Send remaining 22 bytes of frame
+                match sender.write_packet(&frame[64..86]).await {
                     Ok(_) => {}
                     Err(EndpointError::BufferOverflow) => panic!("Buffer overflow on second chunk"),
                     Err(EndpointError::Disabled) => {

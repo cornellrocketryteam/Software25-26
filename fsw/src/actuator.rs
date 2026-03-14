@@ -144,14 +144,14 @@ impl<'a> Mav<'a> {
     const SERVO_PERIOD_US: u16 = (1_000_000 / Self::SERVO_FREQ_HZ) as u16; // 3030 µs
     const SERVO_MIN_US: u16 = 800;
     const SERVO_MAX_US: u16 = 2200;
-    const SERVO_OPEN_US: u16 = 2015;
-    const SERVO_CLOSE_US: u16 = 995;
+    const SERVO_OPEN_US: u16 = 1900;
+    const SERVO_CLOSE_US: u16 = 1350;
     const SERVO_NEUTRAL_US: u16 = 1520;
 
     /// Create new MAV servo driver.
     /// Assumes PWM slice already configured for:
     /// - top = 3030
-    /// - divider ≈ 125
+    /// - divider ≈ 150
     pub fn new(pwm: Pwm<'a>) -> Self {
         let mut mav = Self {
             pwm,

@@ -167,11 +167,11 @@ pub fn init_mav(
 ) -> Mav<'static> {
     let mut config = PwmConfig::default();
     
-    // For 125 MHz system clock -> 330 Hz Servo frequency:
-    // divider = 125.0
+    // For 150 MHz system clock -> 330 Hz Servo frequency:
+    // divider = 150.0
     // top = 3030 
     config.top = 3030;
-    config.divider = 125.into(); // Needs to be integer for into() here
+    config.divider = 150.into(); // Needs to be integer for into() here
     
     // Using output A for Pin 8 (Slice 4A) from pinout
     let pwm = Pwm::new_output_a(slice, pin, config);
