@@ -7,7 +7,7 @@ use embassy_rp::gpio::Output;
 use embassy_rp::i2c::{Config as I2cConfig, I2c, InterruptHandler as I2cInterruptHandler};
 use embassy_rp::peripherals::{
     DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, DMA_CH4, DMA_CH5, DMA_CH6, FLASH, I2C0, PIN_0, PIN_1,
-    PIN_4, PIN_5, PIN_32, PIN_33, PIN_16, PIN_18, PIN_19, PIN_21, PIN_36, PIN_39, PIN_40, PIN_47,
+    PIN_4, PIN_5, PIN_12, PIN_13, PIN_16, PIN_18, PIN_19, PIN_21, PIN_36, PIN_39, PIN_40, PIN_47,
     PWM_SLICE8, SPI0, UART0, UART1, USB,
 };
 use embassy_rp::spi::{Config as SpiConfig, Spi};
@@ -113,9 +113,9 @@ pub fn init_shared_i2c(
 // Returns a shared SPI instance wrapped in a Mutex that can be used by multiple sensors
 pub fn init_shared_spi(
     spi0: Peri<'static, SPI0>,
-    miso: Peri<'static, PIN_4>,
-    mosi: Peri<'static, PIN_3>,
-    clk: Peri<'static, PIN_2>,
+    miso: Peri<'static, PIN_16>,
+    mosi: Peri<'static, PIN_19>,
+    clk: Peri<'static, PIN_18>,
     tx_dma: Peri<'static, DMA_CH2>,
     rx_dma: Peri<'static, DMA_CH3>,
 ) -> &'static SharedSpi {
@@ -130,13 +130,13 @@ pub fn init_shared_spi(
     SPI_BUS.init(Mutex::new(spi))
 }
 
-// Initialize UART0 for RFD900x radio
+// Initialize UART1 for RFD900x radio
 //
-// Returns async UART instance configured at 115200 baud
-pub fn init_uart0(
-    uart0: Peri<'static, UART0>,
-    tx: Peri<'static, PIN_30>,
-    rx: Peri<'static, PIN_31>,
+// Returns async UART instance configured at 9600 baud
+pub fn init_uart1(
+    uart1: Peri<'static, UART1>,
+    tx: Peri<'static, PIN_4>,
+    rx: Peri<'static, PIN_5>,
     tx_dma: Peri<'static, DMA_CH0>,
     rx_dma: Peri<'static, DMA_CH1>,
 ) -> Uart<'static, uart::Async> {
@@ -150,8 +150,8 @@ pub fn init_uart0(
 // Initialize UART0 for Payload
 pub fn init_uart0(
     uart0: Peri<'static, UART0>,
-    tx: Peri<'static, PIN_32>,
-    rx: Peri<'static, PIN_33>,
+    tx: Peri<'static, PIN_12>,
+    rx: Peri<'static, PIN_13>,
     tx_dma: Peri<'static, DMA_CH5>,
     rx_dma: Peri<'static, DMA_CH6>,
 ) -> Uart<'static, uart::Async> {
