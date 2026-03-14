@@ -1,13 +1,4 @@
 services:
-  go2rtc:
-    image: alexxit/go2rtc
-    network_mode: host
-    privileged: true
-    restart: unless-stopped
-    environment:
-      - TZ=America/New_York
-    volumes:
-      - "~/go2rtc:/config"
   emqx:
     image: emqx/emqx:latest
     container_name: emqx
@@ -16,15 +7,15 @@ services:
       - "8883:8883"
       - "8083:8083"
       - "18083:18083"
-    environment:
-      - EMQX_NODE_NAME="telemetry-broker"
     volumes:
       - emqx_data:/opt/emqx/data
       - emqx_log:/opt/emqx/log
     networks:
-      - rats-net
+      rats-net:
+        ipv4_address: 172.18.0.5
     depends_on:
       - timescaledb
+    restart: unless-stopped
   timescaledb:
     image: timescale/timescaledb:latest-pg17
     container_name: timescaledb
@@ -36,18 +27,26 @@ services:
     volumes:
       - timescaledb_data:/pgdata
     networks:
-      - rats-net
+      rats-net:
+        ipv4_address: 172.18.0.2
+    restart: unless-stopped
   grafana:
     image: grafana/grafana-oss:latest
     container_name: grafana
+    environment:
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_PANELS_DISABLE_SANITIZE_HTML=true
+      - GF_DASHBOARDS_MIN_REFRESH_INTERVAL=125ms
     ports:
       - "3000:3000"
     volumes:
       - grafana_data:/var/lib/grafana
     networks:
-      - rats-net
+      rats-net:
+        ipv4_address: 172.18.0.3
     depends_on: 
       - timescaledb
+    restart: unless-stopped
   portainer:
     image: portainer/portainer-ce:latest
     container_name: portainer
@@ -57,11 +56,25 @@ services:
       - portainer_data:/data
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
-      - rats-net
+      rats-net:
+        ipv4_address: 172.18.0.4
     restart: unless-stopped
+  go2rtc:
+    image: alexxit/go2rtc
+    network_mode: host
+    privileged: true        
+    restart: unless-stopped
+    environment:
+      - TZ=America/New_York
+    volumes:
+      - "~/go2rtc:/config"
+
 networks:
   rats-net:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.18.0.0/24
 volumes:
   emqx_data:
   emqx_log:
