@@ -18,7 +18,8 @@ mod flight_loop;
     feature = "sim_stability",
     feature = "sim_extra",
     feature = "sim_flash",
-    feature = "sim_hsim"
+    feature = "sim_hsim",
+    feature = "sim_launch"
 ))]
 #[path = "../Test/flight_sim.rs"]
 mod flight_sim;
@@ -119,6 +120,7 @@ async fn main(spawner: Spawner) {
         feature = "sim_stability",
         feature = "sim_extra",
         feature = "sim_flash",
+        feature = "sim_launch",
         feature = "sim_hsim"
     ))]
     let mut flight_state = {
@@ -130,6 +132,9 @@ async fn main(spawner: Spawner) {
             flight_sim::simulate_flight_simple(&mut flight_loop).await;
             log::info!("Simulation Complete.");
         }
+
+        #[cfg(feature = "sim_launch")]
+        flight_sim::simulate_launch_sequence(&mut flight_loop).await;
 
         #[cfg(feature = "sim_fault")]
         {

@@ -9,6 +9,14 @@ use crate::umbilical::{self, UmbilicalCommand};
 // TODO: Add //CHALLENGE_# to each fault with its solution
 // TODO: Remove some bools and edit FlightLoop to be able to trigger events with methods
 // ex: a function to say that the umbilical is connected, or umbilical launch, etc.
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum LaunchStage {
+    None,
+    PreVent,   // SV Open for 2s
+    MavOpen,   // MAV Open for 7.88s
+    PostWait,  // Wait 10s (override if apogee)
+    FinalVent, // SV Open for rest of flight
+}
 
 // GPIO 32 for TX UART, GPIO 33 for RX UART
 pub struct FlightLoop {
@@ -42,6 +50,10 @@ pub struct FlightLoop {
 
     // Flash logging timing
     last_flash_log: Option<Instant>,
+
+    // Launch sequence
+    pub launch_sequence_stage: LaunchStage,
+    launch_stage_start_time: Option<Instant>,
 }
 
 impl FlightLoop {
@@ -73,6 +85,8 @@ impl FlightLoop {
             vent_signal_sent: false,
             mav_open_time: None,
             last_flash_log: None,
+            launch_sequence_stage: LaunchStage::None,
+            launch_stage_start_time: None,
         }
     }
 
@@ -116,6 +130,7 @@ impl FlightLoop {
         self.check_ground_commands().await;
         self.check_umbilical_commands().await;
         self.check_transitions().await;
+        self.handle_launch_sequence().await;
         self.flight_state.transmit().await;
 
         // Log current state
@@ -328,25 +343,23 @@ impl FlightLoop {
                 // Check altimeter for launch with umbilical
                 if self.umbilical_launch && self.flight_state.umbilical_connected {
                     // TODO: Send command for launch to payload
-                    // send_launch_command();
-                    log::info!("Payload launch command sent");
+                    // send_launch_command();                    log::info!("Payload launch command sent");
 
-                    // Open MAV and SV
-                    self.flight_state
-                        .open_mav(constants::MAV_OPEN_DURATION_MS)
-                        .await;
-                    self.flight_state.open_sv(0).await;
+                    // START LAUNCH SEQUENCE
+                    log::warn!("LAUNCH INITIATED: Starting actuator sequence.");
+                    self.launch_sequence_stage = LaunchStage::PreVent;
+                    self.launch_stage_start_time = Some(Instant::now());
 
-                    self.mav_open = true; // logic flag
-                    self.sv_open = true;
-                    self.mav_open_time = Some(Instant::now());
-
-                    log::info!("MAV and SV opened; Cameras deployed");
                     self.flight_state.reference_pressure = self.flight_state.read_barometer();
                     log::info!(
                         "Reference pressure set to {}",
                         self.flight_state.reference_pressure
                     );
+
+                    // Stage 1: SV Open (2s vent)
+                    self.flight_state.open_sv(0).await;
+                    self.sv_open = true;
+
                     self.alt_armed = true;
                     self.flight_state.flight_mode = FlightMode::Ascent;
                     log::info!("Transitioning to Ascent");
@@ -389,23 +402,8 @@ impl FlightLoop {
                     self.flight_state.log_to_fram().await;
                 }
 
-                if !self.mav_open {
-                    self.flight_state.close_sv().await;
-                    self.sv_open = false;
-                    self.flight_state.flight_mode = FlightMode::Coast;
-                    log::warn!("MAV closed in Ascent; transitioning to Coast");
-                } else {
-                    // Check timer
-                    if let Some(open_time) = self.mav_open_time {
-                        if open_time.elapsed().as_millis() as u64 >= constants::MAV_OPEN_DURATION_MS
-                        {
-                            self.mav_open = false;
-                            self.mav_open_time = None;
-                            self.flight_state.close_mav().await;
-                            log::info!("MAV closed after {}ms", constants::MAV_OPEN_DURATION_MS);
-                        }
-                    }
-                }
+                // --- Launch Sequence State Machine ---
+                if !self.flight_state.sd_logging_enabled {}
             }
 
             FlightMode::Coast => {
@@ -462,6 +460,14 @@ impl FlightLoop {
 
                         // Deploy Drogue
                         self.flight_state.trigger_drogue().await;
+
+                        // Override: Open SV on apogee if still in PostWait
+                        if self.launch_sequence_stage == LaunchStage::PostWait {
+                            log::info!("Apogee override: Opening SV regardless of 10s timer.");
+                            self.flight_state.open_sv(0).await;
+                            self.sv_open = true;
+                            self.launch_sequence_stage = LaunchStage::FinalVent;
+                        }
 
                         log::info!("Drogue deployed");
                         self.drogue_deployed = true;
@@ -576,6 +582,68 @@ impl FlightLoop {
         self.sv_open = open;
     }
 
+    pub async fn handle_launch_sequence(&mut self) {
+        let sequence_now = Instant::now();
+        match self.launch_sequence_stage {
+            LaunchStage::PreVent => {
+                if let Some(start) = self.launch_stage_start_time {
+                    if sequence_now.duration_since(start).as_millis()
+                        >= constants::LAUNCH_SV_PREVENT_MS
+                    {
+                        log::info!("Pre-launch vent complete. Closing SV, opening MAV.");
+                        self.flight_state.close_sv().await;
+                        self.sv_open = false;
+
+                        // Stage 2: MAV Open (7.88s)
+                        self.flight_state
+                            .open_mav(constants::MAV_OPEN_DURATION_MS)
+                            .await;
+                        self.mav_open = true;
+
+                        self.launch_sequence_stage = LaunchStage::MavOpen;
+                        self.launch_stage_start_time = Some(sequence_now);
+                    }
+                }
+            }
+            LaunchStage::MavOpen => {
+                if let Some(start) = self.launch_stage_start_time {
+                    if sequence_now.duration_since(start).as_millis()
+                        >= constants::MAV_OPEN_DURATION_MS
+                    {
+                        log::info!("MAV cycle complete. Closing MAV, waiting 10s.");
+                        self.flight_state.close_mav().await;
+                        self.mav_open = false;
+
+                        // TRANSITION TO COAST if currently in Ascent
+                        if self.flight_state.flight_mode == FlightMode::Ascent {
+                            log::warn!("MAV closed; Transitioning from Ascent to Coast.");
+                            self.flight_state.flight_mode = FlightMode::Coast;
+                        }
+
+                        // Stage 3: Post-MAV Wait (10s)
+                        self.launch_sequence_stage = LaunchStage::PostWait;
+                        self.launch_stage_start_time = Some(sequence_now);
+                    }
+                }
+            }
+            LaunchStage::PostWait => {
+                if let Some(start) = self.launch_stage_start_time {
+                    if sequence_now.duration_since(start).as_millis()
+                        >= constants::LAUNCH_POST_MAV_WAIT_MS
+                    {
+                        log::info!("Post-MAV wait complete. Opening SV for final vent.");
+                        self.flight_state.open_sv(0).await;
+                        self.sv_open = true;
+
+                        // Stage 4: Final Vent (Rest of flight)
+                        self.launch_sequence_stage = LaunchStage::FinalVent;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
     pub fn get_altitude(&mut self) -> f32 {
         return self.flight_state.packet.altitude;
     }
@@ -601,6 +669,7 @@ impl FlightLoop {
 
         // Run logic
         self.check_transitions().await;
+        self.handle_launch_sequence().await;
 
         // Continuously update actuators so timers and physical pins actually output during simulation tests
         self.flight_state.update_actuators().await;
