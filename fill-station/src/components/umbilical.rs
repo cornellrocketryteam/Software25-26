@@ -28,11 +28,12 @@ pub struct FswTelemetry {
     pub pt3: f32,            // raw ADC counts
     pub pt4: f32,
     pub rtd: f32,
+    pub ch4: f32,
 }
 
 impl FswTelemetry {
     /// Total serialized size in bytes.
-    pub const SIZE: usize = 80;
+    pub const SIZE: usize = 84;
 
     /// Deserialize from an 80-byte little-endian buffer.
     pub fn from_bytes(buf: &[u8; Self::SIZE]) -> Self {
@@ -57,6 +58,7 @@ impl FswTelemetry {
             pt3:            f32::from_le_bytes(buf[68..72].try_into().unwrap()),
             pt4:            f32::from_le_bytes(buf[72..76].try_into().unwrap()),
             rtd:            f32::from_le_bytes(buf[76..80].try_into().unwrap()),
+            ch4:            f32::from_le_bytes(buf[80..84].try_into().unwrap()),
         }
     }
 
