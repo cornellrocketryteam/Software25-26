@@ -504,7 +504,7 @@ async fn main(spawner: Spawner) {
 }
 
 /// Reads every byte that arrives on the RX pin and logs it.
-/// When GPIO 12 (TX) is jumpered to GPIO 13 (RX) this confirms the
+/// When GPIO 32 (TX) is jumpered to GPIO 33 (RX) this confirms the
 /// real payload signal (e.g. "N1\n") was successfully transmitted.
 #[embassy_executor::task]
 async fn payload_loopback_task(mut rx: UartRx<'static, Async>) -> ! {
