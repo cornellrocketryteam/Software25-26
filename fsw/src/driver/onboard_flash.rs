@@ -228,8 +228,9 @@ impl<'a> OnboardFlash<'a> {
     }
 
     pub async fn wipe_storage(&mut self) -> Result<(), Error> {
+        // Only erase sectors that have been written to, not all 3584 sectors
+        let end = (self.write_offset + SECTOR_SIZE - 1) / SECTOR_SIZE * SECTOR_SIZE;
         let mut addr = STORAGE_OFFSET;
-        let end = STORAGE_OFFSET + STORAGE_SIZE;
         while addr < end {
             self.erase_sector(addr).await?;
             addr += SECTOR_SIZE;

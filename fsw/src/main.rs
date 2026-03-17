@@ -540,8 +540,8 @@ async fn main(spawner: Spawner) {
             flight_loop.flight_state.cycle_count += 1;
             flight_loop.execute().await;
 
-            // Toggle LED for heartbeat (every 10 cycles = 1 Hz blink at 10 Hz loop)
-            if flight_loop.flight_state.cycle_count % 10 == 0 {
+            // Toggle LED for heartbeat (every 20 cycles = 1 Hz blink at 20 Hz loop)
+            if flight_loop.flight_state.cycle_count % 20 == 0 {
                 led.toggle();
             }
             Timer::after_millis(constants::MAIN_LOOP_DELAY_MS).await;
