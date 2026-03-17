@@ -81,7 +81,7 @@ impl Lsm6dsoxSensor {
         self.write_register(REG_CTRL3_C, 0x04).await?;
         log::info!("LSM6DSOX: CTRL3_C done");
 
-        Timer::after(Duration::from_millis(10)).await;
+        // Timer::after(Duration::from_millis(10)).await;
         log::info!("LSM6DSOX: init complete");
         Ok(())
     }
