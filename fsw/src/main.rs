@@ -69,9 +69,9 @@ async fn main(spawner: Spawner) {
     */
 
     let spi_bus =
-        module::init_shared_spi(p.SPI0, p.PIN_16, p.PIN_19, p.PIN_18, p.DMA_CH2, p.DMA_CH3);
-    let uart = module::init_uart1(p.UART1, p.PIN_4, p.PIN_5, p.DMA_CH0, p.DMA_CH1);
-    let payload_uart = module::init_uart0(p.UART0, p.PIN_12, p.PIN_13, p.DMA_CH5, p.DMA_CH6);
+        module::init_shared_spi(p.SPI0, p.PIN_4, p.PIN_3, p.PIN_2, p.DMA_CH2, p.DMA_CH3);
+    let uart = module::init_uart0(p.UART0, p.PIN_30, p.PIN_31, p.DMA_CH0, p.DMA_CH1);
+    let payload_uart = module::init_uart1(p.UART1, p.PIN_12, p.PIN_13, p.DMA_CH5, p.DMA_CH6);
     let (payload_tx, payload_rx) = payload_uart.split();
 
     #[cfg(feature = "test_payload_uart")]

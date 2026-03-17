@@ -7,8 +7,8 @@ use embassy_rp::gpio::Output;
 use embassy_rp::i2c::{Config as I2cConfig, I2c, InterruptHandler as I2cInterruptHandler};
 use embassy_rp::peripherals::{
     DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, DMA_CH4, DMA_CH5, DMA_CH6, FLASH, I2C0, PIN_0, PIN_1,
-    PIN_4, PIN_5, PIN_12, PIN_13, PIN_16, PIN_18, PIN_19, PIN_21, PIN_36, PIN_39, PIN_40, PIN_47,
-    PWM_SLICE8, SPI0, UART0, UART1, USB,
+    PIN_2, PIN_3, PIN_4, PIN_12, PIN_13, PIN_16, PIN_19, PIN_21, PIN_30, PIN_31, PIN_36, PIN_39,
+    PIN_40, PIN_47, PWM_SLICE8, SPI0, UART0, UART1, USB,
 };
 use embassy_rp::spi::{Config as SpiConfig, Spi};
 use embassy_rp::uart::{Config as UartConfig, InterruptHandler as UartInterruptHandler, Uart};
@@ -113,9 +113,9 @@ pub fn init_shared_i2c(
 // Returns a shared SPI instance wrapped in a Mutex that can be used by multiple sensors
 pub fn init_shared_spi(
     spi0: Peri<'static, SPI0>,
-    miso: Peri<'static, PIN_16>,
-    mosi: Peri<'static, PIN_19>,
-    clk: Peri<'static, PIN_18>,
+    miso: Peri<'static, PIN_4>,
+    mosi: Peri<'static, PIN_3>,
+    clk: Peri<'static, PIN_2>,
     tx_dma: Peri<'static, DMA_CH2>,
     rx_dma: Peri<'static, DMA_CH3>,
 ) -> &'static SharedSpi {
@@ -130,13 +130,13 @@ pub fn init_shared_spi(
     SPI_BUS.init(Mutex::new(spi))
 }
 
-// Initialize UART1 for RFD900x radio
+// Initialize UART0 for RFD900x radio (pins 30/31)
 //
-// Returns async UART instance configured at 9600 baud
-pub fn init_uart1(
-    uart1: Peri<'static, UART1>,
-    tx: Peri<'static, PIN_4>,
-    rx: Peri<'static, PIN_5>,
+// Returns async UART instance configured at 115200 baud
+pub fn init_uart0(
+    uart0: Peri<'static, UART0>,
+    tx: Peri<'static, PIN_30>,
+    rx: Peri<'static, PIN_31>,
     tx_dma: Peri<'static, DMA_CH0>,
     rx_dma: Peri<'static, DMA_CH1>,
 ) -> Uart<'static, uart::Async> {
@@ -144,21 +144,21 @@ pub fn init_uart1(
     let mut uart_config = UartConfig::default();
     uart_config.baudrate = constants::UART_BAUDRATE;
 
-    Uart::new(uart1, tx, rx, Irqs, tx_dma, rx_dma, uart_config)
+    Uart::new(uart0, tx, rx, Irqs, tx_dma, rx_dma, uart_config)
 }
 
-// Initialize UART0 for Payload
-pub fn init_uart0(
-    uart0: Peri<'static, UART0>,
+// Initialize UART1 for Payload (pins 12/13)
+pub fn init_uart1(
+    uart1: Peri<'static, UART1>,
     tx: Peri<'static, PIN_12>,
     rx: Peri<'static, PIN_13>,
     tx_dma: Peri<'static, DMA_CH5>,
     rx_dma: Peri<'static, DMA_CH6>,
 ) -> Uart<'static, uart::Async> {
     let mut uart_config = UartConfig::default();
-    uart_config.baudrate = 115200; // Assuming 115200 for payload
+    uart_config.baudrate = 115200;
 
-    Uart::new(uart0, tx, rx, Irqs, tx_dma, rx_dma, uart_config)
+    Uart::new(uart1, tx, rx, Irqs, tx_dma, rx_dma, uart_config)
 }
 
 use crate::actuator::Ssa;
@@ -188,11 +188,11 @@ use embassy_rp::pwm::{Config as PwmConfig, Pwm};
 pub fn init_mav(slice: Peri<'static, PWM_SLICE8>, pin: Peri<'static, PIN_40>) -> Mav<'static> {
     let mut config = PwmConfig::default();
 
-    // For 125 MHz system clock -> 330 Hz Servo frequency:
-    // divider = 125.0
+    // For 150 MHz system clock -> 330 Hz Servo frequency:
+    // divider = 150.0
     // top = 3030
     config.top = 3030;
-    config.divider = 125.into(); // Needs to be integer for into() here
+    config.divider = 150.into(); // Needs to be integer for into() here
 
     // Using output A for Pin 8 (Slice 4A) from pinout
     let pwm = Pwm::new_output_a(slice, pin, config);
