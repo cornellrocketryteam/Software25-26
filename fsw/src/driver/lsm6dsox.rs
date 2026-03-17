@@ -64,24 +64,22 @@ impl Lsm6dsoxSensor {
             return Err(Lsm6dsoxError::InvalidDeviceId(who_am_i));
         }
 
-        log::info!("LSM6DSOX: software reset (CTRL3_C = 0x01)...");
-        self.write_register(REG_CTRL3_C, 0x01).await?;
-        log::info!("LSM6DSOX: waiting 10ms after reset...");
-        Timer::after(Duration::from_millis(10)).await;
-
+        // Configure accel: 416 Hz, ±2g
         log::info!("LSM6DSOX: setting CTRL1_XL = 0x60...");
         self.write_register(REG_CTRL1_XL, 0x60).await?;
         log::info!("LSM6DSOX: CTRL1_XL done");
 
+        // Configure gyro: 416 Hz, 250 dps
         log::info!("LSM6DSOX: setting CTRL2_G = 0x60...");
         self.write_register(REG_CTRL2_G, 0x60).await?;
         log::info!("LSM6DSOX: CTRL2_G done");
 
+        // BDU enable (block data update)
         log::info!("LSM6DSOX: setting CTRL3_C = 0x04...");
         self.write_register(REG_CTRL3_C, 0x04).await?;
         log::info!("LSM6DSOX: CTRL3_C done");
 
-        // Timer::after(Duration::from_millis(10)).await;
+        Timer::after(Duration::from_millis(10)).await;
         log::info!("LSM6DSOX: init complete");
         Ok(())
     }
