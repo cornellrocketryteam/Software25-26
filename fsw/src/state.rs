@@ -475,7 +475,7 @@ impl FlightState {
 
     // Appends the current packet as CSV to the onboard QSPI Flash memory
     pub async fn save_packet_to_flash(&mut self) {
-        // NOTE(Flash): This requires a blocking 4KB Sector Erase that takes ~45ms when a new sector is started.
+        // NOTE(Flash): This requires a blocking 4KB Sector Erase that takes ~30ms typ (120ms max) when a new sector is started.
         // As a result, when flash writing is active, the absolute fastest this
         // flight loop can execute is ~20Hz (50ms).
         if let Err(e) = self.flash.append_packet_csv(&self.packet).await {

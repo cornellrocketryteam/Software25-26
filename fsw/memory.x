@@ -2,10 +2,10 @@ MEMORY {
     /*
      * The RP2350 has either external or internal flash.
      *
-     * Pico 2 W has 4 MiB. We reserve the last 64KB for packet storage.
+     * MX25L12835F has 16 MiB. First 2 MiB for code, last 14 MiB for data storage.
      */
-    FLASH : ORIGIN = 0x10000000, LENGTH = 4032K
-    STORAGE : ORIGIN = 0x103F0000, LENGTH = 64K
+    FLASH : ORIGIN = 0x10000000, LENGTH = 2M
+    STORAGE : ORIGIN = 0x10200000, LENGTH = 14M
     /*
      * RAM consists of 8 banks, SRAM0-SRAM7, with a striped mapping.
      * This is usually good for performance, as it distributes load on

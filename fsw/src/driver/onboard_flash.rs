@@ -1,4 +1,4 @@
-//! Onboard QSPI Flash driver for W25Q32RV (4 MiB)
+//! Onboard QSPI Flash driver for MX25L12835F (16 MiB)
 //!
 //! This driver provides temporary storage for the most recent packet.
 //! The flash is accessed via the RP2350's dedicated QSPI controller.
@@ -9,13 +9,13 @@ use embassy_rp::Peri;
 
 use crate::packet::Packet;
 
-/// Total flash size: 4 MiB
-const FLASH_SIZE: usize = 4 * 1024 * 1024;
+/// Total flash size: 16 MiB
+const FLASH_SIZE: usize = 16 * 1024 * 1024;
 
-/// Storage region offset from flash base (last 2MB of 4 MiB)
-/// 4 MiB = 0x400000, 2 MiB = 0x200000
+/// Storage region offset from flash base (last 14 MiB of 16 MiB)
+/// 16 MiB = 0x1000000, 2 MiB = 0x200000
 const STORAGE_OFFSET: u32 = 0x200000;
-const STORAGE_SIZE: u32 = 0x200000;
+const STORAGE_SIZE: u32 = 0xE00000;
 
 /// Error type for flash operations
 #[derive(Debug, defmt::Format)]
