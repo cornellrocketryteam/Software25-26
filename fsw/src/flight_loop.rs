@@ -127,6 +127,9 @@ impl FlightLoop {
         // 4. Update actuators
         self.flight_state.update_actuators().await;
 
+        // 5. Transmit telemetry (radio + USB umbilical binary frames)
+        self.flight_state.transmit().await;
+
         // Save packet to QSPI Flash
         let now = Instant::now();
         let should_log = match self.last_flash_log {
