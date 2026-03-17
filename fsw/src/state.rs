@@ -394,11 +394,20 @@ impl FlightState {
     }
 
     pub async fn receive_radio(&mut self, buffer: &mut [u8]) -> Result<(), embassy_rp::uart::Error> {
-        let result = self.radio.receive(buffer).await;
+        let result = self.radio.receive_packet(buffer).await;
         if result.is_ok() {
-            log::info!("ACK: Data received successfully!");
+            log::info!("ACK: Packet received successfully!");
         }
         result
+    }
+
+    /// Receive and decode a full telemetry packet
+    pub async fn receive_telemetry(&mut self) -> Result<Packet, embassy_rp::uart::Error> {
+        let mut buf = [0u8; Packet::SIZE];
+        self.radio.receive_packet(&mut buf).await?;
+        let packet = Packet::from_bytes(&buf);
+        log::info!("ACK: Telemetry packet decoded successfully!");
+        Ok(packet)
     }
 
     pub async fn poll_radio_command(&mut self) -> Option<crate::packet::Command> {
@@ -409,6 +418,8 @@ impl FlightState {
 
         let mut buf = [0u8; 32];
         // Short timeout read to check for commands without blocking the loop
+        // We use the basic receive here as commands might not have the sync-word
+        // unless they are sent by another FSW board. 
         if let Ok(Ok(_)) = embassy_time::with_timeout(
             embassy_time::Duration::from_millis(10),
             self.radio.receive(&mut buf),

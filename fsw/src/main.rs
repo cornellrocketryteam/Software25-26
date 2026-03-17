@@ -68,8 +68,7 @@ async fn main(spawner: Spawner) {
     }
     */
 
-    let spi_bus =
-        module::init_shared_spi(p.SPI0, p.PIN_4, p.PIN_3, p.PIN_2, p.DMA_CH2, p.DMA_CH3);
+    let spi_bus = module::init_shared_spi(p.SPI0, p.PIN_4, p.PIN_3, p.PIN_2, p.DMA_CH2, p.DMA_CH3);
     let uart = module::init_uart1(p.UART1, p.PIN_8, p.PIN_9, p.DMA_CH0, p.DMA_CH1);
     let payload_uart = module::init_uart0(p.UART0, p.PIN_32, p.PIN_33, p.DMA_CH5, p.DMA_CH6);
     let (payload_tx, payload_rx) = payload_uart.split();
@@ -296,34 +295,70 @@ async fn main(spawner: Spawner) {
         }
     }
 
-    #[cfg(feature = "test_radio")]
+    #[cfg(feature = "test_radio_tx")]
     {
-        log::info!("Starting Radio Test Mode...");
+        log::info!("Starting Radio Test Mode (TX + RX)...");
         loop {
             // 1. Send data
             flight_state.read_sensors().await;
-            log::info!("Transmitting test packet over radio");
+            log::info!("Transmitting telemetry packet...");
             flight_state.transmit().await;
 
             // 2. Listen for response
-            log::info!("Listening for 5000ms...");
-            let mut buf = [0u8; 32];
+            log::info!("Listening for 2000ms...");
+            let mut buf = [0u8; crate::packet::Packet::SIZE];
             // Read with timeout so we don't block forever
             match embassy_time::with_timeout(
-                embassy_time::Duration::from_millis(5000),
+                embassy_time::Duration::from_millis(2000),
                 flight_state.receive_radio(&mut buf),
             )
             .await
             {
                 Ok(Ok(_)) => {
-                    log::info!("Received data! Raw bytes: {:?}", &buf);
+                    let p = crate::packet::Packet::from_bytes(&buf);
+                    log::info!(
+                        "Received Packet! Alt: {:.2}m, Mode: {}",
+                        p.altitude,
+                        p.flight_mode
+                    );
                 }
                 Ok(Err(e)) => log::warn!("Radio receive error: {:?}", e),
-                Err(_) => log::info!("No data received (timeout)"),
+                Err(_) => log::info!("No packet received (timeout)"),
             }
 
             flight_state.cycle_count += 1;
             led.toggle();
+            Timer::after_millis(1000).await;
+        }
+    }
+
+    #[cfg(feature = "test_radio_rx")]
+    {
+        log::info!("Starting Radio RECEIVE ONLY mode...");
+        log::info!("Waiting for telemetry packets from another board...");
+        loop {
+            match flight_state.receive_telemetry().await {
+                Ok(p) => {
+                    log::info!("--- PACKET RECEIVED ---");
+                    log::info!(
+                        "Mode: {}, Alt: {:.2}m, Temp: {:.2}C",
+                        p.flight_mode,
+                        p.altitude,
+                        p.temp
+                    );
+                    log::info!(
+                        "Accel: X={:.2} Y={:.2} Z={:.2}",
+                        p.accel_x,
+                        p.accel_y,
+                        p.accel_z
+                    );
+                    log::info!("Actuators: MAV={}, SV={}", p.mav_open, p.sv_open);
+                    led.toggle();
+                }
+                Err(e) => {
+                    log::warn!("Radio receive error: {:?}", e);
+                }
+            }
         }
     }
 
@@ -473,7 +508,8 @@ async fn main(spawner: Spawner) {
         feature = "test_ssa",
         feature = "test_sensors",
         feature = "test_buzzer",
-        feature = "test_radio",
+        feature = "test_radio_tx",
+        feature = "test_radio_rx",
         feature = "test_all",
         feature = "test_hw_all",
         feature = "test_payload_uart",

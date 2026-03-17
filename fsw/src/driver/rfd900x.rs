@@ -4,8 +4,8 @@
 //! Communicates via UART1 at 9600 baud.
 //!
 //! Hardware connections:
-//! - GP4 (Pico) -> TX (UART1) -> RX (RFD900x)
-//! - GP5 (Pico) -> RX (UART1) -> TX (RFD900x)
+//! - GP8 (Pico) -> TX (UART1) -> RX (RFD900x)
+//! - GP9 (Pico) -> RX (UART1) -> TX (RFD900x)
 
 use embassy_rp::uart::{Async, Error, Uart};
 
@@ -16,6 +16,8 @@ pub struct Rfd900x<'a> {
 }
 
 impl<'a> Rfd900x<'a> {
+    const SYNC_WORD: [u8; 4] = [0x67, 0x59, 0x5D, 0x3E]; // "CRT!"
+
     /// Create a new RFD900x driver instance
     ///
     /// # Arguments
@@ -31,16 +33,39 @@ impl<'a> Rfd900x<'a> {
     /// * `Err(())` on transmission error
     /// sync word is written as the first byte
     pub async fn send(&mut self, data: &[u8]) -> Result<(), Error> {
-        self.uart.write(&self.sync_word.to_le_bytes()).await?;
+        self.uart.write(&Self::SYNC_WORD).await?;
         self.uart.write(data).await?;
 
         return Ok(());
     }
 
     /// Read data from the radio into the provided buffer
-    /// 
+    ///
     /// This function reads until the buffer is full or an error occurs.
     pub async fn receive(&mut self, buffer: &mut [u8]) -> Result<(), Error> {
+        self.uart.read(buffer).await
+    }
+
+    /// Synchronize and read a full packet
+    ///
+    /// Scans the UART stream for the SYNC_WORD before reading the rest of the packet.
+    pub async fn receive_packet(&mut self, buffer: &mut [u8]) -> Result<(), Error> {
+        let mut sync_idx = 0;
+        let mut byte = [0u8; 1];
+
+        // 1. Scan for sync word
+        while sync_idx < Self::SYNC_WORD.len() {
+            self.uart.read(&mut byte).await?;
+            if byte[0] == Self::SYNC_WORD[sync_idx] {
+                sync_idx += 1;
+            } else if byte[0] == Self::SYNC_WORD[0] {
+                sync_idx = 1;
+            } else {
+                sync_idx = 0;
+            }
+        }
+
+        // 2. Read the actual packet data
         self.uart.read(buffer).await
     }
 }

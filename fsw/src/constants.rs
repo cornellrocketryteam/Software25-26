@@ -38,16 +38,16 @@ pub const SPI_MOSI_PIN: u8 = 3;
 
 // UART Configuration
 
-/// UART0 baudrate for RFD900x radio (115200 baud, 8N1)
+/// UART1 baudrate for RFD900x radio (115200 baud, 8N1)
 pub const UART_BAUDRATE: u32 = 115200;
 
 // UART Pin Assignments
 
-/// UART0 TX (Transmit) pin for RFD900x radio
-pub const UART_TX_PIN: u8 = 30;
+/// UART1 TX (Transmit) pin for RFD900x radio
+pub const UART_TX_PIN: u8 = 8;
 
-/// UART0 RX (Receive) pin for RFD900x radio
-pub const UART_RX_PIN: u8 = 31;
+/// UART1 RX (Receive) pin for RFD900x radio
+pub const UART_RX_PIN: u8 = 9;
 
 // GPIO Pin Assignments
 

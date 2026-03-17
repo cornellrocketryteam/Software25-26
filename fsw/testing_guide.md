@@ -79,11 +79,18 @@ cargo run --features "test_sensors"
 ```
 
 ### 7. Radio Transceiver (rfd900x)
-Tests the radio transceiver of the RFD900x radio. It transmits a packet featuring the latest sensor state, then listens for 5000ms for an incoming packet from a Ground Station or external terminal. It prints any received data to the Serial Monitor.
+Tests the radio transceiver of the RFD900x radio.
 
-```bash
-cargo run --features "test_radio"
-```
+- **Pico 1 (TX/RX):** Transmits telemetry and listens for packets.
+  ```bash
+  cargo run --features "test_radio_tx"
+  ```
+- **Pico 2 (RX Only):** Listens for telemetry packets from Pico 1 and prints decoded data.
+  ```bash
+  cargo run --features "test_radio_rx"
+  ```
+
+This test uses a 4-byte sync word (`0x3E5D5967`) to ensure packets are correctly aligned even if boards are started at different times.
 
 ---
 ## 💻 Simulation Testing Commands
