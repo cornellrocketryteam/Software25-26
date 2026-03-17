@@ -7,7 +7,7 @@ use embassy_rp::gpio::Output;
 use embassy_rp::i2c::{Config as I2cConfig, I2c, InterruptHandler as I2cInterruptHandler};
 use embassy_rp::peripherals::{
     DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, DMA_CH4, DMA_CH5, DMA_CH6, FLASH, I2C0, PIN_0, PIN_1,
-    PIN_2, PIN_3, PIN_4, PIN_12, PIN_13, PIN_16, PIN_19, PIN_21, PIN_30, PIN_31, PIN_36, PIN_39,
+    PIN_2, PIN_3, PIN_4, PIN_8, PIN_9, PIN_16, PIN_19, PIN_21, PIN_32, PIN_33, PIN_36, PIN_39,
     PIN_40, PIN_47, PWM_SLICE8, SPI0, UART0, UART1, USB,
 };
 use embassy_rp::spi::{Config as SpiConfig, Spi};
@@ -130,33 +130,32 @@ pub fn init_shared_spi(
     SPI_BUS.init(Mutex::new(spi))
 }
 
-// Initialize UART0 for RFD900x radio (pins 30/31)
-//
-// Returns async UART instance configured at 115200 baud
+// Initialize UART0 for Payload (pins 32/33)
 pub fn init_uart0(
     uart0: Peri<'static, UART0>,
-    tx: Peri<'static, PIN_30>,
-    rx: Peri<'static, PIN_31>,
-    tx_dma: Peri<'static, DMA_CH0>,
-    rx_dma: Peri<'static, DMA_CH1>,
-) -> Uart<'static, uart::Async> {
-    // Configure UART for RFD900x (8N1)
-    let mut uart_config = UartConfig::default();
-    uart_config.baudrate = constants::UART_BAUDRATE;
-
-    Uart::new(uart0, tx, rx, Irqs, tx_dma, rx_dma, uart_config)
-}
-
-// Initialize UART1 for Payload (pins 12/13)
-pub fn init_uart1(
-    uart1: Peri<'static, UART1>,
-    tx: Peri<'static, PIN_12>,
-    rx: Peri<'static, PIN_13>,
+    tx: Peri<'static, PIN_32>,
+    rx: Peri<'static, PIN_33>,
     tx_dma: Peri<'static, DMA_CH5>,
     rx_dma: Peri<'static, DMA_CH6>,
 ) -> Uart<'static, uart::Async> {
     let mut uart_config = UartConfig::default();
     uart_config.baudrate = 115200;
+
+    Uart::new(uart0, tx, rx, Irqs, tx_dma, rx_dma, uart_config)
+}
+
+// Initialize UART1 for RFD900x radio (pins 8/9)
+//
+// Returns async UART instance configured at 115200 baud
+pub fn init_uart1(
+    uart1: Peri<'static, UART1>,
+    tx: Peri<'static, PIN_8>,
+    rx: Peri<'static, PIN_9>,
+    tx_dma: Peri<'static, DMA_CH0>,
+    rx_dma: Peri<'static, DMA_CH1>,
+) -> Uart<'static, uart::Async> {
+    let mut uart_config = UartConfig::default();
+    uart_config.baudrate = constants::UART_BAUDRATE;
 
     Uart::new(uart1, tx, rx, Irqs, tx_dma, rx_dma, uart_config)
 }
