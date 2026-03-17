@@ -80,7 +80,6 @@ async fn main(spawner: Spawner) {
     drop(payload_rx); // not needed in flight
 
     let fram_cs = Output::new(p.PIN_17, Level::High);
-    let _flash_cs = Output::new(p.PIN_6, Level::High); // For onboard flash
     let altimeter_cs = Output::new(p.PIN_7, Level::High);
 
     // Onboard LED
@@ -99,7 +98,8 @@ async fn main(spawner: Spawner) {
         p.PIN_40,
         p.PIN_47,
     );
-    let flash = module::init_onboard_flash(p.FLASH, p.DMA_CH4);
+    let flash_cs = Output::new(p.PIN_6, embassy_rp::gpio::Level::High);
+    let flash = module::init_onboard_flash(spi_bus, flash_cs);
 
     log::info!("Initializing Flight State (Sensors & Actuators)...");
     let mut flight_state = state::FlightState::new(
@@ -298,18 +298,28 @@ async fn main(spawner: Spawner) {
     #[cfg(feature = "test_radio_tx")]
     {
         log::info!("Starting Radio Test Mode (TX + RX)...");
+        let mut test_counter: f32 = 0.0;
         loop {
+            // Heartbeat toggle at start of loop
+            led.toggle();
+
             // 1. Send data
             flight_state.read_sensors().await;
-            log::info!("Transmitting telemetry packet...");
+            
+            // Inject dummy data so we can see something even if sensors are missing
+            flight_state.packet.latitude = 42.44; // Ithaca
+            flight_state.packet.longitude = -76.50;
+            flight_state.packet.timestamp = test_counter;
+            
+            log::info!("Transmitting telemetry packet (counter={})...", test_counter);
             flight_state.transmit().await;
 
             // 2. Listen for response
-            log::info!("Listening for 2000ms...");
+            log::info!("Listening for 500ms...");
             let mut buf = [0u8; crate::packet::Packet::SIZE];
-            // Read with timeout so we don't block forever
+            // Read with shorter timeout so the loop stays responsive
             match embassy_time::with_timeout(
-                embassy_time::Duration::from_millis(2000),
+                embassy_time::Duration::from_millis(500),
                 flight_state.receive_radio(&mut buf),
             )
             .await
@@ -323,12 +333,12 @@ async fn main(spawner: Spawner) {
                     );
                 }
                 Ok(Err(e)) => log::warn!("Radio receive error: {:?}", e),
-                Err(_) => log::info!("No packet received (timeout)"),
+                Err(_) => {} // Silent timeout
             }
 
             flight_state.cycle_count += 1;
-            led.toggle();
-            Timer::after_millis(1000).await;
+            test_counter += 1.0;
+            Timer::after_millis(500).await;
         }
     }
 

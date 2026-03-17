@@ -72,15 +72,26 @@ pub fn update_telemetry(data: &[u8; crate::packet::Packet::SIZE]) {
     }
 }
 
-/// Outbound string channel for logs/dumps in release mode
-static STRING_OUTBOUND: Channel<CriticalSectionRawMutex, heapless::String<64>, 16> = Channel::new();
+/// Outbound raw byte channel for logs/dumps/telemetry
+static RAW_OUTBOUND: Channel<CriticalSectionRawMutex, heapless::Vec<u8, 64>, 32> = Channel::new();
 
 /// Sends a string over the umbilical USB connection (release mode only)
 pub fn print_str(s: &str) {
-    let mut chunk = heapless::String::<64>::new();
-    // Split into 64-byte chunks if needed, but for now just send what fits
-    let _ = chunk.push_str(&s[..core::cmp::min(s.len(), 64)]);
-    let _ = STRING_OUTBOUND.try_send(chunk);
+    print_bytes(s.as_bytes());
+}
+
+/// Sends raw bytes over the umbilical USB connection
+pub fn print_bytes(data: &[u8]) {
+    let mut offset = 0;
+    while offset < data.len() {
+        let mut chunk = heapless::Vec::<u8, 64>::new();
+        let len = core::cmp::min(data.len() - offset, 64);
+        let _ = chunk.extend_from_slice(&data[offset..offset + len]);
+        if RAW_OUTBOUND.try_send(chunk).is_err() {
+            break; // Channel full
+        }
+        offset += len;
+    }
 }
 
 /// Called by the flight loop each cycle to poll for incoming umbilical commands.
@@ -135,8 +146,8 @@ async fn umbilical_sender_task(mut sender: Sender<'static, UsbDriver>) -> ! {
 
         loop {
             // Priority 1: Check for logged strings/dumps
-            while let Ok(msg) = STRING_OUTBOUND.try_receive() {
-                match sender.write_packet(msg.as_bytes()).await {
+            while let Ok(msg) = RAW_OUTBOUND.try_receive() {
+                match sender.write_packet(&msg).await {
                     Ok(_) => {}
                     Err(EndpointError::Disabled) => {
                         IS_CONNECTED.store(false, Ordering::Relaxed);

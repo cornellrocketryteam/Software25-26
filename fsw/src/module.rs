@@ -6,9 +6,9 @@ use embassy_rp::dma::InterruptHandler as DmaInterruptHandler;
 use embassy_rp::gpio::Output;
 use embassy_rp::i2c::{Config as I2cConfig, I2c, InterruptHandler as I2cInterruptHandler};
 use embassy_rp::peripherals::{
-    DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, DMA_CH4, DMA_CH5, DMA_CH6, FLASH, I2C0, PIN_0, PIN_1,
-    PIN_2, PIN_3, PIN_4, PIN_8, PIN_9, PIN_16, PIN_19, PIN_21, PIN_32, PIN_33, PIN_36, PIN_39,
-    PIN_40, PIN_47, PWM_SLICE8, SPI0, UART0, UART1, USB,
+    DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, DMA_CH4, DMA_CH5, DMA_CH6, I2C0, PIN_0, PIN_1,
+    PIN_2, PIN_3, PIN_4, PIN_8, PIN_9, PIN_21, PIN_32, PIN_33, PIN_36, PIN_39, PIN_40, PIN_47,
+    PWM_SLICE8, SPI0, UART0, UART1, USB,
 };
 use embassy_rp::spi::{Config as SpiConfig, Spi};
 use embassy_rp::uart::{Config as UartConfig, InterruptHandler as UartInterruptHandler, Uart};
@@ -221,12 +221,13 @@ pub fn init_actuators(
 
     (ssa, buzzer, mav, sv)
 }
-/// Initialize onboard QSPI flash for packet storage
+/// Initialize onboard SPI flash for packet storage
 ///
 /// Returns an OnboardFlash driver for reading/writing packets
 pub fn init_onboard_flash(
-    flash: Peri<'static, FLASH>,
-    dma: Peri<'static, DMA_CH4>,
+    spi_bus: &'static SharedSpi,
+    cs: Output<'static>,
 ) -> crate::driver::onboard_flash::OnboardFlash<'static> {
-    crate::driver::onboard_flash::OnboardFlash::new(flash, dma)
+    let spi_device = SharedSpiDevice::new(spi_bus, cs);
+    crate::driver::onboard_flash::OnboardFlash::new(spi_device)
 }

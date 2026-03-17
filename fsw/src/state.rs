@@ -561,12 +561,8 @@ impl FlightState {
                 break;
             }
 
-            if let Ok(s) = core::str::from_utf8(&buffer[..chunk_size]) {
-                log::info!("{}", s);
-                crate::umbilical::print_str(s);
-            } else {
-                log::warn!("Invalid UTF-8 in flash at offset {}", offset);
-            }
+            // Send raw bytes directly (host tool handles lossy conversion)
+            crate::umbilical::print_bytes(&buffer[..chunk_size]);
 
             offset += chunk_size as u32;
             embassy_time::Timer::after_millis(10).await;
