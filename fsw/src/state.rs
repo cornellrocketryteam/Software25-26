@@ -136,8 +136,12 @@ impl FlightState {
             log::error!("Failed to configure GPS: {:?}", e);
         }
 
+        log::info!(">>> Initializing IMU...");
         let imu = Lsm6dsoxSensor::new(i2c_bus).await;
+        log::info!(">>> IMU init returned");
+        log::info!(">>> Initializing ADC...");
         let adc = Ads1015Sensor::new(i2c_bus).await;
+        log::info!(">>> ADC init returned");
         let radio = Rfd900x::new(uart);
 
         // Read stored state from FRAM

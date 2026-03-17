@@ -57,22 +57,32 @@ impl Lsm6dsoxSensor {
         &mut self
     ) -> Result<(), Lsm6dsoxError<<I2cDevice<'static> as embedded_hal_async::i2c::ErrorType>::Error>> {
         Timer::after(Duration::from_millis(20)).await;
+        log::info!("LSM6DSOX: reading WHO_AM_I...");
         let who_am_i = self.read_register(REG_WHO_AM_I).await?;
-        log::info!("Address 0x{:02X} WHO_AM_I = 0x{:02X}", LSM6DSOX_ADDR, who_am_i); 
+        log::info!("Address 0x{:02X} WHO_AM_I = 0x{:02X}", LSM6DSOX_ADDR, who_am_i);
         if who_am_i != WHO_AM_I_VALUE {
             return Err(Lsm6dsoxError::InvalidDeviceId(who_am_i));
         }
 
+        log::info!("LSM6DSOX: software reset (CTRL3_C = 0x01)...");
         self.write_register(REG_CTRL3_C, 0x01).await?;
+        log::info!("LSM6DSOX: waiting 10ms after reset...");
         Timer::after(Duration::from_millis(10)).await;
 
+        log::info!("LSM6DSOX: setting CTRL1_XL = 0x60...");
         self.write_register(REG_CTRL1_XL, 0x60).await?;
+        log::info!("LSM6DSOX: CTRL1_XL done");
 
+        log::info!("LSM6DSOX: setting CTRL2_G = 0x60...");
         self.write_register(REG_CTRL2_G, 0x60).await?;
+        log::info!("LSM6DSOX: CTRL2_G done");
 
+        log::info!("LSM6DSOX: setting CTRL3_C = 0x04...");
         self.write_register(REG_CTRL3_C, 0x04).await?;
+        log::info!("LSM6DSOX: CTRL3_C done");
 
         Timer::after(Duration::from_millis(10)).await;
+        log::info!("LSM6DSOX: init complete");
         Ok(())
     }
 
