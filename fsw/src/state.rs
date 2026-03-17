@@ -163,29 +163,27 @@ impl FlightState {
             }
         };
 
-        // Initialize QSPI Flash logging
-        if let Err(e) = flash.initialize_logging().await {
-            log::error!("Failed to initialize QSPI Flash logging: {:?}", e);
-        } else {
-            log::info!("QSPI Flash logging initialized.");
-        }
+        // DISABLED FOR DEBUGGING — flash init commented out
+        // if let Err(e) = flash.initialize_logging().await {
+        //     log::error!("Failed to initialize QSPI Flash logging: {:?}", e);
+        // } else {
+        //     log::info!("QSPI Flash logging initialized.");
+        // }
 
-        // Attempt to read the last packet state from Onboard QSPI Flash
-        match flash.read_packet().await {
-            Ok(recovered_packet) => {
-                // To avoid reading empty uninitialized flash (usually all 0xFF or 0x00), 
-                // we'll do a basic sanity check on the timestamp or flight mode
-                if recovered_packet.flight_mode <= (FlightMode::Fault as u32) {
-                    log::info!("Successfully recovered previous packet from QSPI Flash.");
-                    packet = recovered_packet;
-                } else {
-                    log::info!("QSPI Flash data appears uninitialized or invalid.");
-                }
-            }
-            Err(_) => {
-                log::warn!("Failed to recover packet from QSPI Flash.");
-            }
-        }
+        // // Attempt to read the last packet state from Onboard QSPI Flash
+        // match flash.read_packet().await {
+        //     Ok(recovered_packet) => {
+        //         if recovered_packet.flight_mode <= (FlightMode::Fault as u32) {
+        //             log::info!("Successfully recovered previous packet from QSPI Flash.");
+        //             packet = recovered_packet;
+        //         } else {
+        //             log::info!("QSPI Flash data appears uninitialized or invalid.");
+        //         }
+        //     }
+        //     Err(_) => {
+        //         log::warn!("Failed to recover packet from QSPI Flash.");
+        //     }
+        // }
 
         Self {
             packet: packet,
@@ -458,12 +456,10 @@ impl FlightState {
 
     // Appends the current packet as CSV to the onboard QSPI Flash memory
     pub async fn save_packet_to_flash(&mut self) {
-        // NOTE(Flash): This requires a blocking 4KB Sector Erase that takes ~30ms typ (120ms max) when a new sector is started.
-        // As a result, when flash writing is active, the absolute fastest this
-        // flight loop can execute is ~20Hz (50ms).
-        if let Err(e) = self.flash.append_packet_csv(&self.packet).await {
-            log::warn!("Failed to append packet CSV to QSPI Flash: {:?}", e);
-        }
+        // DISABLED FOR DEBUGGING
+        // if let Err(e) = self.flash.append_packet_csv(&self.packet).await {
+        //     log::warn!("Failed to append packet CSV to QSPI Flash: {:?}", e);
+        // }
     }
 
     /// Reads the packet currently stored in the onboard QSPI Flash
@@ -546,60 +542,20 @@ impl FlightState {
 
     /// Reads all stored CSV data from flash and prints it to the log
     pub async fn print_flash_dump(&mut self) {
-        log::info!("--- BEGIN FLASH CSV DUMP ---");
-        crate::umbilical::print_str("--- BEGIN FLASH CSV DUMP ---\n");
-        let start = self.flash.get_storage_offset();
-        let end = self.flash.get_write_offset();
-        let mut offset = start;
-        let mut buffer = [0u8; 256];
-
-        while offset < end {
-            let chunk_size = core::cmp::min(64, (end - offset) as usize); // matches print_str limit
-            if let Err(e) = self.flash.read(offset, &mut buffer[..chunk_size]).await {
-                log::error!("Flash read error during dump: {:?}", e);
-                break;
-            }
-            
-            // Print chunk as string
-            if let Ok(s) = core::str::from_utf8(&buffer[..chunk_size]) {
-                log::info!("{}", s);
-                crate::umbilical::print_str(s);
-            } else {
-                log::warn!("Invalid UTF-8 in flash at offset {}", offset);
-            }
-            
-            offset += chunk_size as u32;
-            // Short delay to avoid overloading the logger/USB
-            embassy_time::Timer::after_millis(10).await;
-        }
-        log::info!("--- END FLASH CSV DUMP ---");
-        crate::umbilical::print_str("--- END FLASH CSV DUMP ---\n");
+        // DISABLED FOR DEBUGGING
+        log::info!("Flash dump disabled for debugging");
+        crate::umbilical::print_str("Flash dump disabled for debugging\n");
     }
 
     /// Erases all stored CSV data in the flash storage region
     pub async fn wipe_flash_storage(&mut self) {
-        log::info!("Wiping QSPI Flash storage...");
-        crate::umbilical::print_str("Wiping QSPI Flash... Please wait.\n");
-        if let Err(e) = self.flash.wipe_storage().await {
-            log::error!("Failed to wipe flash storage: {:?}", e);
-            crate::umbilical::print_str("ERASE FAILED!\n");
-        } else {
-            log::info!("Flash storage wiped successfully.");
-            crate::umbilical::print_str("Flash wiped successfully.\n");
-        }
+        // DISABLED FOR DEBUGGING
+        log::info!("Flash wipe disabled for debugging");
     }
 
     /// Prints the current status/usage of the flash storage
     pub async fn print_flash_status(&mut self) {
-        let (used, total) = self.flash.get_usage();
-        let used_kb = used / 1024;
-        let total_kb = total / 1024;
-        let percent = (used as f32 / total as f32) * 100.0;
-        
-        let mut msg = heapless::String::<128>::new();
-        let _ = core::fmt::write(&mut msg, format_args!("Flash: {}/{} KB used ({:.1}%)\n", used_kb, total_kb, percent));
-        
-        log::info!("{}", msg.as_str());
-        crate::umbilical::print_str(msg.as_str());
+        // DISABLED FOR DEBUGGING
+        log::info!("Flash status disabled for debugging");
     }
 }
