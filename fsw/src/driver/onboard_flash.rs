@@ -36,6 +36,7 @@ pub enum Error {
 pub struct OnboardFlash<'d> {
     flash: Flash<'d, FLASH, Async, FLASH_SIZE>,
     write_offset: u32,
+    needs_header: bool,
 }
 
 impl<'d> OnboardFlash<'d> {
@@ -43,10 +44,13 @@ impl<'d> OnboardFlash<'d> {
         Self {
             flash: Flash::new(flash, dma, crate::module::Irqs),
             write_offset: STORAGE_OFFSET,
+            needs_header: true,
         }
     }
 
     /// Finds the next available write position by scanning page by page.
+    /// This method only performs reads (safe during init — no interrupt disable).
+    /// The CSV header write is deferred to the first `append_packet_csv()` call.
     pub async fn initialize_logging(&mut self) -> Result<(), Error> {
         let mut buffer = [0u8; 256]; // Page size
         let mut low = STORAGE_OFFSET;
@@ -61,11 +65,10 @@ impl<'d> OnboardFlash<'d> {
                 // If it's the first page or the previous page has data
                 if mid == STORAGE_OFFSET {
                     self.write_offset = STORAGE_OFFSET;
-                    // Write header if brand new
-                    self.write_csv_header().await?;
+                    self.needs_header = true;
                     return Ok(());
                 }
-                
+
                 let mut prev_buffer = [0u8; 256];
                 self.read(mid - 256, &mut prev_buffer).await?;
                 if prev_buffer.iter().any(|&x| x != 0xFF) {
@@ -73,9 +76,11 @@ impl<'d> OnboardFlash<'d> {
                     for (i, &b) in prev_buffer.iter().enumerate() {
                         if b == 0xFF {
                             self.write_offset = mid - 256 + i as u32;
+                            self.needs_header = false;
                             return Ok(());
                         }
                     }
+                    self.needs_header = false;
                     return Ok(());
                 }
                 high = mid - 256;
@@ -85,6 +90,7 @@ impl<'d> OnboardFlash<'d> {
         }
 
         self.write_offset = low;
+        self.needs_header = false;
         if self.write_offset >= STORAGE_OFFSET + STORAGE_SIZE {
              return Err(Error::StorageFull);
         }
@@ -97,6 +103,10 @@ impl<'d> OnboardFlash<'d> {
     }
 
     pub async fn append_packet_csv(&mut self, packet: &Packet) -> Result<(), Error> {
+        if self.needs_header {
+            self.write_csv_header().await?;
+            self.needs_header = false;
+        }
         let mut buf = [0u8; 256];
         let len = packet.to_csv(&mut buf);
         self.append_raw(&buf[..len]).await
@@ -167,7 +177,7 @@ impl<'d> OnboardFlash<'d> {
             addr += ERASE_SIZE as u32;
         }
         self.write_offset = STORAGE_OFFSET;
-        self.write_csv_header().await?;
+        self.needs_header = true;
         Ok(())
     }
 
