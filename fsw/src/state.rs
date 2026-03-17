@@ -2,7 +2,6 @@ use crate::module::*;
 
 use crate::packet::Packet;
 
-use crate::driver::mmc56x3::Mmc56x3Sensor;
 use crate::driver::bmp390::Bmp390Sensor;
 use crate::driver::main_fram::Fram;
 use crate::driver::lsm6dsox::Lsm6dsoxSensor;
@@ -73,9 +72,6 @@ pub struct FlightState {
     // gps
     gps: UbloxMaxM10s<'static, I2cDevice<'static>>,
 
-    // magnetometer
-    magnetometer: Mmc56x3Sensor,
-
     // imu
     imu: Lsm6dsoxSensor,
 
@@ -140,7 +136,6 @@ impl FlightState {
             log::error!("Failed to configure GPS: {:?}", e);
         }
 
-        let magnetometer = Mmc56x3Sensor::new(i2c_bus).await;
         let imu = Lsm6dsoxSensor::new(i2c_bus).await;
         let adc = Ads1015Sensor::new(i2c_bus).await;
         let radio = Rfd900x::new(uart);
@@ -199,7 +194,6 @@ impl FlightState {
             sd_logging_enabled: false, // Default to false (SD failure assumed for now)
             fram: fram,
             gps: gps,
-            magnetometer: magnetometer,
             imu: imu,
             adc: adc,
             arming_switch: arming_switch,
@@ -349,21 +343,6 @@ impl FlightState {
             }
             Err(e) => {
                 log::error!("Failed to read GPS: {:?}", e);
-            }
-        }
-
-        // Read magnetometer and update packet
-        match self.magnetometer.read_into_packet(&mut self.packet).await {
-            Ok(_) => {
-                log::info!(
-                    "MAG | X = {:.2} µT, Y = {:.2} µT, Z = {:.2} µT",
-                    self.packet.mag_x,
-                    self.packet.mag_y,
-                    self.packet.mag_z
-                );
-            }
-            Err(e) => {
-                log::error!("Failed to read AK09915 magnetometer: {:?}", e);
             }
         }
 

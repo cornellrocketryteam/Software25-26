@@ -1,6 +1,5 @@
 //! Hardware drivers
 
-pub mod mmc56x3;
 pub mod bmp390;
 pub mod main_fram;
 pub mod onboard_flash;
