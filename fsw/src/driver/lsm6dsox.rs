@@ -58,21 +58,17 @@ impl Lsm6dsoxSensor {
     ) -> Result<(), Lsm6dsoxError<<I2cDevice<'static> as embedded_hal_async::i2c::ErrorType>::Error>> {
         Timer::after(Duration::from_millis(20)).await;
         let who_am_i = self.read_register(REG_WHO_AM_I).await?;
-        log::info!("Address 0x{:02X} WHO_AM_I = 0x{:02X}", LSM6DSOX_ADDR, who_am_i); 
+        log::info!("Address 0x{:02X} WHO_AM_I = 0x{:02X}", LSM6DSOX_ADDR, who_am_i);
         if who_am_i != WHO_AM_I_VALUE {
             return Err(Lsm6dsoxError::InvalidDeviceId(who_am_i));
         }
 
-        self.write_register(REG_CTRL3_C, 0x01).await?;
-        Timer::after(Duration::from_millis(10)).await;
-
+        // Configure accel: 416 Hz, ±2g
         self.write_register(REG_CTRL1_XL, 0x60).await?;
-
+        // Configure gyro: 416 Hz, 250 dps
         self.write_register(REG_CTRL2_G, 0x60).await?;
-
+        // BDU enable (block data update)
         self.write_register(REG_CTRL3_C, 0x04).await?;
-
-        Timer::after(Duration::from_millis(10)).await;
         Ok(())
     }
 

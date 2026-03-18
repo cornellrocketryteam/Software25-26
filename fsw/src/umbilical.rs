@@ -1,19 +1,19 @@
 use embassy_executor::Spawner;
-use embassy_sync::channel::Channel;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_usb::{UsbDevice, driver::EndpointError};
-use embassy_usb::class::cdc_acm::{Receiver, Sender};
+use embassy_sync::channel::Channel;
 use embassy_time::Timer;
+use embassy_usb::class::cdc_acm::{Receiver, Sender};
+use embassy_usb::{UsbDevice, driver::EndpointError};
 
-use crate::module::{self, UsbDriver};
 use crate::constants;
-use core::sync::atomic::{AtomicBool, Ordering};
+use crate::module::{self, UsbDriver};
 use core::cell::UnsafeCell;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 /// Sync header prepended to every telemetry frame so the receiver can find
-/// packet boundaries in the byte stream.  Total frame = 2 + 80 = 82 bytes.
+/// packet boundaries in the byte stream.  Total frame = 2 + 82 = 84 bytes.
 pub const SYNC_HEADER: [u8; 2] = [0xAA, 0x55];
-const FRAME_SIZE: usize = SYNC_HEADER.len() + 80; // 82
+const FRAME_SIZE: usize = SYNC_HEADER.len() + crate::packet::Packet::SIZE; // 84
 
 /// Global software umbilical connection tracked by embassy-usb.
 static IS_CONNECTED: AtomicBool = AtomicBool::new(false);
@@ -21,14 +21,14 @@ static IS_CONNECTED: AtomicBool = AtomicBool::new(false);
 /// Simple atomic telemetry buffer - no Signal, no blocking
 /// Main loop writes, sender task reads, both non-blocking
 struct TelemetryBuffer {
-    data: UnsafeCell<[u8; 80]>,
+    data: UnsafeCell<[u8; crate::packet::Packet::SIZE]>,
     ready: AtomicBool,
 }
 
 unsafe impl Sync for TelemetryBuffer {}
 
 static TELEMETRY_BUF: TelemetryBuffer = TelemetryBuffer {
-    data: UnsafeCell::new([0; 80]),
+    data: UnsafeCell::new([0; crate::packet::Packet::SIZE]),
     ready: AtomicBool::new(false),
 };
 
@@ -49,6 +49,13 @@ pub enum UmbilicalCommand {
     ResetCard,
     ResetFram,
     Reboot,
+    DumpFlash,
+    WipeFlash,
+    FlashInfo,
+    PayloadN1,
+    PayloadN2,
+    PayloadN3,
+    PayloadN4,
 }
 
 /// Command channel: receiver task pushes commands, flight loop polls them.
@@ -56,7 +63,7 @@ static COMMANDS: Channel<CriticalSectionRawMutex, UmbilicalCommand, 4> = Channel
 
 /// Called by the flight loop to send telemetry
 /// Non-blocking: always succeeds immediately, overwrites previous data if not sent yet
-pub fn update_telemetry(data: &[u8; 80]) {
+pub fn update_telemetry(data: &[u8; crate::packet::Packet::SIZE]) {
     unsafe {
         // Copy data to buffer
         (*TELEMETRY_BUF.data.get()).copy_from_slice(data);
@@ -65,10 +72,37 @@ pub fn update_telemetry(data: &[u8; 80]) {
     }
 }
 
+/// Outbound raw byte channel for logs/dumps/telemetry
+static RAW_OUTBOUND: Channel<CriticalSectionRawMutex, heapless::Vec<u8, 64>, 32> = Channel::new();
+
+/// Sends a string over the umbilical USB connection (release mode only)
+pub fn print_str(s: &str) {
+    print_bytes(s.as_bytes());
+}
+
+/// Sends raw bytes over the umbilical USB connection
+pub fn print_bytes(data: &[u8]) {
+    let mut offset = 0;
+    while offset < data.len() {
+        let mut chunk = heapless::Vec::<u8, 64>::new();
+        let len = core::cmp::min(data.len() - offset, 64);
+        let _ = chunk.extend_from_slice(&data[offset..offset + len]);
+        if RAW_OUTBOUND.try_send(chunk).is_err() {
+            break; // Channel full
+        }
+        offset += len;
+    }
+}
+
 /// Called by the flight loop each cycle to poll for incoming umbilical commands.
 /// Returns `None` if no command is pending.
 pub fn try_recv_command() -> Option<UmbilicalCommand> {
     COMMANDS.try_receive().ok()
+}
+
+/// Simulation helper: injects a command into the channel as if it came from USB.
+pub fn push_command(cmd: UmbilicalCommand) {
+    let _ = COMMANDS.try_send(cmd);
 }
 
 /// Initialize USB subsystem: logger in debug mode, umbilical in release mode.
@@ -89,7 +123,11 @@ pub fn setup(spawner: &Spawner, usb_driver: UsbDriver) {
 
 #[embassy_executor::task]
 async fn logger_task(driver: UsbDriver) -> ! {
-    embassy_usb_logger::run!({ constants::USB_LOGGER_BUFFER_SIZE }, log::LevelFilter::Info, driver);
+    embassy_usb_logger::run!(
+        { constants::USB_LOGGER_BUFFER_SIZE },
+        log::LevelFilter::Info,
+        driver
+    );
 }
 
 #[embassy_executor::task]
@@ -107,15 +145,27 @@ async fn umbilical_sender_task(mut sender: Sender<'static, UsbDriver>) -> ! {
         IS_CONNECTED.store(true, Ordering::Relaxed);
 
         loop {
-            // Only send when the flight loop has produced new data
+            // Priority 1: Check for logged strings/dumps
+            while let Ok(msg) = RAW_OUTBOUND.try_receive() {
+                match sender.write_packet(&msg).await {
+                    Ok(_) => {}
+                    Err(EndpointError::Disabled) => {
+                        IS_CONNECTED.store(false, Ordering::Relaxed);
+                        break;
+                    }
+                    Err(_) => break,
+                }
+            }
+
+            // Priority 2: Check for telemetry
             if TELEMETRY_BUF.ready.load(Ordering::Acquire) {
                 let data = unsafe { *TELEMETRY_BUF.data.get() };
                 TELEMETRY_BUF.ready.store(false, Ordering::Release);
 
-                // Build framed packet: [0xAA, 0x55, ...80 bytes telemetry...] = 82 bytes
+                // Build framed packet: [0xAA, 0x55, ...82 bytes telemetry...] = 84 bytes
                 let mut frame = [0u8; FRAME_SIZE];
                 frame[0..2].copy_from_slice(&SYNC_HEADER);
-                frame[2..82].copy_from_slice(&data);
+                frame[2..FRAME_SIZE].copy_from_slice(&data);
 
                 // Send first 64 bytes of frame
                 match sender.write_packet(&frame[0..64]).await {
@@ -127,8 +177,8 @@ async fn umbilical_sender_task(mut sender: Sender<'static, UsbDriver>) -> ! {
                     }
                 };
 
-                // Send remaining 18 bytes of frame
-                match sender.write_packet(&frame[64..82]).await {
+                // Send remaining 20 bytes of frame
+                match sender.write_packet(&frame[64..FRAME_SIZE]).await {
                     Ok(_) => {}
                     Err(EndpointError::BufferOverflow) => panic!("Buffer overflow on second chunk"),
                     Err(EndpointError::Disabled) => {
@@ -138,7 +188,7 @@ async fn umbilical_sender_task(mut sender: Sender<'static, UsbDriver>) -> ! {
                 };
             }
 
-            Timer::after_millis(100).await;
+            Timer::after_millis(50).await; // Faster poll for better responsiveness
         }
     }
 }
@@ -172,6 +222,13 @@ async fn umbilical_receiver_task(mut receiver: Receiver<'static, UsbDriver>) -> 
                 b"<D>" => Some(UmbilicalCommand::ResetCard),
                 b"<F>" => Some(UmbilicalCommand::ResetFram),
                 b"<R>" => Some(UmbilicalCommand::Reboot),
+                b"<G>" => Some(UmbilicalCommand::DumpFlash),
+                b"<W>" => Some(UmbilicalCommand::WipeFlash),
+                b"<I>" => Some(UmbilicalCommand::FlashInfo),
+                b"<1>" => Some(UmbilicalCommand::PayloadN1),
+                b"<2>" => Some(UmbilicalCommand::PayloadN2),
+                b"<3>" => Some(UmbilicalCommand::PayloadN3),
+                b"<4>" => Some(UmbilicalCommand::PayloadN4),
                 _ => None,
             };
 

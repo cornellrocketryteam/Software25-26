@@ -1,0 +1,4 @@
+# Override the parent project's embedded target so this host tool
+# compiles for the local machine, not the RP2350.
+[build]
+target = "x86_64-pc-windows-msvc"

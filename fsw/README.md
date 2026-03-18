@@ -1,8 +1,6 @@
 # FSW 2025-2026
 
-Written by Benjamin Zou (bwz5)
-
-See Project Updates [here](https://github.com/orgs/cornellrocketryteam/projects/4/views/1)
+Written by Amira Razack (arr258) and Benjamin Zou (bwz5)
 
 ## Necessary Dependencies 
 * Install rustup and Cargo (standard installation)
@@ -16,17 +14,17 @@ See Project Updates [here](https://github.com/orgs/cornellrocketryteam/projects/
 
 ## Building and Running  
 * Navigate into the fsw directory with `cd fsw`
-* To build in release mode, run: `cargo build --release` 
+* To build in release mode (for umbilical), run: `cargo build --release` 
 * To flash the code onto the Pico 2, first press the BOOTSEL button on the pico and then connect it to your computer, then run: `cargo run --release`
-* To see logs, open the /dev device that corresponds to the Pico 2 (on MacOS this is usually /dev/cu.usbmodem[random numbers]
+* To build in debug mode (no connection to umbilical), run: `cargo build`
+* Flash the code onto the Pico 2, press the BOOTSEL button then connect to computer: `cargo run`
+* To see logs, open the /dev device that corresponds to the Pico 2 (on MacOS this is usually /dev/cu.usbmodem[random numbers]), or on Windows, download the Serial Monitor extension, access the current COM port, and click Start Monitoring.
 
 ## TODO: 
-- transition and execute in FlightState should behave accurately 
-- Implement umbilical commanding 
-- Implement actuators 
-- Correct packet structure 
-- Testing for faults 
-- Storing flight data
+- Test everything
+- Payload comms
+- Magnetometer driver
+- Test and ensure storage integration
 
 
 

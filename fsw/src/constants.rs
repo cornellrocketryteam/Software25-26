@@ -19,7 +19,7 @@ pub const SPI_FREQUENCY: u32 = 1_000_000;
 // SPI Pin Assignments
 
 /// SPI0 MISO (Master In, Slave Out) pin
-pub const SPI_MISO_PIN: u8 = 16;
+pub const SPI_MISO_PIN: u8 = 4;
 
 /// SPI0 CS (Chip Select) pin for FRAM
 pub const SPI_CS_PIN: u8 = 17;
@@ -31,10 +31,10 @@ pub const ALTIMETER_CS_PIN: u8 = 7;
 pub const FLASH_CS_PIN: u8 = 6;
 
 /// SPI0 CLK (Clock) pin
-pub const SPI_CLK_PIN: u8 = 18;
+pub const SPI_CLK_PIN: u8 = 2;
 
 /// SPI0 MOSI (Master Out, Slave In) pin
-pub const SPI_MOSI_PIN: u8 = 19;
+pub const SPI_MOSI_PIN: u8 = 3;
 
 // UART Configuration
 
@@ -44,10 +44,10 @@ pub const UART_BAUDRATE: u32 = 115200;
 // UART Pin Assignments
 
 /// UART1 TX (Transmit) pin for RFD900x radio
-pub const UART_TX_PIN: u8 = 4;
+pub const UART_TX_PIN: u8 = 8;
 
 /// UART1 RX (Receive) pin for RFD900x radio
-pub const UART_RX_PIN: u8 = 5;
+pub const UART_RX_PIN: u8 = 9;
 
 // GPIO Pin Assignments
 
@@ -64,8 +64,9 @@ pub const SV_PIN: u8 = 47;
 // Timing Configuration
 
 /// Main loop cycle time in milliseconds
-pub const MAIN_LOOP_DELAY_MS: u64 = 500;
-// set this to 50 for 20 Hz, rn it is 250 for 4 Hz, 1000 is 1 Hz
+pub const MAIN_LOOP_DELAY_MS: u64 = 50; // 20 Hz
+
+pub const FLASH_LOGGING_PERIOD_MS: u64 = 50; // Log every cycle at 20 Hz
 
 // USB Logger Configuration
 
@@ -89,7 +90,9 @@ pub const MAIN_DEPLOY_ALTITUDE: f32 = 610.0;
 pub const MAIN_LOG_TIMEOUT_MS: u64 = 1_200_000; // 20 minutes
 
 pub const UMBILICAL_TIMEOUT_MS: u64 = 15_000; // 15 seconds
-pub const MAV_OPEN_DURATION_MS: u64 = 3000; // 3.5 seconds (gives time to advance altitude array past 100m during 1Hz loop)
+pub const MAV_OPEN_DURATION_MS: u64 = 7880; // 7.88 seconds 
+pub const LAUNCH_SV_PREVENT_MS: u64 = 2000;
+pub const LAUNCH_POST_MAV_WAIT_MS: u64 = 10000;
 pub const SSA_THRESHOLD_MS: u64 = 3000; // Duration to fire ematch
 
 // ADS1015 ADC Configuration

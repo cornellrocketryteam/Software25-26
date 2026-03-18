@@ -26,10 +26,9 @@ The FSW runs a 7-phase state machine defined in `state.rs` (`FlightMode` enum) w
 
 | Sensor | Driver File | Bus | Address | Data Provided |
 |--------|-------------|-----|---------|---------------|
-| **BMP390** (altimeter) | `driver/bmp390.rs` | I2C0 | 0x77 | Pressure (Pa), temperature (°C), altitude (m) |
+| **BMP390** (altimeter) | `driver/bmp390.rs` | SPI | 0x77 | Pressure (Pa), temperature (°C), altitude (m) |
 | **LSM6DSOX** (IMU) | `driver/lsm6dsox.rs` | I2C0 | 0x6A | Accel XYZ (m/s²), gyro XYZ (°/s) |
-| **MMC56X3** (magnetometer) | `driver/mmc56x3.rs` | I2C0 | 0x30 | Mag field XYZ (µT) — primary magnetometer |
-| **AK09915** (magnetometer) | `driver/ak09915.rs` | I2C0 | 0x0C | Mag field XYZ (µT) — alternate, not used in flight loop |
+| **LIS3MDL** (magnetometer) | `driver/lis3mdl.rs` | I2C0 | idk | Mag field XYZ (µT) |
 | **u-blox MAX-M10S** (GPS) | `driver/ublox_max_m10s.rs` | I2C0 | 0x42 | Latitude, longitude, satellite count, timestamp |
 
 All I2C sensors share a single bus (GPIO 0 SDA / GPIO 1 SCL, 400 kHz) through `embassy_embedded_hal::shared_bus`.
@@ -38,11 +37,11 @@ All I2C sensors share a single bus (GPIO 0 SDA / GPIO 1 SCL, 400 kHz) through `e
 
 | Actuator | Driver | Pin | Type | Purpose |
 |----------|--------|-----|------|---------|
-| **SSA Drogue** | `actuator.rs` → `Ssa` | GPIO 2 | Digital output | Fire drogue e-match (1 s pulse) |
-| **SSA Main** | `actuator.rs` → `Ssa` | GPIO 3 | Digital output | Fire main e-match (1 s pulse) |
-| **Buzzer** | `actuator.rs` → `Buzzer` | GPIO 6 | Digital output | Audio status beeps (100 ms on/off) |
-| **MAV** (vent servo) | `actuator.rs` → `Mav` | GPIO 7 | PWM (~50 Hz) | Motor Actuated Vent, servo position 0.0–1.0 |
-| **SV** (separation valve) | `actuator.rs` → `SV` | GPIO 8 | Digital output (active low) | Binary valve open/close |
+| **SSA Drogue** | `actuator.rs` → `Ssa` | GPIO 36 | Digital output | Fire drogue e-match (1 s pulse) |
+| **SSA Main** | `actuator.rs` → `Ssa` | GPIO 39 | Digital output | Fire main e-match (1 s pulse) |
+| **Buzzer** | `actuator.rs` → `Buzzer` | GPIO 21 | Digital output | Audio status beeps (100 ms on/off) |
+| **MAV** (vent servo) | `actuator.rs` → `Mav` | GPIO 40 | PWM (~330 Hz) | Motor Actuated Vent, servo position 0.0–1.0 |
+| **SV** (separation valve) | `actuator.rs` → `SV` | GPIO 47 | Digital output (active low) | Binary valve open/close |
 
 ### Communications
 
@@ -85,13 +84,13 @@ SD card logging is defined but defaults to disabled (`sd_logging_enabled = false
 |-----|----------|-----------|
 | GPIO 0 | I2C0 SDA | Bidirectional |
 | GPIO 1 | I2C0 SCL | Output |
-| GPIO 2 | SSA Drogue | Output |
-| GPIO 3 | SSA Main | Output |
+| GPIO 36 | SSA Drogue | Output |
+| GPIO 39 | SSA Main | Output |
 | GPIO 4 | UART1 TX (radio) | Output |
 | GPIO 5 | UART1 RX (radio) | Input |
-| GPIO 6 | Buzzer | Output |
-| GPIO 7 | MAV PWM | Output |
-| GPIO 8 | Separation Valve | Output |
+| GPIO 21 | Buzzer | Output |
+| GPIO 40 | MAV PWM | Output |
+| GPIO 47 | Solenoid Valve | Output |
 | GPIO 10 | Arming Switch | Input (pull-down) |
 | GPIO 24 | Umbilical Sense | Input (pull-down) |
 | GPIO 16 | SPI0 MISO (FRAM) | Input |
@@ -122,8 +121,7 @@ state.rs (FlightState)
 driver/
   ├── bmp390.rs          — altimeter
   ├── lsm6dsox.rs        — IMU
-  ├── mmc56x3.rs         — magnetometer (primary)
-  ├── ak09915.rs         — magnetometer (alternate)
+  ├── lis3mdl.rs         — magnetometer
   ├── ublox_max_m10s.rs  — GPS
   ├── rfd900x.rs         — radio
   └── main_fram.rs       — non-volatile storage

@@ -2,7 +2,6 @@ use crate::module::*;
 
 use crate::packet::Packet;
 
-use crate::driver::mmc56x3::Mmc56x3Sensor;
 use crate::driver::bmp390::Bmp390Sensor;
 use crate::driver::main_fram::Fram;
 use crate::driver::lsm6dsox::Lsm6dsoxSensor;
@@ -12,7 +11,7 @@ use crate::driver::ads1015::Ads1015Sensor;
 use crate::driver::onboard_flash::OnboardFlash;
 
 use embassy_rp::gpio::{Input, Output};
-use embassy_rp::uart::{Async, Uart};
+use embassy_rp::uart::{Async, Uart, UartTx};
 
 use crate::actuator::{Ssa, Buzzer, Mav, SV, Chute};
 
@@ -73,9 +72,6 @@ pub struct FlightState {
     // gps
     gps: UbloxMaxM10s<'static, I2cDevice<'static>>,
 
-    // magnetometer
-    magnetometer: Mmc56x3Sensor,
-
     // imu
     imu: Lsm6dsoxSensor,
 
@@ -101,6 +97,12 @@ pub struct FlightState {
 
     // QSPI Flash
     flash: OnboardFlash<'static>,
+
+    // External Comms
+    pub payload_uart: UartTx<'static, Async>,
+
+    #[cfg(feature = "sim_payload")]
+    pub sim_radio_command: Option<crate::packet::Command>,
 }
 
 impl FlightState {
@@ -117,6 +119,7 @@ impl FlightState {
         mav: Mav<'static>,
         sv: SV<'static>,
         mut flash: OnboardFlash<'static>,
+        payload_uart: UartTx<'static, Async>,
     ) -> Self {
         let mut packet = Packet::default();
         let altimeter = Bmp390Sensor::new(spi_bus, altimeter_cs).await;
@@ -133,7 +136,6 @@ impl FlightState {
             log::error!("Failed to configure GPS: {:?}", e);
         }
 
-        let magnetometer = Mmc56x3Sensor::new(i2c_bus).await;
         let imu = Lsm6dsoxSensor::new(i2c_bus).await;
         let adc = Ads1015Sensor::new(i2c_bus).await;
         let radio = Rfd900x::new(uart);
@@ -157,11 +159,15 @@ impl FlightState {
             }
         };
 
+        if let Err(e) = flash.initialize_logging().await {
+            log::error!("Failed to initialize QSPI Flash logging: {:?}", e);
+        } else {
+            log::info!("QSPI Flash logging initialized.");
+        }
+
         // Attempt to read the last packet state from Onboard QSPI Flash
         match flash.read_packet().await {
             Ok(recovered_packet) => {
-                // To avoid reading empty uninitialized flash (usually all 0xFF or 0x00), 
-                // we'll do a basic sanity check on the timestamp or flight mode
                 if recovered_packet.flight_mode <= (FlightMode::Fault as u32) {
                     log::info!("Successfully recovered previous packet from QSPI Flash.");
                     packet = recovered_packet;
@@ -185,7 +191,6 @@ impl FlightState {
             sd_logging_enabled: false, // Default to false (SD failure assumed for now)
             fram: fram,
             gps: gps,
-            magnetometer: magnetometer,
             imu: imu,
             adc: adc,
             arming_switch: arming_switch,
@@ -200,6 +205,10 @@ impl FlightState {
             mav,
             sv,
             flash,
+            payload_uart,
+
+            #[cfg(feature = "sim_payload")]
+            sim_radio_command: None,
         }
     }
 
@@ -288,7 +297,7 @@ impl FlightState {
         // Read from FRAM
         match self.fram.read_u32(0).await {
             Ok(raw) => {
-                log::info!("FlightMode read from FRAM: {:?}", FlightMode::from_u32(raw));
+                log::info!("\nFlightMode read from FRAM: {:?}", FlightMode::from_u32(raw));
             }
             Err(_) => {
                 log::warn!("Failed to read the FlightMode from FRAM!");
@@ -334,21 +343,6 @@ impl FlightState {
             }
         }
 
-        // Read magnetometer and update packet
-        match self.magnetometer.read_into_packet(&mut self.packet).await {
-            Ok(_) => {
-                log::info!(
-                    "MAG | X = {:.2} µT, Y = {:.2} µT, Z = {:.2} µT",
-                    self.packet.mag_x,
-                    self.packet.mag_y,
-                    self.packet.mag_z
-                );
-            }
-            Err(e) => {
-                log::error!("Failed to read AK09915 magnetometer: {:?}", e);
-            }
-        }
-
         // Read IMU and update packet
         match self.imu.read_into_packet(&mut self.packet).await {
             Ok(_) => {
@@ -386,10 +380,9 @@ impl FlightState {
     pub async fn transmit(&mut self) {
         let data = self.packet.to_bytes();
 
-        // Transmit via radio
         match self.radio.send(&data).await {
             Ok(_) => {
-                log::info!("Transmitted packet via radio");
+                log::info!("ACK: Data transmitted successfully!");
             }
             Err(e) => {
                 log::warn!("Failed to transmit packet via radio: {:?}", e);
@@ -398,6 +391,60 @@ impl FlightState {
 
         // Share telemetry with umbilical sender task (no-op if logger mode)
         crate::umbilical::update_telemetry(&data);
+    }
+
+    pub async fn receive_radio(&mut self, buffer: &mut [u8]) -> Result<(), embassy_rp::uart::Error> {
+        let result = self.radio.receive_packet(buffer).await;
+        if result.is_ok() {
+            log::info!("ACK: Packet received successfully!");
+        }
+        result
+    }
+
+    /// Receive and decode a full telemetry packet
+    pub async fn receive_telemetry(&mut self) -> Result<Packet, embassy_rp::uart::Error> {
+        let mut buf = [0u8; Packet::SIZE];
+        self.radio.receive_packet(&mut buf).await?;
+        let packet = Packet::from_bytes(&buf);
+        log::info!("ACK: Telemetry packet decoded successfully!");
+        Ok(packet)
+    }
+
+    pub async fn poll_radio_command(&mut self) -> Option<crate::packet::Command> {
+        #[cfg(feature = "sim_payload")]
+        if let Some(cmd) = self.sim_radio_command.take() {
+            return Some(cmd);
+        }
+
+        let mut buf = [0u8; 32];
+        // Short timeout read to check for commands without blocking the loop
+        // We use the basic receive here as commands might not have the sync-word
+        // unless they are sent by another FSW board. 
+        if let Ok(Ok(_)) = embassy_time::with_timeout(
+            embassy_time::Duration::from_millis(10),
+            self.radio.receive(&mut buf),
+        )
+        .await
+        {
+            // Simple string-based command parsing
+            if buf.starts_with(b"VNT") {
+                return Some(crate::packet::Command::Vent);
+            } else if buf.starts_with(b"N1") {
+                return Some(crate::packet::Command::N1);
+            } else if buf.starts_with(b"N2") {
+                return Some(crate::packet::Command::N2);
+            } else if buf.starts_with(b"N3") {
+                return Some(crate::packet::Command::N3);
+            } else if buf.starts_with(b"N4") {
+                return Some(crate::packet::Command::N4);
+            } else if buf.starts_with(b"FM") {
+                // Example: "FM2" for Coast
+                if let Some(digit) = (buf[2] as char).to_digit(10) {
+                    return Some(crate::packet::Command::ForceMode(digit as u32));
+                }
+            }
+        }
+        None
     }
     /*
     pub async fn transition(&mut self) {
@@ -413,21 +460,16 @@ impl FlightState {
     }
     */
 
-    pub async fn execute(&mut self) {
-        // Read sensors and update packet
-        self.read_sensors().await;
-        log::info!("\n");
-
-        // Transmit packet via radio
-        self.transmit().await;
-
-        // Save packet to QSPI Flash 
-        // NOTE(Flash): This requires a blocking 4KB Sector Erase that takes ~45ms.
-        // As a result, when flash writing is active, the absolute fastest this
-        // flight loop can execute is ~20Hz (50ms).
-        if let Err(e) = self.flash.write_packet(&self.packet).await {
-            log::warn!("Failed to write packet to QSPI Flash: {:?}", e);
+    // Appends the current packet as CSV to the onboard QSPI Flash memory
+    pub async fn save_packet_to_flash(&mut self) {
+        if let Err(e) = self.flash.append_packet_csv(&self.packet).await {
+            log::warn!("Failed to append packet CSV to QSPI Flash: {:?}", e);
         }
+    }
+
+    /// Reads the packet currently stored in the onboard QSPI Flash
+    pub async fn read_flash_packet(&mut self) -> Result<Packet, crate::driver::onboard_flash::Error> {
+        self.flash.read_packet().await
     }
 
     pub fn flight_mode_name(&mut self) -> &'static str {
@@ -501,5 +543,58 @@ impl FlightState {
         if let Err(_) = self.fram.write_u32(36, rtd_bits).await {
             //log::warn!("Failed to write RTD to FRAM");
         }
+    }
+
+    /// Reads all stored CSV data from flash and prints it to the log
+    pub async fn print_flash_dump(&mut self) {
+        log::info!("--- BEGIN FLASH CSV DUMP ---");
+        crate::umbilical::print_str("--- BEGIN FLASH CSV DUMP ---\n");
+        let start = self.flash.get_storage_offset();
+        let end = self.flash.get_write_offset();
+        let mut offset = start;
+        let mut buffer = [0u8; 256];
+
+        while offset < end {
+            let chunk_size = core::cmp::min(64, (end - offset) as usize);
+            if let Err(e) = self.flash.read(offset, &mut buffer[..chunk_size]).await {
+                log::error!("Flash read error during dump: {:?}", e);
+                break;
+            }
+
+            // Send raw bytes directly (host tool handles lossy conversion)
+            crate::umbilical::print_bytes(&buffer[..chunk_size]);
+
+            offset += chunk_size as u32;
+            embassy_time::Timer::after_millis(10).await;
+        }
+        log::info!("--- END FLASH CSV DUMP ---");
+        crate::umbilical::print_str("--- END FLASH CSV DUMP ---\n");
+    }
+
+    /// Erases all stored CSV data in the flash storage region
+    pub async fn wipe_flash_storage(&mut self) {
+        log::info!("Wiping QSPI Flash storage...");
+        crate::umbilical::print_str("Wiping QSPI Flash... Please wait.\n");
+        if let Err(e) = self.flash.wipe_storage().await {
+            log::error!("Failed to wipe flash storage: {:?}", e);
+            crate::umbilical::print_str("ERASE FAILED!\n");
+        } else {
+            log::info!("Flash storage wiped successfully.");
+            crate::umbilical::print_str("Flash wiped successfully.\n");
+        }
+    }
+
+    /// Prints the current status/usage of the flash storage
+    pub async fn print_flash_status(&mut self) {
+        let (used, total) = self.flash.get_usage();
+        let used_kb = used / 1024;
+        let total_kb = total / 1024;
+        let percent = (used as f32 / total as f32) * 100.0;
+
+        let mut msg = heapless::String::<128>::new();
+        let _ = core::fmt::write(&mut msg, format_args!("Flash: {}/{} KB used ({:.1}%)\n", used_kb, total_kb, percent));
+
+        log::info!("{}", msg.as_str());
+        crate::umbilical::print_str(msg.as_str());
     }
 }
