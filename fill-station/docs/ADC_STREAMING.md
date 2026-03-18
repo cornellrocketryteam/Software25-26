@@ -35,17 +35,17 @@ const ADC_DATA_RATE: DataRate = DataRate::Sps3300;  // Maximum speed
 const ADC_MAX_RETRIES: u32 = 5;
 const ADC_RETRY_DELAY_MS: u64 = 10;
 
-// Pressure sensor scaling for PT1500
+// PT1 scaling (ADC1 Ch0) — 0-1500 PSI
 const PT1500_SCALE: f32 = 0.909754;
 const PT1500_OFFSET: f32 = 5.08926;
 
-// Pressure sensor scaling for PT2000
-const PT2000_SCALE: f32 = 1.22124;
-const PT2000_OFFSET: f32 = 5.37052;
+// PT2 scaling (ADC1 Ch1) — 0-1000 PSI
+const PT1000_SCALE: f32 = 0.6125;
+const PT1000_OFFSET: f32 = 5.0;
 
-// Load Cell scaling
-const LOADCELL_SCALE: f32 = 1.69661;
-const LOADCELL_OFFSET: f32 = 75.37882;
+// Load Cell scaling (ADC2 Ch1)
+const LOADCELL_SCALE: f32 = 0.264;
+const LOADCELL_OFFSET: f32 = -14.9;
 ```
 
 ### To Change Sampling Rate:
@@ -120,7 +120,7 @@ When streaming is enabled, the server continuously sends:
 - `valid`: `true` if readings are fresh, `false` if ADC read failed
 - `raw`: Raw 12-bit ADC value (-2048 to 2047)
 - `voltage`: Calculated voltage based on gain setting
-- `scaled`: Pressure sensor value (only for ADC1 Ch0 and Ch1, `null` otherwise)
+- `scaled`: Scaled sensor value — PT1 (ADC1 Ch0), PT2 (ADC1 Ch1), Load Cell (ADC2 Ch1). `null` for all other channels
 
 ## Testing
 

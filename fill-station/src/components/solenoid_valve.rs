@@ -28,9 +28,12 @@ impl SolenoidValve {
         signal_pin: LineId,
         line_pull: LinePull,
     ) -> Result<Self> {
+        // All valves start CLOSED for safety.
+        // NC: LOW = closed (de-energized, natural state)
+        // NO: HIGH = closed (energized to hold shut)
         let default_level = match line_pull {
-            LinePull::NormallyOpen => true,   // Default HIGH (Actuated = LOW)
-            LinePull::NormallyClosed => false, // Default LOW (Actuated = HIGH)
+            LinePull::NormallyClosed => false, // LOW = closed
+            LinePull::NormallyOpen => true,    // HIGH = closed
         };
 
         let control_options = Options::output([control_pin])
@@ -51,15 +54,15 @@ impl SolenoidValve {
         })
     }
 
-    /// Actuate the valve.
-    /// If enable is true, the valve moves to the "actuated" state.
-    /// Actuated state depends on line_pull:
-    /// - NC: Actuated = HIGH
-    /// - NO: Actuated = LOW
-    pub async fn actuate(&self, enable: bool) -> Result<()> {
+    /// Open or close the valve.
+    /// The driver translates the logical open/close into the correct GPIO level
+    /// based on the valve's NO/NC configuration:
+    /// - NC: open = HIGH (energize), close = LOW (de-energize)
+    /// - NO: open = LOW (de-energize), close = HIGH (energize)
+    pub async fn set_open(&self, open: bool) -> Result<()> {
         let level = match self.line_pull {
-            LinePull::NormallyClosed => enable,          // Actuate -> HIGH
-            LinePull::NormallyOpen => !enable,           // Actuate -> LOW
+            LinePull::NormallyClosed => open,   // open -> HIGH, close -> LOW
+            LinePull::NormallyOpen => !open,    // open -> LOW, close -> HIGH
         };
 
         self.control_line.set_values([level]).await?;
@@ -73,16 +76,14 @@ impl SolenoidValve {
         let values = self.signal_line.get_values([false]).await?;
         Ok(*values.get(0).unwrap_or(&false))
     }
-    
-    // Helper to get current actuation state (logical)
-    pub async fn is_actuated(&self) -> Result<bool> {
-        // Use software tracked state instead of reading back hardware register
-        // which can be unreliable for output pins on some platforms
+
+    /// Returns true if the valve is currently open.
+    pub async fn is_open(&self) -> Result<bool> {
         let level = self.current_level.load(Ordering::Relaxed);
-        
+
         match self.line_pull {
-             LinePull::NormallyClosed => Ok(level),     // HIGH == Actuated
-             LinePull::NormallyOpen => Ok(!level),      // LOW == Actuated
+            LinePull::NormallyClosed => Ok(level),  // HIGH = open
+            LinePull::NormallyOpen => Ok(!level),   // LOW = open
         }
     }
 }

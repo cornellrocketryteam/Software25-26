@@ -13,7 +13,7 @@ This document provides a reference for all supported WebSocket commands for the 
 ### Connection Monitoring
 The server enforces a **15-second timeout** on idle connections to ensure safety. 
 - If no message is received from a connected client for 15 seconds, the server will:
-  1. **Close all Solenoid Valves** (SV1-SV5).
+  1. **Close SV1**.
   2. **Close the MAV**.
   3. **Disconnect the client**.
 
@@ -141,7 +141,7 @@ Sent periodically (at 100 Hz) after a `start_adc_stream` command.
 - `valid`: `true` if readings are fresh, `false` if ADC read failed.
 - `raw`: Raw 12-bit ADC value (-2048 to 2047).
 - `voltage`: Calculated voltage based on gain setting.
-- `scaled`: Pressure sensor value (only for ADC1 Ch0 and Ch1, `null` otherwise).
+- `scaled`: Scaled sensor value — PT1 (ADC1 Ch0), PT2 (ADC1 Ch1), Load Cell (ADC2 Ch1). `null` for all other channels.
 
 ---
 
@@ -164,7 +164,7 @@ An error occurred during command parsing or execution.
 ## Solenoid Valve Commands
 
 ### `get_valve_state`
-Query the current state of a solenoid valve (actuation status and continuity).
+Query the current state of a solenoid valve (open/closed and continuity).
 
 **Format:**
 ```json
@@ -175,24 +175,24 @@ Query the current state of a solenoid valve (actuation status and continuity).
 ```json
 {
   "type": "valve_state",
-  "actuated": true,
+  "open": true,
   "continuity": false
 }
 ```
-*   `actuated`: `true` if logically actuated (open).
+*   `open`: `true` if the valve is open, `false` if closed.
 *   `continuity`: `true` if continuity detected (signal high).
 
 ---
 
 ### `actuate_valve`
-Actuates (opens/energizes) or de-actuates (closes/de-energizes) a specific solenoid valve.
+Opens or closes a specific solenoid valve. The server automatically handles the correct GPIO level based on whether the valve is Normally Open (NO) or Normally Closed (NC).
 
 **Format:**
 ```json
-{"command": "actuate_valve", "valve": "SV1", "state": true}
+{"command": "actuate_valve", "valve": "SV1", "open": true}
 ```
-*   `valve`: Valve identifier ("SV1" through "SV5", case-insensitive).
-    *   *Note: For Normally Closed (NC) valves (SV1-SV4), `true` = HIGH (Open). SV5 is an NC valve in hardware but its logical state is inverted in software.*
+*   `valve`: Valve identifier ("SV1", case-insensitive).
+*   `open`: `true` to open the valve, `false` to close it.
 
 **Response:**
 ```json
@@ -358,7 +358,7 @@ Move the QD stepper motor a specific number of steps. Runs as a **non-blocking b
 {"command": "qd_move", "steps": 100, "direction": true}
 ```
 * `steps`: Number of full steps to execute.
-* `direction`: `true` for one direction, `false` for the other.
+* `direction`: `true` for CW (retract), `false` for CCW (extend).
 
 **Response:**
 ```json
@@ -367,12 +367,12 @@ Move the QD stepper motor a specific number of steps. Runs as a **non-blocking b
 
 ---
 
-### `qd_open`
-Execute the QD open preset (moves a preconfigured number of steps in the open direction). Non-blocking.
+### `qd_retract`
+Execute the QD retract preset (CW, preconfigured number of steps). Non-blocking.
 
 **Format:**
 ```json
-{"command": "qd_open"}
+{"command": "qd_retract"}
 ```
 
 **Response:**
@@ -382,12 +382,12 @@ Execute the QD open preset (moves a preconfigured number of steps in the open di
 
 ---
 
-### `qd_close`
-Execute the QD close preset (moves a preconfigured number of steps in the close direction). Non-blocking.
+### `qd_extend`
+Execute the QD extend preset (CCW, preconfigured number of steps). Non-blocking.
 
 **Format:**
 ```json
-{"command": "qd_close"}
+{"command": "qd_extend"}
 ```
 
 **Response:**

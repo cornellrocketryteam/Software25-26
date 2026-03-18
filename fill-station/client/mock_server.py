@@ -144,11 +144,11 @@ async def handler(websocket):
                     state["qd"]["steps"] += steps
                 else:
                     state["qd"]["steps"] -= steps
-            elif command == "qd_open":
-                state["qd"]["state"] = "open"
+            elif command == "qd_retract":
+                state["qd"]["state"] = "retracted"
                 state["qd"]["steps"] = 1000
-            elif command == "qd_close":
-                state["qd"]["state"] = "closed"
+            elif command == "qd_extend":
+                state["qd"]["state"] = "extended"
                 state["qd"]["steps"] = 0
 
             # FSW Commands

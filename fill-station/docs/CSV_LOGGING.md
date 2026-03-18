@@ -22,13 +22,13 @@ The CSV file contains the following columns, exactly matching the order below. I
 - `MAV_Pulse_US`: MAV position in microseconds.
 - `Igniter1_Active`, `Igniter2_Active`: Boolean indicating if the igniter is currently fired.
 
-**Solenoid Valves:** (Columns repeat for SV1 through SV5)
-- `<VALVE>_Actuated`: Boolean active state. Note: For SV5, this records the inverted logical state.
-- `<VALVE>_Cont`: Boolean continuity state.
+**Solenoid Valve:**
+- `SV1_Open`: Boolean indicating if SV1 is open.
+- `SV1_Cont`: Boolean continuity state.
 
 **Analog to Digital Converters (ADCs):** (Columns repeat for ADC1 and ADC2, Channels 0 through 3)
 - `ADC<NUM>_<CH>_Raw`: 12-bit raw integer reading.
-- `ADC<NUM>_<CH>_Scaled`: Extrapolated float data assuming standard sensor calibration constraints. If unscaled, will be `N/A`.
+- `ADC<NUM>_<CH>_Scaled`: Calibrated sensor value — PT1 (ADC1 Ch0), PT2 (ADC1 Ch1), Load Cell (ADC2 Ch1). `N/A` for all other channels.
 
 **Umbilical Telemetry (FSW):**
 - `FSW_Connected`: True if the ground station has an active CDC-ACM serial umbilical connection to the flight software.

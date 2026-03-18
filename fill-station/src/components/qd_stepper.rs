@@ -11,11 +11,12 @@ const HALF_PERIOD_US: u64 = 500; // 500 us HIGH + 500 us LOW = 1 KHz (>> 4 us mi
 const ENABLE_WAKE_MS: u64 = 2; // Wait after enable before pulsing (spec: 1 ms min)
 const DIR_SETUP_MS: u64 = 5; // DIR must be stable before first STEP rising edge
 
-// Preset step counts and directions (TODO: calibrate on hardware)
-pub const QD_OPEN_STEPS: u32 = 200; // 1 full revolution at full-step (200 steps/rev)
-pub const QD_CLOSE_STEPS: u32 = 200;
-pub const QD_OPEN_DIRECTION: bool = true;
-pub const QD_CLOSE_DIRECTION: bool = false;
+// Preset step counts and directions
+// CW (true) = retract, CCW (false) = extend
+pub const QD_RETRACT_STEPS: u32 = 670;
+pub const QD_EXTEND_STEPS: u32 = 670;
+pub const QD_RETRACT_DIRECTION: bool = true;
+pub const QD_EXTEND_DIRECTION: bool = false;
 
 /// QD Stepper motor controller using ISD02 driver.
 /// STEP signal via GPIO bit-bang, DIR and ENA via GPIO.
@@ -104,7 +105,7 @@ impl QdStepper {
             "QD '{}': moving {} steps, direction={}",
             self.name,
             steps,
-            if direction { "OPEN" } else { "CLOSE" }
+            if direction { "CW/RETRACT" } else { "CCW/EXTEND" }
         );
 
         #[cfg(any(target_os = "linux", target_os = "android"))]

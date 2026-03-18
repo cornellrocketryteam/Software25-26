@@ -27,14 +27,6 @@ pub struct Hardware {
     pub adc2: Ads1015,
     #[cfg(any(target_os = "linux", target_os = "android"))]
     pub sv1: SolenoidValve,
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    pub sv2: SolenoidValve,
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    pub sv3: SolenoidValve,
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    pub sv4: SolenoidValve,
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    pub sv5: SolenoidValve,
     pub mav: Mav,
     pub ball_valve: BallValve,
     pub qd_stepper: QdStepper,
@@ -51,38 +43,10 @@ impl Hardware {
         let adc1 = Ads1015::new(I2C_BUS, ADC1_ADDRESS)?;
         let adc2 = Ads1015::new(I2C_BUS, ADC2_ADDRESS)?;
 
-        // SV1
+        // SV1 (Normally Closed)
         let sv1 = SolenoidValve::new(
             &chip0, 42, // pin to actuate
             &chip1, 51, // pin to sense
-            LinePull::NormallyClosed
-        ).await?;
-
-        // SV2
-        let sv2 = SolenoidValve::new(
-            &chip0, 32,
-            &chip0, 35,
-            LinePull::NormallyClosed
-        ).await?;
-        
-        // SV3
-        let sv3 = SolenoidValve::new(
-            &chip1, 44, 
-            &chip0, 37,
-            LinePull::NormallyClosed
-        ).await?;
-
-        // SV4
-        let sv4 = SolenoidValve::new(
-            &chip0, 41, // Signal4 - GPIO0_41 (R19)
-            &chip0, 36, // GPIO4 - GPIO0_36 (T19)
-            LinePull::NormallyClosed
-        ).await?;
-
-        // SV5
-        let sv5 = SolenoidValve::new(
-            &chip1, 48,
-            &chip1, 46,
             LinePull::NormallyClosed
         ).await?;
 
@@ -106,7 +70,7 @@ impl Hardware {
             "QD"
         ).await?;
 
-        Ok(Self { ig1, ig2, adc1, adc2, sv1, sv2, sv3, sv4, sv5, mav, ball_valve, qd_stepper })
+        Ok(Self { ig1, ig2, adc1, adc2, sv1, mav, ball_valve, qd_stepper })
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "android")))]

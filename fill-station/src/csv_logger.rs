@@ -57,9 +57,8 @@ pub async fn start_logging(
     };
 
     // Write Header
-    // SV columns: SV1_Actuated, SV1_Cont, ...
     let header = "Loop,Timestamp_ms,MAV_Angle,MAV_Pulse_US,Igniter1_Active,Igniter2_Active,\
-SV1_Actuated,SV1_Cont,SV2_Actuated,SV2_Cont,SV3_Actuated,SV3_Cont,SV4_Actuated,SV4_Cont,SV5_Actuated,SV5_Cont,\
+SV1_Open,SV1_Cont,\
 ADC1_0_Raw,ADC1_0_Scaled,ADC1_1_Raw,ADC1_1_Scaled,ADC1_2_Raw,ADC1_2_Scaled,ADC1_3_Raw,ADC1_3_Scaled,\
 ADC2_0_Raw,ADC2_0_Scaled,ADC2_1_Raw,ADC2_1_Scaled,ADC2_2_Raw,ADC2_2_Scaled,ADC2_3_Raw,ADC2_3_Scaled,\
 FSW_Connected,FSW_Mode,FSW_Pressure,FSW_Temp,FSW_Altitude,FSW_Lat,FSW_Lon,FSW_Sats,FSW_Timestamp,\
@@ -102,31 +101,23 @@ QD_Enabled,QD_Direction\n";
                 let ig1 = hw.ig1.is_igniting().await;
                 let ig2 = hw.ig2.is_igniting().await;
 
-                // SVs (Actuated, Continuity)
-                let sv1 = (hw.sv1.is_actuated().await.unwrap_or(false), hw.sv1.check_continuity().await.unwrap_or(false));
-                let sv2 = (hw.sv2.is_actuated().await.unwrap_or(false), hw.sv2.check_continuity().await.unwrap_or(false));
-                let sv3 = (hw.sv3.is_actuated().await.unwrap_or(false), hw.sv3.check_continuity().await.unwrap_or(false));
-                let sv4 = (hw.sv4.is_actuated().await.unwrap_or(false), hw.sv4.check_continuity().await.unwrap_or(false));
-                // SV5 Logic inverted as per main.rs
-                let sv5_act = hw.sv5.is_actuated().await.unwrap_or(false);
-                let sv5 = (!sv5_act, hw.sv5.check_continuity().await.unwrap_or(false));
+                // SV1 (Open, Continuity)
+                let sv1 = (hw.sv1.is_open().await.unwrap_or(false), hw.sv1.check_continuity().await.unwrap_or(false));
 
-                (mav_angle, mav_pulse, ig1, ig2, [sv1, sv2, sv3, sv4, sv5])
+                (mav_angle, mav_pulse, ig1, ig2, sv1)
             }
             #[cfg(not(any(target_os = "linux", target_os = "android")))]
             {
-                (0.0, 0, false, false, [(false,false); 5])
+                (0.0, 0, false, false, (false, false))
             }
         };
 
         // Format CSV Line
-        let mut line = format!("{},{},{:.2},{},{},{},", 
+        let mut line = format!("{},{},{:.2},{},{},{},",
             loop_count, adc_timestamp, mav_angle, mav_pulse, ig1_active, ig2_active);
 
-        // Append SVs
-        for (act, cont) in sv_states {
-            line.push_str(&format!("{},{},", act, cont));
-        }
+        // Append SV1
+        line.push_str(&format!("{},{},", sv_states.0, sv_states.1));
 
         // Append ADCs
         if adc_valid {

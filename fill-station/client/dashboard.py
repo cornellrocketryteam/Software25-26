@@ -356,10 +356,10 @@ with col_left:
 
     st.subheader("QD Stepper")
     qd1, qd2 = st.columns(2)
-    if qd1.button("QD OPEN", type="primary", use_container_width=True):
-        client.send_command({"command": "qd_open"})
-    if qd2.button("QD CLOSE", use_container_width=True):
-        client.send_command({"command": "qd_close"})
+    if qd1.button("QD RETRACT", type="primary", use_container_width=True):
+        client.send_command({"command": "qd_retract"})
+    if qd2.button("QD EXTEND", use_container_width=True):
+        client.send_command({"command": "qd_extend"})
 
     st.caption("Manual Step")
     qd_steps = st.number_input("Steps", min_value=1, value=200, step=1, key="qd_steps")

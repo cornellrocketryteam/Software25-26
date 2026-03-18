@@ -46,8 +46,8 @@ The ISD02 spec sheet is located at `src/components/ISD02-04-08.pdf`.
 - LOW = driver disabled (motor unpowered, free to rotate)
 
 **DIR logic:**
-- HIGH = one direction (mapped to "open" in code)
-- LOW = opposite direction (mapped to "close" in code)
+- HIGH = CW (mapped to "retract" in code)
+- LOW = CCW (mapped to "extend" in code)
 
 ## Software Architecture
 
@@ -99,13 +99,12 @@ const ENABLE_WAKE_MS: u64 = 2;        // Delay after enable before pulsing
 ### Preset Constants (calibrate on hardware)
 
 ```rust
-pub const QD_OPEN_STEPS: u32 = 200;        // Steps for open preset
-pub const QD_CLOSE_STEPS: u32 = 200;       // Steps for close preset
-pub const QD_OPEN_DIRECTION: bool = true;   // Direction for open
-pub const QD_CLOSE_DIRECTION: bool = false; // Direction for close
+// CW (true) = retract, CCW (false) = extend
+pub const QD_RETRACT_STEPS: u32 = 670;
+pub const QD_EXTEND_STEPS: u32 = 670;
+pub const QD_RETRACT_DIRECTION: bool = true;   // CW
+pub const QD_EXTEND_DIRECTION: bool = false;   // CCW
 ```
-
-These are **placeholder values** (1 full revolution each). They must be calibrated on the actual QD mechanism to determine the correct step count and direction for open/close operations.
 
 ## WebSocket Commands
 
@@ -117,7 +116,7 @@ Move the QD stepper a specific number of steps in a given direction. Runs as a b
 {"command": "qd_move", "steps": 100, "direction": true}
 ```
 - `steps`: Number of full steps to execute (u32)
-- `direction`: `true` for one direction, `false` for the other
+- `direction`: `true` for CW (retract), `false` for CCW (extend)
 
 **Response:**
 ```json
@@ -127,12 +126,12 @@ Returns immediately. Motor runs in background.
 
 ---
 
-### `qd_open`
-Execute the QD open preset (uses `QD_OPEN_STEPS` and `QD_OPEN_DIRECTION` constants).
+### `qd_retract`
+Execute the QD retract preset (CW, uses `QD_RETRACT_STEPS` and `QD_RETRACT_DIRECTION` constants).
 
 **Format:**
 ```json
-{"command": "qd_open"}
+{"command": "qd_retract"}
 ```
 
 **Response:**
@@ -142,12 +141,12 @@ Execute the QD open preset (uses `QD_OPEN_STEPS` and `QD_OPEN_DIRECTION` constan
 
 ---
 
-### `qd_close`
-Execute the QD close preset (uses `QD_CLOSE_STEPS` and `QD_CLOSE_DIRECTION` constants).
+### `qd_extend`
+Execute the QD extend preset (CCW, uses `QD_EXTEND_STEPS` and `QD_EXTEND_DIRECTION` constants).
 
 **Format:**
 ```json
-{"command": "qd_close"}
+{"command": "qd_extend"}
 ```
 
 **Response:**
@@ -177,8 +176,8 @@ Then send commands via websocat:
 ```bash
 websocat ws://localhost:9000
 {"command": "qd_move", "steps": 50, "direction": true}
-{"command": "qd_open"}
-{"command": "qd_close"}
+{"command": "qd_retract"}
+{"command": "qd_extend"}
 ```
 
 Check logs for:
@@ -200,14 +199,12 @@ QD move complete (50 steps)
 To determine the correct preset values:
 
 1. Send `qd_move` commands with small step counts (e.g., 10-50) to understand the mechanism's range of motion
-2. Determine which `direction` value corresponds to open vs close
-3. Count the total steps needed for a full open and full close
+2. Verify CW (`direction=true`) retracts and CCW (`direction=false`) extends
+3. Count the total steps needed for a full retract and full extend
 4. Update the constants in `src/components/qd_stepper.rs`:
    ```rust
-   pub const QD_OPEN_STEPS: u32 = <your_value>;
-   pub const QD_CLOSE_STEPS: u32 = <your_value>;
-   pub const QD_OPEN_DIRECTION: bool = <true_or_false>;
-   pub const QD_CLOSE_DIRECTION: bool = <true_or_false>;
+   pub const QD_RETRACT_STEPS: u32 = <your_value>;
+   pub const QD_EXTEND_STEPS: u32 = <your_value>;
    ```
 5. Rebuild and redeploy
 
@@ -220,7 +217,7 @@ To determine the correct preset values:
 - Check DIP switches are set for full-step mode (both switches OFF on old version)
 
 ### Motor moves wrong direction
-- Swap `QD_OPEN_DIRECTION` / `QD_CLOSE_DIRECTION` constants
+- Swap `QD_RETRACT_DIRECTION` / `QD_EXTEND_DIRECTION` constants
 - Or swap motor phase wiring (swap A+/A- or B+/B-)
 
 ### Motor skips steps or stalls

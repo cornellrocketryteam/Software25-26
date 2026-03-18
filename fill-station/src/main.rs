@@ -51,20 +51,20 @@ const ADC_MAX_RETRIES: u32 = 5;
 /// Delay between retry attempts (milliseconds)
 const ADC_RETRY_DELAY_MS: u64 = 10;
 
-/// Pressure sensor scaling for a PT with range to 1500
-/// Formula: scaled = raw * SCALE_A + OFFSET_A
+/// PT1 scaling (ADC1 Ch0) — 0-1500 PSI range
+/// Formula: scaled = raw * SCALE + OFFSET
 const PT1500_SCALE: f32 = 0.909754;
 const PT1500_OFFSET: f32 = 5.08926;
 
-/// Pressure sensor scaling for a PT with range to 2000
-/// Formula: scaled = raw * SCALE_B + OFFSET_B
-const PT2000_SCALE: f32 = 1.22124;
-const PT2000_OFFSET: f32 = 5.37052;
+/// PT2 scaling (ADC1 Ch1) — 0-1000 PSI range
+/// Formula: scaled = raw * SCALE + OFFSET
+const PT1000_SCALE: f32 = 0.6125;
+const PT1000_OFFSET: f32 = 5.0;
 
-/// Pressure sensor scaling for a LoadCell
-/// Formula: scaled = raw * SCALE_C + OFFSET_C
-const LOADCELL_SCALE: f32 = 1.69661;
-const LOADCELL_OFFSET: f32 = 75.37882;
+/// Load Cell scaling (ADC2 Ch1)
+/// Formula: scaled = raw * SCALE + OFFSET
+const LOADCELL_SCALE: f32 = 0.264;
+const LOADCELL_OFFSET: f32 = -14.9;
 
 // ============================================================================
 // UMBILICAL CONFIGURATION
@@ -132,7 +132,8 @@ fn main() -> Result<()> {
         info!("Starting Safety Monitor task...");
         let safety_hw = hardware.clone();
         let safety_counts = active_client_count.clone();
-        smol::spawn(safety_monitor_task(safety_hw, safety_counts)).detach();
+        let safety_umb_tx = umb_cmd_tx.clone();
+        smol::spawn(safety_monitor_task(safety_hw, safety_counts, safety_umb_tx)).detach();
 
         // Spawn background ADC monitoring task
         info!("Starting ADC monitoring task at {} Hz...", ADC_SAMPLE_RATE_HZ);
@@ -392,16 +393,12 @@ async fn execute_command(
                 CommandResponse::IgniterContinuity { id, continuity: false }
             }
         }
-        Command::ActuateValve { valve, state } => {
+        Command::ActuateValve { valve, open } => {
             #[cfg(any(target_os = "linux", target_os = "android"))]
             {
                 let hw = hardware.lock().await;
                 let result = match valve.to_lowercase().as_str() {
-                    "sv1" => hw.sv1.actuate(state).await,
-                    "sv2" => hw.sv2.actuate(state).await,
-                    "sv3" => hw.sv3.actuate(state).await,
-                    "sv4" => hw.sv4.actuate(state).await,
-                    "sv5" => hw.sv5.actuate(state).await,
+                    "sv1" => hw.sv1.set_open(open).await,
                     _ => {
                         warn!("Unknown valve: {}", valve);
                         return CommandResponse::Error;
@@ -410,11 +407,11 @@ async fn execute_command(
 
                 match result {
                     Ok(_) => {
-                        info!("Valve {} actuated: {}", valve, state);
+                        info!("Valve {} set to {}", valve, if open { "OPEN" } else { "CLOSED" });
                         CommandResponse::Success
                     }
                     Err(e) => {
-                        error!("Failed to actuate valve {}: {}", valve, e);
+                        error!("Failed to set valve {} {}: {}", valve, if open { "open" } else { "closed" }, e);
                         CommandResponse::Error
                     }
                 }
@@ -422,8 +419,8 @@ async fn execute_command(
             #[cfg(not(any(target_os = "linux", target_os = "android")))]
             {
                 let _ = hardware;
-                warn!("ActuateValve command not supported on this platform: {} -> {}", valve, state);
-                CommandResponse::Success // Maintain consistent response type even if mocked
+                warn!("ActuateValve command not supported on this platform: {} -> {}", valve, open);
+                CommandResponse::Success
             }
         }
         Command::GetValveState { valve } => {
@@ -431,20 +428,16 @@ async fn execute_command(
             {
                 let hw = hardware.lock().await;
                 let result = match valve.to_lowercase().as_str() {
-                    "sv1" => Some((hw.sv1.is_actuated().await, hw.sv1.check_continuity().await)),
-                    "sv2" => Some((hw.sv2.is_actuated().await, hw.sv2.check_continuity().await)),
-                    "sv3" => Some((hw.sv3.is_actuated().await, hw.sv3.check_continuity().await)),
-                    "sv4" => Some((hw.sv4.is_actuated().await, hw.sv4.check_continuity().await)),
-                    "sv5" => Some((hw.sv5.is_actuated().await.map(|b| !b), hw.sv5.check_continuity().await)), // using NOT operator for a external reason
+                    "sv1" => Some((hw.sv1.is_open().await, hw.sv1.check_continuity().await)),
                     _ => None,
                 };
 
                 match result {
-                    Some((Ok(actuated), Ok(continuity))) => {
-                        CommandResponse::ValveState { valve, actuated, continuity }
+                    Some((Ok(open), Ok(continuity))) => {
+                        CommandResponse::ValveState { valve, open, continuity }
                     }
                     Some((Err(e), _)) => {
-                        error!("Failed to get valve actuation state: {}", e);
+                        error!("Failed to get valve state: {}", e);
                         CommandResponse::Error
                     }
                     Some((_, Err(e))) => {
@@ -461,7 +454,7 @@ async fn execute_command(
             {
                 let _ = hardware;
                 warn!("GetValveState command not supported on this platform: {}", valve);
-                CommandResponse::ValveState { valve: valve.to_string(), actuated: false, continuity: false }
+                CommandResponse::ValveState { valve: valve.to_string(), open: false, continuity: false }
             }
         }
         Command::StartAdcStream => {
@@ -596,24 +589,24 @@ async fn execute_command(
             }).detach();
             CommandResponse::Success
         }
-        Command::QdOpen => {
-            use crate::components::qd_stepper::{QD_OPEN_STEPS, QD_OPEN_DIRECTION};
+        Command::QdRetract => {
+            use crate::components::qd_stepper::{QD_RETRACT_STEPS, QD_RETRACT_DIRECTION};
             let hw_bg = hardware.clone();
             smol::spawn(async move {
                 let hw = hw_bg.lock().await;
-                if let Err(e) = hw.qd_stepper.move_steps(QD_OPEN_STEPS, QD_OPEN_DIRECTION).await {
-                    error!("QD open failed: {}", e);
+                if let Err(e) = hw.qd_stepper.move_steps(QD_RETRACT_STEPS, QD_RETRACT_DIRECTION).await {
+                    error!("QD retract failed: {}", e);
                 }
             }).detach();
             CommandResponse::Success
         }
-        Command::QdClose => {
-            use crate::components::qd_stepper::{QD_CLOSE_STEPS, QD_CLOSE_DIRECTION};
+        Command::QdExtend => {
+            use crate::components::qd_stepper::{QD_EXTEND_STEPS, QD_EXTEND_DIRECTION};
             let hw_bg = hardware.clone();
             smol::spawn(async move {
                 let hw = hw_bg.lock().await;
-                if let Err(e) = hw.qd_stepper.move_steps(QD_CLOSE_STEPS, QD_CLOSE_DIRECTION).await {
-                    error!("QD close failed: {}", e);
+                if let Err(e) = hw.qd_stepper.move_steps(QD_EXTEND_STEPS, QD_EXTEND_DIRECTION).await {
+                    error!("QD extend failed: {}", e);
                 }
             }).detach();
             CommandResponse::Success
@@ -714,15 +707,16 @@ async fn send_response(
 // ============================================================================
 
 async fn safety_monitor_task(
-    hardware: Arc<Mutex<Hardware>>, 
-    active_client_count: Arc<AtomicUsize>
+    hardware: Arc<Mutex<Hardware>>,
+    active_client_count: Arc<AtomicUsize>,
+    umb_cmd_tx: smol::channel::Sender<String>,
 ) {
     let mut disconnect_start: Option<Instant> = None;
     let mut safety_triggered = false;
 
     loop {
         let count = active_client_count.load(Ordering::SeqCst);
-        
+
         if count == 0 {
             // If no clients, verify how long we've been disconnected
             if disconnect_start.is_none() {
@@ -734,7 +728,7 @@ async fn safety_monitor_task(
             if let Some(start) = disconnect_start {
                 if !safety_triggered && start.elapsed() > Duration::from_secs(15) {
                     warn!("SAFETY TIMEOUT (15s) - Executing Emergency Shutdown");
-                    perform_emergency_shutdown(&hardware).await;
+                    perform_emergency_shutdown(&hardware, &umb_cmd_tx).await;
                     safety_triggered = true;
                 }
             }
@@ -751,28 +745,31 @@ async fn safety_monitor_task(
     }
 }
 
-async fn perform_emergency_shutdown(hardware: &Arc<Mutex<Hardware>>) {
+async fn perform_emergency_shutdown(
+    hardware: &Arc<Mutex<Hardware>>,
+    umb_cmd_tx: &smol::channel::Sender<String>,
+) {
     #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         let hw = hardware.lock().await;
         info!("EMERGENCY SHUTDOWN: Closing all Valves");
-        
-        // Close all SVs (Signal Low)
-        // Note: We use actuate(false) which sets standard "de-actuated" state.
-        // If NormallyClosed (default), this sets pin false (Low).
-        let _ = hw.sv1.actuate(false).await;
-        let _ = hw.sv2.actuate(false).await;
-        let _ = hw.sv3.actuate(false).await;
-        let _ = hw.sv4.actuate(false).await;
-        let _ = hw.sv5.actuate(false).await;
-        
+
+        // Close SV1
+        let _ = hw.sv1.set_open(false).await;
+
         // Close MAV
         let _ = hw.mav.close().await;
 
         // Close Ball Valve
         let _ = hw.ball_valve.close_sequence().await;
     }
-    
+
+    // Send FSW Safe command via umbilical to close FSW SV
+    info!("EMERGENCY SHUTDOWN: Sending FSW Open SV command via umbilical");
+    if let Err(e) = umb_cmd_tx.try_send("<S>".into()) {
+        error!("Failed to send FSW Open SV command during emergency shutdown: {}", e);
+    }
+
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
     {
         let _ = hardware;
@@ -881,11 +878,11 @@ async fn try_read_all_adcs(
         let raw = hw.adc1.read_raw(channel, ADC_GAIN, ADC_DATA_RATE)?;
         let voltage = (raw as f32) * ADC_GAIN.lsb_size();
         
-        // Apply PT1500 scaling to channel 0 on ADC 1 and PT2000 scaling on other channels
-        let scaled = if i == 0 {
-            Some(raw as f32 * PT1500_SCALE + PT1500_OFFSET)
-        } else {
-            Some(raw as f32 * PT2000_SCALE + PT2000_OFFSET)
+        // PT1 (Ch0): PT1500 scaling, PT2 (Ch1): PT2000 scaling, others: no scaling
+        let scaled = match i {
+            0 => Some(raw as f32 * PT1500_SCALE + PT1500_OFFSET),
+            1 => Some(raw as f32 * PT1000_SCALE + PT1000_OFFSET),
+            _ => None,
         };
         
         adc1_readings[i] = ChannelReading { raw, voltage, scaled };
@@ -896,11 +893,11 @@ async fn try_read_all_adcs(
         let raw = hw.adc2.read_raw(channel, ADC_GAIN, ADC_DATA_RATE)?;
         let voltage = (raw as f32) * ADC_GAIN.lsb_size();
         
-        // Apply Loadcell Scaling to channel 1 on ADC 2 and PT2000 scaling on other channels
+        // Load Cell (Ch1): LOADCELL scaling, others: no scaling
         let scaled = if i == 1 {
             Some(raw as f32 * LOADCELL_SCALE + LOADCELL_OFFSET)
         } else {
-            Some(raw as f32 * PT2000_SCALE + PT2000_OFFSET)
+            None
         };
         
         adc2_readings[i] = ChannelReading { raw, voltage, scaled };
