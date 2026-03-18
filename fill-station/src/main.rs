@@ -762,6 +762,7 @@ async fn safety_monitor_task(
 ) {
     let mut disconnect_start: Option<Instant> = None;
     let mut safety_triggered = false;
+    let mut qd_retract_triggered = false;
 
     loop {
         let count = active_client_count.load(Ordering::SeqCst);
@@ -772,13 +773,28 @@ async fn safety_monitor_task(
                 info!("No active clients. Starting safety timer.");
                 disconnect_start = Some(Instant::now());
                 safety_triggered = false;
+                qd_retract_triggered = false;
             }
 
             if let Some(start) = disconnect_start {
-                if !safety_triggered && start.elapsed() > Duration::from_secs(15) {
+                let elapsed = start.elapsed();
+
+                if !safety_triggered && elapsed > Duration::from_secs(15) {
                     warn!("SAFETY TIMEOUT (15s) - Executing Emergency Shutdown");
                     perform_emergency_shutdown(&hardware, &umb_cmd_tx).await;
                     safety_triggered = true;
+                }
+
+                if !qd_retract_triggered && elapsed > Duration::from_secs(20) {
+                    warn!("SAFETY TIMEOUT (20s) - Retracting QD");
+                    {
+                        use crate::components::qd_stepper::{QD_RETRACT_STEPS, QD_RETRACT_DIRECTION};
+                        let hw = hardware.lock().await;
+                        if let Err(e) = hw.qd_stepper.move_steps(QD_RETRACT_STEPS, QD_RETRACT_DIRECTION).await {
+                            error!("QD retract during safety timeout failed: {}", e);
+                        }
+                    }
+                    qd_retract_triggered = true;
                 }
             }
         } else {
@@ -787,6 +803,7 @@ async fn safety_monitor_task(
                 info!("Client connected. Safety timer cancelled.");
                 disconnect_start = None;
                 safety_triggered = false;
+                qd_retract_triggered = false;
             }
         }
 
