@@ -79,6 +79,20 @@ pub enum Command {
     FswResetCard,
     /// Reboot FSW
     FswReboot,
+    /// Dump flash memory on FSW
+    FswDumpFlash,
+    /// Wipe flash memory on FSW
+    FswWipeFlash,
+    /// Query flash info on FSW
+    FswFlashInfo,
+    /// Trigger payload event N1 on FSW
+    FswPayloadN1,
+    /// Trigger payload event N2 on FSW
+    FswPayloadN2,
+    /// Trigger payload event N3 on FSW
+    FswPayloadN3,
+    /// Trigger payload event N4 on FSW
+    FswPayloadN4,
     /// Start streaming FSW telemetry to this client
     StartFswStream,
     /// Stop streaming FSW telemetry to this client

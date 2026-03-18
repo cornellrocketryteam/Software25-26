@@ -66,5 +66,12 @@ Commands sent over the WebSocket that get parsed and sent across the serial conn
 - `fsw_reset_fram`: Clear the FSW's FRAM data (`<F>`).
 - `fsw_reset_card`: Reset the FSW's SD card writer (`<D>`).
 - `fsw_reboot`: Force a software reboot on FSW (`<R>`).
+- `fsw_dump_flash`: Dump flash memory contents (`<G>`).
+- `fsw_wipe_flash`: Wipe flash memory (`<W>`).
+- `fsw_flash_info`: Query flash info (`<I>`).
+- `fsw_payload_n1`: Trigger payload event N1 (`<1>`).
+- `fsw_payload_n2`: Trigger payload event N2 (`<2>`).
+- `fsw_payload_n3`: Trigger payload event N3 (`<3>`).
+- `fsw_payload_n4`: Trigger payload event N4 (`<4>`).
 
 For the exact payload and response format for these commands, refer to the [WEBSOCKET_API.md](WEBSOCKET_API.md).

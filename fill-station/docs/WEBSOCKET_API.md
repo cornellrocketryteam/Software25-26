@@ -437,15 +437,22 @@ Stop streaming FSW telemetry data.
 
 The following commands send simple 1-byte command characters over the serial connection to the Flight Software. They all follow the same format and response structure.
 
-*   `fsw_open_mav`
-*   `fsw_close_mav`
-*   `fsw_open_sv`
-*   `fsw_close_sv`
-*   `fsw_launch`
-*   `fsw_safe`
-*   `fsw_reset_fram`
-*   `fsw_reset_card`
-*   `fsw_reboot`
+*   `fsw_launch` — Trigger launch sequence (`<L>`)
+*   `fsw_open_mav` — Open MAV on vehicle (`<M>`)
+*   `fsw_close_mav` — Close MAV on vehicle (`<m>`)
+*   `fsw_open_sv` — Open SV on vehicle (`<S>`)
+*   `fsw_close_sv` — Close SV on vehicle (`<s>`)
+*   `fsw_safe` — Safe all FSW actuators (`<V>`)
+*   `fsw_reset_fram` — Clear FRAM data (`<F>`)
+*   `fsw_reset_card` — Reset SD card writer (`<D>`)
+*   `fsw_reboot` — Reboot FSW (`<R>`)
+*   `fsw_dump_flash` — Dump flash memory (`<G>`)
+*   `fsw_wipe_flash` — Wipe flash memory (`<W>`)
+*   `fsw_flash_info` — Query flash info (`<I>`)
+*   `fsw_payload_n1` — Payload event N1 (`<1>`)
+*   `fsw_payload_n2` — Payload event N2 (`<2>`)
+*   `fsw_payload_n3` — Payload event N3 (`<3>`)
+*   `fsw_payload_n4` — Payload event N4 (`<4>`)
 
 **Format:**
 ```json

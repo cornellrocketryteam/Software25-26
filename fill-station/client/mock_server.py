@@ -152,7 +152,7 @@ async def handler(websocket):
                 state["qd"]["steps"] = 0
 
             # FSW Commands
-            elif command in ["fsw_launch", "fsw_open_mav", "fsw_close_mav", "fsw_open_sv", "fsw_close_sv", "fsw_safe", "fsw_reset_fram", "fsw_reset_card", "fsw_reboot"]:
+            elif command in ["fsw_launch", "fsw_open_mav", "fsw_close_mav", "fsw_open_sv", "fsw_close_sv", "fsw_safe", "fsw_reset_fram", "fsw_reset_card", "fsw_reboot", "fsw_dump_flash", "fsw_wipe_flash", "fsw_flash_info", "fsw_payload_n1", "fsw_payload_n2", "fsw_payload_n3", "fsw_payload_n4"]:
                 # Simply succeed, we could update fake fsw state if we wanted
                 pass
 

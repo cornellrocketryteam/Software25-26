@@ -679,6 +679,55 @@ async fn execute_command(
                 Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
             }
         }
+        Command::FswDumpFlash => {
+            info!("Sending FSW Dump Flash command via umbilical");
+            match umb_cmd_tx.try_send("<G>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswWipeFlash => {
+            info!("Sending FSW Wipe Flash command via umbilical");
+            match umb_cmd_tx.try_send("<W>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswFlashInfo => {
+            info!("Sending FSW Flash Info command via umbilical");
+            match umb_cmd_tx.try_send("<I>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswPayloadN1 => {
+            info!("Sending FSW Payload N1 command via umbilical");
+            match umb_cmd_tx.try_send("<1>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswPayloadN2 => {
+            info!("Sending FSW Payload N2 command via umbilical");
+            match umb_cmd_tx.try_send("<2>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswPayloadN3 => {
+            info!("Sending FSW Payload N3 command via umbilical");
+            match umb_cmd_tx.try_send("<3>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswPayloadN4 => {
+            info!("Sending FSW Payload N4 command via umbilical");
+            match umb_cmd_tx.try_send("<4>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
         Command::StartFswStream => {
             info!("Starting FSW telemetry stream for client");
             *fsw_streaming_enabled = true;
