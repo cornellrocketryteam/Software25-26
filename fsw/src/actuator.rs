@@ -146,9 +146,9 @@ impl<'a> Mav<'a> {
     const SERVO_PERIOD_US: u16 = (1_000_000 / Self::SERVO_FREQ_HZ) as u16; // 3030 µs
     const SERVO_MIN_US: u16 = 800;
     const SERVO_MAX_US: u16 = 2200;
-    const SERVO_OPEN_US: u16 = 2015;
-    const SERVO_CLOSE_US: u16 = 995;
-    const SERVO_NEUTRAL_US: u16 = 1520;
+    const SERVO_OPEN_US: u16 = 1950;
+    const SERVO_CLOSE_US: u16 = 883;
+    const SERVO_NEUTRAL_US: u16 = 1300;
 
     /// Create new MAV servo driver.
     /// Assumes PWM slice already configured for:
