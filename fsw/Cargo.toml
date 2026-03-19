@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-embassy-executor = { git = "https://github.com/embassy-rs/embassy.git", features = ["platform-cortex-m", "executor-thread", "defmt"] }
+embassy-executor = { git = "https://github.com/embassy-rs/embassy.git", features = ["arch-cortex-m", "executor-thread", "defmt"] }
 embassy-time = { git = "https://github.com/embassy-rs/embassy.git", features = ["defmt"] }
 embassy-rp = { git = "https://github.com/embassy-rs/embassy.git", features = ["defmt", "time-driver", "critical-section-impl", "rp235xb"] }
 embassy-usb = { git = "https://github.com/embassy-rs/embassy.git", features = ["defmt"] }
