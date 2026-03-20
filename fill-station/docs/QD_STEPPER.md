@@ -37,7 +37,7 @@ The ISD02 spec sheet is located at `src/components/ISD02-04-08.pdf`.
 
 | Signal | Interface | Board Pin | Code Reference |
 |--------|-----------|-----------|----------------|
-| STEP | PWM sysfs | EHRPWM4 Channel A (pwmchip0, channel 0) | Same chip as MAV (channel 1) |
+| STEP | PWM sysfs | EHRPWM4 Channel A (pwmchip0, channel 0) | GPIO bit-bang in code |
 | DIR | GPIO | gpiochip2 (chip1), line 43 | `chip1, 43` in hardware.rs |
 | ENA | GPIO | gpiochip2 (chip1), line 64 | `chip1, 64` in hardware.rs |
 
@@ -53,7 +53,7 @@ The ISD02 spec sheet is located at `src/components/ISD02-04-08.pdf`.
 
 ### Component: `src/components/qd_stepper.rs`
 
-The `QdStepper` struct manages PWM via sysfs (same approach as the MAV) and GPIO via `async-gpiod` (same approach as the Ball Valve).
+The `QdStepper` struct manages STEP via GPIO bit-bang and DIR/ENA via `async-gpiod`.
 
 ### Stepping Mechanism
 
@@ -228,4 +228,4 @@ To determine the correct preset values:
 ### PWM channel won't export
 - Check that the device tree overlay enables EHRPWM4
 - Verify `/sys/class/pwm/pwmchip0` exists on the target board
-- The PWM channel shares a chip with the MAV — ensure both channels can coexist
+- Verify `/sys/class/pwm/pwmchip0` exists if using hardware PWM

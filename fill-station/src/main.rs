@@ -467,59 +467,6 @@ async fn execute_command(
             *streaming_enabled = false;
             CommandResponse::Success
         }
-        Command::SetMavAngle { valve: _, angle } => {
-            let hw = hardware.lock().await;
-            info!("Setting MAV angle to {}", angle);
-            if let Err(e) = hw.mav.set_angle(angle).await {
-                error!("Failed to set MAV angle: {}", e);
-                CommandResponse::Error
-            } else {
-                CommandResponse::Success
-            }
-        }
-        Command::MavOpen { valve: _ } => {
-            let hw = hardware.lock().await;
-            info!("Opening MAV");
-            if let Err(e) = hw.mav.open().await {
-                error!("Failed to open MAV: {}", e);
-                CommandResponse::Error
-            } else {
-                CommandResponse::Success
-            }
-        }
-        Command::MavClose { valve: _ } => {
-            let hw = hardware.lock().await;
-            info!("Closing MAV");
-            if let Err(e) = hw.mav.close().await {
-                error!("Failed to close MAV: {}", e);
-                CommandResponse::Error
-            } else {
-                CommandResponse::Success
-            }
-        }
-        Command::MavNeutral { valve: _ } => {
-            let hw = hardware.lock().await;
-            info!("Setting MAV to neutral");
-            if let Err(e) = hw.mav.neutral().await {
-                error!("Failed to set MAV neutral: {}", e);
-                CommandResponse::Error
-            } else {
-                CommandResponse::Success
-            }
-        }
-        Command::GetMavState { valve: _ } => {
-            let hw = hardware.lock().await;
-            match hw.mav.get_pulse_width_us().await {
-                Ok(us) => {
-                    let angle = hw.mav.get_angle().await.unwrap_or(0.0);
-                    CommandResponse::MavState { angle, pulse_width_us: us }
-                }
-                Err(e) => {
-                    error!("Failed to get MAV state: {}", e);
-                    CommandResponse::Error
-                }
-            }
-        }
         Command::BVOpen => {
             let hw = hardware.lock().await;
             info!("Executing BallValve Open Sequence");
@@ -822,9 +769,6 @@ async fn perform_emergency_shutdown(
 
         // Close SV1
         let _ = hw.sv1.set_open(false).await;
-
-        // Close MAV
-        let _ = hw.mav.close().await;
 
         // Close Ball Valve
         let _ = hw.ball_valve.close_sequence().await;

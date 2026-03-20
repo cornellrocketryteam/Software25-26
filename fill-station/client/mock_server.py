@@ -13,7 +13,6 @@ state = {
         "SV4": {"actuated": False, "continuity": True},
         "SV5": {"actuated": False, "continuity": True},
     },
-    "mav": {"angle": 0.0, "pulse_width_us": 1000},
     "bv": {"signal": "low", "on_off": "low"},
     "qd": {"steps": 0, "state": "closed"},
     "igniters": {
@@ -75,32 +74,6 @@ async def handler(websocket):
                     state["sv"][valve]["actuated"] = val
                 else:
                     response = {"type": "error", "message": "Unknown valve"}
-
-            elif command == "get_mav_state":
-                response = {
-                    "type": "mav_state",
-                    "angle": state["mav"]["angle"],
-                    "pulse_width_us": state["mav"]["pulse_width_us"]
-                }
-            
-            elif command == "set_mav_angle":
-                angle = data.get("angle")
-                state["mav"]["angle"] = angle
-                # rough conversion for mock
-                state["mav"]["pulse_width_us"] = int(1000 + (angle / 90.0) * 1000)
-            
-            elif command == "mav_open":
-                state["mav"]["angle"] = 90.0
-                state["mav"]["pulse_width_us"] = 2000
-
-            elif command == "mav_close":
-                state["mav"]["angle"] = 0.0
-                state["mav"]["pulse_width_us"] = 1000
-            
-            elif command == "mav_neutral":
-                 state["mav"]["pulse_width_us"] = 1300
-                 # angle approx 27? doesn't matter for mock
-                 state["mav"]["angle"] = 27.0
 
             elif command == "get_igniter_continuity":
                 ign_id = data.get("id")

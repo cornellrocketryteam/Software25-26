@@ -1,7 +1,7 @@
 # CSV Logging Implementation
 
 ## Overview
-The fill station automatically logs all system states to a CSV file on startup. This includes state information from actuators (SVs, MAV), the ADCs, and any connected Flight Software (FSW) received over the Umbilical. The logger runs continuously in the background at **100 Hz**.
+The fill station automatically logs all system states to a CSV file on startup. This includes state information from actuators (SVs), the ADCs, and any connected Flight Software (FSW) received over the Umbilical. The logger runs continuously in the background at **100 Hz**.
 
 ## File Management
 - **Location:** Logs are saved to `/tmp/data` on Linux (the TI board), or `logs/` on macOS/Windows.
@@ -18,8 +18,6 @@ The CSV file contains the following columns, exactly matching the order below. I
 **Timing and General Actuators:**
 - `Loop`: Monotonically increasing loop counter starting at 1.
 - `Timestamp_ms`: Unix timestamp of the data point.
-- `MAV_Angle`: Mechanical Actuated Valve position in degrees.
-- `MAV_Pulse_US`: MAV position in microseconds.
 - `Igniter1_Active`, `Igniter2_Active`: Boolean indicating if the igniter is currently fired.
 
 **Solenoid Valve:**

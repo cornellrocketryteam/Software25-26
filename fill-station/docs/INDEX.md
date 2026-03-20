@@ -105,7 +105,6 @@ fill-station/
 │   └── components/              # Hardware drivers
 │       ├── igniter.rs
 │       ├── solenoid_valve.rs
-│       ├── mav.rs
 │       ├── ball_valve.rs
 │       ├── qd_stepper.rs
 │       ├── ads1015.rs
@@ -131,10 +130,6 @@ fill-station/
   - GPIO-based control (Control + Signal lines)
   - Configurable Line Pull (NO/NC)
   - SV1 configured (Normally Closed)
-
-- **MAV** (`src/components/mav.rs`)
-  - PWM-based servo control
-  - Limits and neutral position handling
 
 - **Ball Valve** (`src/components/ball_valve.rs`)
   - Two-pin GPIO control (Signal + ON_OFF)
@@ -224,8 +219,6 @@ main() spawns tasks:
 | `stop_adc_stream` | End ADC data stream | [ADC_STREAMING.md](ADC_STREAMING.md#stop-adc-streaming) |
 | `actuate_valve` | Open/close solenoid valve (set `open: true/false`) | [WEBSOCKET_API.md](WEBSOCKET_API.md#actuate_valve) |
 | `get_valve_state` | Query valve state | [WEBSOCKET_API.md](WEBSOCKET_API.md#get_valve_state) |
-| `set_mav_angle` | Set MAV servo angle | [WEBSOCKET_API.md](WEBSOCKET_API.md#set_mav_angle) |
-| `mav_open` / `mav_close` | Open or Close MAV fully | [WEBSOCKET_API.md](WEBSOCKET_API.md#mav_open) |
 | `bv_open` / `bv_close` | Open or Close Ball Valve | [WEBSOCKET_API.md](WEBSOCKET_API.md#bv_open) |
 | `qd_move` | Move QD stepper N steps | [QD_STEPPER.md](QD_STEPPER.md) |
 | `qd_retract` / `qd_extend` | Retract (CW) or Extend (CCW) QD (preset) | [QD_STEPPER.md](QD_STEPPER.md) |
@@ -266,7 +259,6 @@ const ADC2_ADDRESS: u16 = 0x49;
 // Igniter pins: 38, 39, 40, 42 (across chips)
 // Valve pins (Control / Sense):
 //   SV1: C0-42 / C1-51 (NC)
-// MAV: PWM Chip 0, Channel 0
 ```
 
 ## Testing Tools

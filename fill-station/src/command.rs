@@ -20,21 +20,6 @@ pub enum Command {
         /// The server handles the correct GPIO level based on NO/NC configuration.
         open: bool,
     },
-    /// Set MAV angle in degrees (0-90)
-    SetMavAngle {
-        /// Name of valve (usually "MAV", but just for logging context if needed)
-        valve: String,
-        angle: f32,
-    },
-    /// Open MAV (90 degrees)
-    MavOpen { valve: String },
-    /// Close MAV (0 degrees)
-    MavClose { valve: String },
-    /// Set MAV to neutral (1520us)
-    MavNeutral { valve: String },
-    /// Get current MAV state
-    GetMavState { valve: String },
-
     // Ball Valve Commands
     #[serde(rename = "bv_open")]
     BVOpen,
@@ -122,11 +107,6 @@ pub enum CommandResponse {
     IgniterContinuity {
         id: u8,
         continuity: bool,
-    },
-    /// MAV state response
-    MavState {
-        angle: f32,
-        pulse_width_us: u32,
     },
     /// FSW telemetry data from umbilical
     FswTelemetry {

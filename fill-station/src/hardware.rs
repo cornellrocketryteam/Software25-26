@@ -8,7 +8,6 @@ use crate::components::igniter::Igniter;
 use crate::components::solenoid_valve::{SolenoidValve, LinePull};
 
 use crate::components::ads1015::Ads1015;
-use crate::components::mav::Mav;
 use crate::components::ball_valve::BallValve;
 use crate::components::qd_stepper::QdStepper;
 
@@ -27,7 +26,6 @@ pub struct Hardware {
     pub adc2: Ads1015,
     #[cfg(any(target_os = "linux", target_os = "android"))]
     pub sv1: SolenoidValve,
-    pub mav: Mav,
     pub ball_valve: BallValve,
     pub qd_stepper: QdStepper,
 }
@@ -50,9 +48,6 @@ impl Hardware {
             LinePull::NormallyClosed
         ).await?;
 
-        // MAV (Chip 0, Channel 1 for B)
-        let mav = Mav::new(0, 1, "MAV").await?;
-
         // Ball Valve
         // Signal: Chip 1, Line 62
         // ON_OFF: Chip 1, Line 63
@@ -70,17 +65,16 @@ impl Hardware {
             "QD"
         ).await?;
 
-        Ok(Self { ig1, ig2, adc1, adc2, sv1, mav, ball_valve, qd_stepper })
+        Ok(Self { ig1, ig2, adc1, adc2, sv1, ball_valve, qd_stepper })
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
     pub async fn new() -> Result<Self> {
         let adc1 = Ads1015::new(I2C_BUS, ADC1_ADDRESS)?;
         let adc2 = Ads1015::new(I2C_BUS, ADC2_ADDRESS)?;
-        let mav = Mav::new(0, 0, "MAV").await?;
         let ball_valve = BallValve::new(&(), 0, &(), 0, "BallValve").await?;
         let qd_stepper = QdStepper::new(&(), 0, &(), 0, &(), 0, "QD").await?;
 
-        Ok(Self { adc1, adc2, mav, ball_valve, qd_stepper })
+        Ok(Self { adc1, adc2, ball_valve, qd_stepper })
     }
 }

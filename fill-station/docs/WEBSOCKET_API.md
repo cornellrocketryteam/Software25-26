@@ -14,8 +14,10 @@ This document provides a reference for all supported WebSocket commands for the 
 The server enforces a **15-second timeout** on idle connections to ensure safety. 
 - If no message is received from a connected client for 15 seconds, the server will:
   1. **Close SV1**.
-  2. **Close the MAV**.
-  3. **Disconnect the client**.
+  2. **Close the Ball Valve**.
+  3. **Send FSW Open SV command via umbilical**.
+  4. **Disconnect the client**.
+- After 20 seconds with no clients connected, the **QD will retract**.
 
 To prevent this, clients must send any valid JSON command at least once every 15 seconds. If no other command is needed, use the `heartbeat` command.
 
@@ -193,89 +195,6 @@ Opens or closes a specific solenoid valve. The server automatically handles the 
 ```
 *   `valve`: Valve identifier ("SV1", case-insensitive).
 *   `open`: `true` to open the valve, `false` to close it.
-
-**Response:**
-```json
-{"type": "success"}
-```
-
----
-
-## MAV Commands
-
-### `get_mav_state`
-Query the current state of the MAV (angle and pulse width).
-
-**Format:**
-```json
-{"command": "get_mav_state", "valve": "MAV"}
-```
-
-**Response:**
-```json
-{
-  "type": "mav_state",
-  "angle": 45.0,
-  "pulse_width_us": 1422
-}
-```
-
----
-
-### `set_mav_angle`
-Sets the angle of the Mechanically Actuated Valve (MAV) servo.
-
-**Format:**
-```json
-{"command": "set_mav_angle", "valve": "MAV", "angle": 45.0}
-```
-*   `valve`: Valve identifier (currently "MAV").
-*   `angle`: Target angle in degrees (0.0 to 126.0).
-
-**Response:**
-```json
-{"type": "success"}
-```
-
----
-
-### `mav_open`
-Opens the MAV to its maximum position (90 degrees).
-
-**Format:**
-```json
-{"command": "mav_open", "valve": "MAV"}
-```
-
-**Response:**
-```json
-{"type": "success"}
-```
-
----
-
-### `mav_close`
-Closes the MAV to its minimum position (0 degrees).
-
-**Format:**
-```json
-{"command": "mav_close", "valve": "MAV"}
-```
-
-**Response:**
-```json
-{"type": "success"}
-```
-
----
-
-### `mav_neutral`
-Sets the MAV to its neutral position (1300 µs).
-
-**Format:**
-```json
-{"command": "mav_neutral", "valve": "MAV"}
-```
 
 **Response:**
 ```json

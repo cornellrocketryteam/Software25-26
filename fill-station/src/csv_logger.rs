@@ -57,7 +57,7 @@ pub async fn start_logging(
     };
 
     // Write Header
-    let header = "Loop,Timestamp_ms,MAV_Angle,MAV_Pulse_US,Igniter1_Active,Igniter2_Active,\
+    let header = "Loop,Timestamp_ms,Igniter1_Active,Igniter2_Active,\
 SV1_Open,SV1_Cont,\
 ADC1_0_Raw,ADC1_0_Scaled,ADC1_1_Raw,ADC1_1_Scaled,ADC1_2_Raw,ADC1_2_Scaled,ADC1_3_Raw,ADC1_3_Scaled,\
 ADC2_0_Raw,ADC2_0_Scaled,ADC2_1_Raw,ADC2_1_Scaled,ADC2_2_Raw,ADC2_2_Scaled,ADC2_3_Raw,ADC2_3_Scaled,\
@@ -86,16 +86,12 @@ QD_Enabled,QD_Direction\n";
             (reading.timestamp_ms, reading.valid, reading.adc1, reading.adc2)
         };
 
-        // 2. Gather Hardware Data (MAV, SV, Igniters)
+        // 2. Gather Hardware Data (SV, Igniters)
         // We lock hardware briefly
-        let (mav_angle, mav_pulse, ig1_active, ig2_active, sv_states) = {
+        let (ig1_active, ig2_active, sv_states) = {
             #[cfg(any(target_os = "linux", target_os = "android"))]
             {
                 let hw = _hardware.lock().await;
-                
-                // MAV
-                let mav_pulse = hw.mav.get_pulse_width_us().await.unwrap_or(0);
-                let mav_angle = hw.mav.get_angle().await.unwrap_or(0.0);
 
                 // Igniters
                 let ig1 = hw.ig1.is_igniting().await;
@@ -104,17 +100,17 @@ QD_Enabled,QD_Direction\n";
                 // SV1 (Open, Continuity)
                 let sv1 = (hw.sv1.is_open().await.unwrap_or(false), hw.sv1.check_continuity().await.unwrap_or(false));
 
-                (mav_angle, mav_pulse, ig1, ig2, sv1)
+                (ig1, ig2, sv1)
             }
             #[cfg(not(any(target_os = "linux", target_os = "android")))]
             {
-                (0.0, 0, false, false, (false, false))
+                (false, false, (false, false))
             }
         };
 
         // Format CSV Line
-        let mut line = format!("{},{},{:.2},{},{},{},",
-            loop_count, adc_timestamp, mav_angle, mav_pulse, ig1_active, ig2_active);
+        let mut line = format!("{},{},{},{},",
+            loop_count, adc_timestamp, ig1_active, ig2_active);
 
         // Append SV1
         line.push_str(&format!("{},{},", sv_states.0, sv_states.1));
