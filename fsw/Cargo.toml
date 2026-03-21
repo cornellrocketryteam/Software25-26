@@ -8,7 +8,6 @@ embassy-executor = { git = "https://github.com/embassy-rs/embassy.git", features
 embassy-time = { git = "https://github.com/embassy-rs/embassy.git", features = ["defmt"] }
 embassy-rp = { git = "https://github.com/embassy-rs/embassy.git", features = ["defmt", "time-driver", "critical-section-impl", "rp235xb"] }
 embassy-usb = { git = "https://github.com/embassy-rs/embassy.git", features = ["defmt"] }
-embassy-usb-logger = { git = "https://github.com/embassy-rs/embassy.git" }
 embassy-sync = { git = "https://github.com/embassy-rs/embassy.git", features = ["defmt"] }
 embassy-embedded-hal = { git = "https://github.com/embassy-rs/embassy.git", features = ["defmt"] }
 

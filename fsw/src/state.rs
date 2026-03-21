@@ -389,8 +389,8 @@ impl FlightState {
             }
         }
 
-        // Share telemetry with umbilical sender task (no-op if logger mode)
-        crate::umbilical::update_telemetry(&data);
+        // Emit telemetry as a parseable text line over USB
+        crate::umbilical::emit_telemetry(&self.packet);
     }
 
     pub async fn receive_radio(&mut self, buffer: &mut [u8]) -> Result<(), embassy_rp::uart::Error> {
