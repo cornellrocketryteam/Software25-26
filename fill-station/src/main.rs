@@ -2,6 +2,7 @@ mod command;
 mod hardware;
 mod components;
 mod csv_logger;
+mod mqtt_publisher;
 use anyhow::Result;
 use async_tungstenite::{WebSocketStream, tungstenite};
 use smol::Async;
@@ -147,6 +148,12 @@ fn main() -> Result<()> {
         let log_adc = adc_readings.clone();
         let log_umb = umbilical_readings.clone();
         smol::spawn(csv_logger::start_logging(log_hw, log_adc, log_umb)).detach();
+
+        // Spawn MQTT Publisher Task
+        let mqtt_hw = hardware.clone();
+        let mqtt_adc = adc_readings.clone();
+        let mqtt_umb = umbilical_readings.clone();
+        smol::spawn(mqtt_publisher::start_mqtt_publisher(mqtt_hw, mqtt_adc, mqtt_umb)).detach();
 
         info!("Initializing web socket server...");
         let listener = Async::<TcpListener>::bind(([0, 0, 0, 0], 9000))?;
