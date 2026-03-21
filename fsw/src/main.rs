@@ -117,7 +117,7 @@ async fn main(spawner: Spawner) {
     #[cfg(feature = "test_sv")]
     {
         log::info!("Starting SV Test Mode...");
-        log::info!("SV will cycle: ON for {}ms, OFF for 30s", constants::SV_TEST_DURATION_MS);
+        log::info!("SV will cycle: ON for {}ms, OFF for 10s", constants::SV_TEST_DURATION_MS);
         loop {
             log::info!("Actuating SV OPEN for {}ms", constants::SV_TEST_DURATION_MS);
             flight_state.open_sv(0).await;
@@ -128,8 +128,8 @@ async fn main(spawner: Spawner) {
             flight_state.close_sv().await;
             flight_state.update_actuators().await;
 
-            log::info!("Waiting 30 seconds...");
-            Timer::after_millis(30_000).await;
+            log::info!("Waiting 10 seconds...");
+            Timer::after_millis(10_000).await;
         }
     }
 
