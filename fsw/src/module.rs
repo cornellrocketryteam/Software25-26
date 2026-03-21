@@ -7,7 +7,7 @@ use embassy_rp::gpio::Output;
 use embassy_rp::i2c::{Config as I2cConfig, I2c, InterruptHandler as I2cInterruptHandler};
 use embassy_rp::peripherals::{
     DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, DMA_CH4, DMA_CH5, DMA_CH6, I2C0, PIN_0, PIN_1,
-    PIN_2, PIN_3, PIN_4, PIN_8, PIN_9, PIN_21, PIN_32, PIN_33, PIN_36, PIN_39, PIN_40, PIN_47,
+    PIN_2, PIN_3, PIN_4, PIN_8, PIN_9, PIN_21, PIN_12, PIN_13, PIN_36, PIN_39, PIN_40, PIN_47,
     PWM_SLICE8, SPI0, UART0, UART1, USB,
 };
 use embassy_rp::spi::{Config as SpiConfig, Spi};
@@ -133,8 +133,8 @@ pub fn init_shared_spi(
 // Initialize UART0 for Payload (pins 32/33)
 pub fn init_uart0(
     uart0: Peri<'static, UART0>,
-    tx: Peri<'static, PIN_32>,
-    rx: Peri<'static, PIN_33>,
+    tx: Peri<'static, PIN_12>,
+    rx: Peri<'static, PIN_13>,
     tx_dma: Peri<'static, DMA_CH5>,
     rx_dma: Peri<'static, DMA_CH6>,
 ) -> Uart<'static, uart::Async> {
