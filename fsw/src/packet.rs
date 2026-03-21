@@ -32,10 +32,10 @@ pub struct Packet {
     pub gyro_x: f32,
     pub gyro_y: f32,
     pub gyro_z: f32,
-    // adc - ADS1015 (raw ADC counts; swap to scaled when calibration values are known)
-    pub pt3: f32, // channel 0
-    pub pt4: f32, // channel 1
-    pub rtd: f32, // channel 2
+    // adc - ADS1015 (scaled)
+    pub pt3: f32, // channel 3
+    pub pt4: f32, // channel 2
+    pub rtd: f32, // channel 1
     // valve states
     pub sv_open: bool,
     pub mav_open: bool,

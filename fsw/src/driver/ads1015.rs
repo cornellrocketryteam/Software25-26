@@ -20,6 +20,7 @@ const CFG_OS_READY: u16 = 0x8000;
 const CFG_MUX_AIN0: u16 = 0x4000; // AIN0 vs GND
 const CFG_MUX_AIN1: u16 = 0x5000; // AIN1 vs GND
 const CFG_MUX_AIN2: u16 = 0x6000; // AIN2 vs GND
+const CFG_MUX_AIN3: u16 = 0x7000; // AIN3 vs GND
 
 // PGA[11:9]: ±4.096V full-scale range
 const CFG_PGA_4V: u16 = 0x0200;
@@ -37,8 +38,8 @@ const CFG_COMP_DISABLE: u16 = 0x0003;
 /// MUX bits are OR'd in per-channel before writing
 const CFG_BASE: u16 = CFG_OS_START | CFG_PGA_4V | CFG_MODE_SINGLE | CFG_DR_1600 | CFG_COMP_DISABLE;
 
-/// MUX values indexed by channel number (0, 1, 2)
-const CHANNEL_MUX: [u16; 3] = [CFG_MUX_AIN0, CFG_MUX_AIN1, CFG_MUX_AIN2];
+/// MUX values indexed by channel number (0, 1, 2, 3)
+const CHANNEL_MUX: [u16; 4] = [CFG_MUX_AIN0, CFG_MUX_AIN1, CFG_MUX_AIN2, CFG_MUX_AIN3];
 
 /// Maximum time to wait for a conversion to complete
 const CONVERSION_TIMEOUT_MS: u64 = 10;
@@ -98,10 +99,10 @@ impl Ads1015Sensor {
         Ok(((buf[0] as u16) << 8) | buf[1] as u16)
     }
 
-    /// Read a single ADC channel (0, 1, or 2) in single-shot mode.
+    /// Read a single ADC channel (0, 1, 2, or 3) in single-shot mode.
     /// Returns the raw 12-bit signed value.
     pub async fn read_channel(&mut self, channel: u8) -> Result<i16, Ads1015Error<<I2cDevice<'static> as embedded_hal_async::i2c::ErrorType>::Error>> {
-        if channel > 2 {
+        if channel > 3 {
             return Err(Ads1015Error::InvalidChannel);
         }
 
@@ -136,22 +137,17 @@ impl Ads1015Sensor {
         Ok(value)
     }
 
-    /// Read channels 0, 1, and 2 into the packet.
-    /// Stores RAW values. To switch to scaled values, uncomment the scaling lines below.
+    /// Read channels 1, 2, and 3 into the packet.
+    /// Stores scaled values.
     pub async fn read_into_packet(&mut self, packet: &mut Packet) -> Result<(), Ads1015Error<<I2cDevice<'static> as embedded_hal_async::i2c::ErrorType>::Error>> {
-        let raw_ch0 = self.read_channel(0).await?;
-        let raw_ch1 = self.read_channel(1).await?;
-        let raw_ch2 = self.read_channel(2).await?;
+        let raw_rtd = self.read_channel(1).await?;
+        let raw_pt4 = self.read_channel(2).await?;
+        let raw_pt3 = self.read_channel(3).await?;
 
-        // Store raw values (as f32)
-        packet.pt3 = raw_ch0 as f32;
-        packet.pt4 = raw_ch1 as f32;
-        packet.rtd = raw_ch2 as f32;
-
-        // To use scaled values instead, replace the lines above with:
-        // packet.pt3 = raw_ch0 as f32 * constants::ADS1015_PT3_SCALE_M + constants::ADS1015_PT3_SCALE_B;
-        // packet.pt4 = raw_ch1 as f32 * constants::ADS1015_PT4_SCALE_M + constants::ADS1015_PT4_SCALE_B;
-        // packet.rtd = raw_ch2 as f32 * constants::ADS1015_RTD_SCALE_M + constants::ADS1015_RTD_SCALE_B;
+        // Apply scaling
+        packet.rtd = raw_rtd as f32 * constants::ADS1015_RTD_SCALE_M + constants::ADS1015_RTD_SCALE_B;
+        packet.pt4 = raw_pt4 as f32 * constants::ADS1015_PT4_SCALE_M + constants::ADS1015_PT4_SCALE_B;
+        packet.pt3 = raw_pt3 as f32 * constants::ADS1015_PT3_SCALE_M + constants::ADS1015_PT3_SCALE_B;
 
         Ok(())
     }

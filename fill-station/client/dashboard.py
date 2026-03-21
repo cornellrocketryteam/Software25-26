@@ -393,12 +393,17 @@ with col_right:
         adc2 = client.latest_adc.get("adc2", [])
         
         # Mapping Schema
+        # PT1000_SCALE: 0.6125, PT1000_OFFSET: 5.0
         # PT1500_SCALE: 0.909754, PT1500_OFFSET: 5.08926
         # PT2000_SCALE: 1.22124, PT2000_OFFSET: 5.37052
         # LOADCELL_SCALE: 1.69661, LOADCELL_OFFSET: 75.37882
+        
+        PT1000_SCALE = 0.6125
+        PT1000_OFFSET = 5.0
+        
         # Measurement mapping
         if len(adc1) > 0: data.append({"Name": "PT1", "Raw": adc1[0]['raw'], "Scaled": adc1[0]['raw'] * 0.909754 + 5.08926})
-        if len(adc1) > 1: data.append({"Name": "PT2", "Raw": adc1[1]['raw'], "Scaled": adc1[1]['raw'] * 0.6125 + 5.0})
+        if len(adc1) > 1: data.append({"Name": "PT2", "Raw": adc1[1]['raw'], "Scaled": adc1[1]['raw'] * PT1000_SCALE + PT1000_OFFSET})
         if len(adc1) > 2: data.append({"Name": "PT3", "Raw": adc1[2]['raw'], "Scaled": adc1[2]['raw'] * 0.909754 + 5.0892})
         if len(adc1) > 3: data.append({"Name": "", "Raw": adc1[3]['raw'], "Scaled": adc1[3]['raw'] * 1.22124 + 5.37052})
         
