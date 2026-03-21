@@ -1,6 +1,7 @@
 {
   kernel,
   dtb,
+  dtbOverlay,
   initrd,
   debug ? false,
 
@@ -23,6 +24,7 @@ stdenvNoCC.mkDerivation {
       (if debug then "debug" else "quiet")
       "console=ttyS2,115200n8"
       "panic=-1"
+      "firmware_class.path=/etc/lib/firmware"
     ];
 
     # Assuming that the FIT image is loaded to ${addr_fit}, this variable should
@@ -39,7 +41,19 @@ stdenvNoCC.mkDerivation {
 
     cp ${dtb} dtb
     chmod u+w dtb
-    fdtput --auto-path --verbose --type=s dtb /chosen bootargs "''${kernelParams[@]}"
+    
+    # Apply the overlay to the base DTB
+    fdtoverlay -i dtb -o dtb-merged ${dtbOverlay}
+    
+    # Remove SerDes PHY reference from USB node — we only need USB 2.0
+    fdtput -d dtb-merged /bus@f4000/cdns-usb@f900000/usb@f400000 phys
+    fdtput -d dtb-merged /bus@f4000/cdns-usb@f900000/usb@f400000 phy-names
+
+    # Add kernel boot parameters to the merged DTB
+    fdtput --auto-path --verbose --type=s dtb-merged /chosen bootargs "''${kernelParams[@]}"
+    
+    # Use the merged DTB
+    mv dtb-merged dtb
 
     cp ${initrd} initrd
 

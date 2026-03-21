@@ -1,8 +1,9 @@
 //! MB85RS2 SPI FRAM driver
 
+use crate::module::{SpiDevice, SharedSpi};
+use embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice as SharedSpiDevice;
 use embassy_rp::gpio::Output;
-use embassy_rp::peripherals::SPI0;
-use embassy_rp::spi::Spi;
+use embedded_hal_async::spi::{SpiDevice as _, Operation};
 
 const CMD_WREN: u8 = 0x06; // Write Enable
 const CMD_READ: u8 = 0x03; // Read Memory
@@ -10,21 +11,19 @@ const CMD_WRITE: u8 = 0x02; // Write Memory
 
 /// MB85RS2 FRAM driver
 pub struct Fram<'a> {
-    spi: Spi<'a, SPI0, embassy_rp::spi::Async>,
-    cs: Output<'a>,
+    spi: SpiDevice<'a>,
 }
 
 impl<'a> Fram<'a> {
-    /// Create a new FRAM driver
-    pub fn new(spi: Spi<'a, SPI0, embassy_rp::spi::Async>, cs: Output<'a>) -> Self {
-        Self { spi, cs }
+    /// Create a new FRAM driver using a shared SPI bus
+    pub fn new(spi_bus: &'static SharedSpi, cs: Output<'a>) -> Self {
+        let spi_device = SharedSpiDevice::new(spi_bus, cs);
+        Self { spi: spi_device }
     }
 
     /// Write enable command
     async fn write_enable(&mut self) -> Result<(), ()> {
-        self.cs.set_low();
         let result = self.spi.write(&[CMD_WREN]).await;
-        self.cs.set_high();
         result.map_err(|_| ())
     }
 
@@ -39,22 +38,16 @@ impl<'a> Fram<'a> {
 
         let mut buffer = [0u8; 4];
 
-        self.cs.set_low();
-        // Send READ command and 3-byte address
-        if self.spi.write(&[CMD_READ]).await.is_err() {
-            self.cs.set_high();
+        // Send READ command, 3-byte address, and read 4 bytes in a single transaction
+        let mut operations = [
+            Operation::Write(&[CMD_READ]),
+            Operation::Write(&addr_bytes),
+            Operation::Read(&mut buffer),
+        ];
+
+        if self.spi.transaction(&mut operations).await.is_err() {
             return Err(());
         }
-        if self.spi.write(&addr_bytes).await.is_err() {
-            self.cs.set_high();
-            return Err(());
-        }
-        // Read 4 bytes
-        if self.spi.read(&mut buffer).await.is_err() {
-            self.cs.set_high();
-            return Err(());
-        }
-        self.cs.set_high();
 
         // Convert big-endian bytes to u32
         Ok(u32::from_be_bytes(buffer))
@@ -74,22 +67,33 @@ impl<'a> Fram<'a> {
 
         let value_bytes = value.to_be_bytes();
 
-        self.cs.set_low();
-        // Send WRITE command, 3-byte address, and 4-byte value
-        if self.spi.write(&[CMD_WRITE]).await.is_err() {
-            self.cs.set_high();
-            return Err(());
-        }
-        if self.spi.write(&addr_bytes).await.is_err() {
-            self.cs.set_high();
-            return Err(());
-        }
-        if self.spi.write(&value_bytes).await.is_err() {
-            self.cs.set_high();
-            return Err(());
-        }
-        self.cs.set_high();
+        let mut operations = [
+            Operation::Write(&[CMD_WRITE]),
+            Operation::Write(&addr_bytes),
+            Operation::Write(&value_bytes),
+        ];
 
+        if self.spi.transaction(&mut operations).await.is_err() {
+            return Err(());
+        }
+
+        Ok(())
+    }
+
+    /// Reset the FRAM state (clear FlightMode, CycleCount, and Altitude log)
+    pub async fn reset(&mut self) -> Result<(), ()> {
+        // Reset FlightMode (Address 0) to 0 (Startup)
+        if self.write_u32(0, 0).await.is_err() {
+            return Err(());
+        }
+        // Reset CycleCount (Address 4) to 0
+        if self.write_u32(4, 0).await.is_err() {
+            return Err(());
+        }
+        // Reset Altitude Log (Address 100) to 0
+        if self.write_u32(100, 0).await.is_err() {
+            return Err(());
+        }
         Ok(())
     }
 }

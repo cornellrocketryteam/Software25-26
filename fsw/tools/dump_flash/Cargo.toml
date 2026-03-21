@@ -1,0 +1,9 @@
+[package]
+name = "dump_flash"
+version = "0.1.0"
+edition = "2021"
+description = "Host-side tool: dumps onboard QSPI flash CSV over USB umbilical"
+
+[dependencies]
+serialport = "4"
+chrono     = { version = "0.4", features = ["clock"] }
