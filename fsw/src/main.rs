@@ -70,7 +70,7 @@ async fn main(spawner: Spawner) {
 
     let spi_bus = module::init_shared_spi(p.SPI0, p.PIN_4, p.PIN_3, p.PIN_2, p.DMA_CH2, p.DMA_CH3);
     let uart = module::init_uart1(p.UART1, p.PIN_8, p.PIN_9, p.DMA_CH0, p.DMA_CH1);
-    let payload_uart = module::init_uart0(p.UART0, p.PIN_32, p.PIN_33, p.DMA_CH5, p.DMA_CH6);
+    let payload_uart = module::init_uart0(p.UART0, p.PIN_12, p.PIN_13, p.DMA_CH5, p.DMA_CH6);
     let (payload_tx, payload_rx) = payload_uart.split();
 
     #[cfg(feature = "test_payload_uart")]
@@ -91,11 +91,11 @@ async fn main(spawner: Spawner) {
 
     // Actuators
     let (ssa, buzzer, mav, sv) = module::init_actuators(
-        p.PIN_36,
-        p.PIN_39,
+        p.PIN_10,
+        p.PIN_11,
         p.PIN_21,
         p.PWM_SLICE8,
-        p.PIN_40,
+        p.PIN_20,
         p.PIN_47,
     );
     let flash_cs = Output::new(p.PIN_6, embassy_rp::gpio::Level::High);

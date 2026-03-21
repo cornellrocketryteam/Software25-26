@@ -7,7 +7,7 @@ use embassy_rp::gpio::Output;
 use embassy_rp::i2c::{Config as I2cConfig, I2c, InterruptHandler as I2cInterruptHandler};
 use embassy_rp::peripherals::{
     DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, DMA_CH4, DMA_CH5, DMA_CH6, I2C0, PIN_0, PIN_1,
-    PIN_2, PIN_3, PIN_4, PIN_8, PIN_9, PIN_21, PIN_12, PIN_13, PIN_36, PIN_39, PIN_40, PIN_47,
+    PIN_2, PIN_3, PIN_4, PIN_8, PIN_9, PIN_21, PIN_12, PIN_13, PIN_10, PIN_11, PIN_20, PIN_47,
     PWM_SLICE8, SPI0, UART0, UART1, USB,
 };
 use embassy_rp::spi::{Config as SpiConfig, Spi};
@@ -164,8 +164,8 @@ use crate::actuator::Ssa;
 
 // Initialize SSA
 pub fn init_ssa(
-    drogue_pin: Peri<'static, PIN_36>,
-    main_pin: Peri<'static, PIN_39>,
+    drogue_pin: Peri<'static, PIN_10>,
+    main_pin: Peri<'static, PIN_11>,
 ) -> Ssa<'static> {
     Ssa::new(
         Output::new(drogue_pin, embassy_rp::gpio::Level::Low),
@@ -184,7 +184,7 @@ use crate::actuator::Mav;
 use embassy_rp::pwm::{Config as PwmConfig, Pwm};
 
 // Initialize MAV
-pub fn init_mav(slice: Peri<'static, PWM_SLICE8>, pin: Peri<'static, PIN_40>) -> Mav<'static> {
+pub fn init_mav(slice: Peri<'static, PWM_SLICE8>, pin: Peri<'static, PIN_20>) -> Mav<'static> {
     let mut config = PwmConfig::default();
 
     // For 150 MHz system clock -> 330 Hz Servo frequency:
@@ -207,11 +207,11 @@ pub fn init_sv(pin: Peri<'static, PIN_47>) -> SV<'static> {
 
 // Initialize all actuators
 pub fn init_actuators(
-    drogue_pin: Peri<'static, PIN_36>,
-    main_pin: Peri<'static, PIN_39>,
+    drogue_pin: Peri<'static, PIN_10>,
+    main_pin: Peri<'static, PIN_11>,
     buzzer_pin: Peri<'static, PIN_21>,
     mav_slice: Peri<'static, PWM_SLICE8>,
-    mav_pin: Peri<'static, PIN_40>,
+    mav_pin: Peri<'static, PIN_20>,
     sv_pin: Peri<'static, PIN_47>,
 ) -> (Ssa<'static>, Buzzer<'static>, Mav<'static>, SV<'static>) {
     let ssa = init_ssa(drogue_pin, main_pin);
