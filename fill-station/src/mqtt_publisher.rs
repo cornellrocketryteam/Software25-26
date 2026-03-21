@@ -14,7 +14,7 @@ use crate::command::{AdcReadings, UmbilicalReadings};
 // ============================================================================
 
 /// IP address of the EMQX MQTT broker
-const BROKER_HOST: &str = "192.168.1.206";
+const BROKER_HOST: &str = "192.168.0.100";
 
 /// MQTT broker port
 const BROKER_PORT: u16 = 1883;
