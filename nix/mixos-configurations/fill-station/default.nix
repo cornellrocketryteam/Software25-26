@@ -27,7 +27,6 @@
       action = "askfirst";
       process = "/bin/sh";
     };
-
     sshd = {
       action = "respawn";
       process = "${lib.getExe' pkgs.crt.dropbear-minimal "dropbear"} -F -R";
