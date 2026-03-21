@@ -229,6 +229,10 @@ impl FlightState {
         self.buzzer.update();
         self.mav.update();
         self.sv.update();
+
+        // Sync actuator state into telemetry packet
+        self.packet.sv_open = self.sv.is_open();
+        self.packet.mav_open = self.mav.is_open();
     }
 
     // Actuator wrappers with FRAM writing

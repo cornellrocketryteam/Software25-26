@@ -137,6 +137,7 @@ impl<'a> Buzzer<'a> {
 pub struct Mav<'a> {
     pwm: Pwm<'a>,
     open_deadline: Option<Instant>,
+    state_open: bool,
 }
 
 impl<'a> Mav<'a> {
@@ -158,6 +159,7 @@ impl<'a> Mav<'a> {
         let mut mav = Self {
             pwm,
             open_deadline: None,
+            state_open: false,
         };
 
         // Start at neutral position
@@ -191,6 +193,7 @@ impl<'a> Mav<'a> {
     /// Open valve to SERVO_OPEN_US (2015 µs)
     pub fn open(&mut self, duration_ms: u64) {
         self.set_pulse_width(Self::SERVO_OPEN_US);
+        self.state_open = true;
 
         if duration_ms > 0 {
             self.open_deadline = Some(Instant::now() + Duration::from_millis(duration_ms));
@@ -202,6 +205,7 @@ impl<'a> Mav<'a> {
     /// Close valve to SERVO_CLOSE_US (995 µs)
     pub fn close(&mut self) {
         self.set_pulse_width(Self::SERVO_CLOSE_US);
+        self.state_open = false;
         self.open_deadline = None;
     }
 
@@ -212,6 +216,10 @@ impl<'a> Mav<'a> {
                 self.close();
             }
         }
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.state_open
     }
 }
 
