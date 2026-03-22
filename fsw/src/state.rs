@@ -361,7 +361,7 @@ impl FlightState {
                 );
             }
             Err(e) => {
-                log::error!("Failed to read ICM-42688-P IMU: {:?}", e);
+                log::error!("Failed to read LSM6DSOX IMU: {:?}", e);
             }
         }
 

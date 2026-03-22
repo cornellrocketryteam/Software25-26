@@ -237,7 +237,7 @@ impl<'a> SV<'a> {
             open_delay: None,
             state_open: false,
         };
-        sv.close(); // Ensure closed initially
+        sv.open(); // Ensure open initially
         sv
     }
 
