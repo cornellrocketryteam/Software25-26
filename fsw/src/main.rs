@@ -89,11 +89,14 @@ async fn main(spawner: Spawner) {
     let arming_switch = embassy_rp::gpio::Input::new(p.PIN_10, embassy_rp::gpio::Pull::Down);
     let umbilical_sense = embassy_rp::gpio::Input::new(p.PIN_24, embassy_rp::gpio::Pull::Down);
 
-    // Actuators
+    // Actuators –– GPIO 21 = LED indicator, GPIO 41 = buzzer tone (spawned task)
+    let buzzer_tone_pin = Output::new(p.PIN_41, embassy_rp::gpio::Level::Low);
+    spawner.spawn(module::buzzer_tone_task(buzzer_tone_pin).unwrap());
+
     let (ssa, buzzer, mav, sv) = module::init_actuators(
         p.PIN_36,
         p.PIN_39,
-        p.PIN_21,
+        p.PIN_21, // LED indicator
         p.PWM_SLICE8,
         p.PIN_40,
         p.PIN_47,
@@ -121,7 +124,7 @@ async fn main(spawner: Spawner) {
     log::info!("Flight State Initialized.");
 
     // Reset FRAM for testing (COMMENT OUT FOR REAL FLIGHT)
-    flight_state.reset_fram().await;
+    //flight_state.reset_fram().await;
 
     // --- FLIGHT SIMULATIONS --- //
     #[cfg(any(
@@ -305,13 +308,16 @@ async fn main(spawner: Spawner) {
 
             // 1. Send data
             flight_state.read_sensors().await;
-            
+
             // Inject dummy data so we can see something even if sensors are missing
             flight_state.packet.latitude = 42.44; // Ithaca
             flight_state.packet.longitude = -76.50;
             flight_state.packet.timestamp = test_counter;
-            
-            log::info!("Transmitting telemetry packet (counter={})...", test_counter);
+
+            log::info!(
+                "Transmitting telemetry packet (counter={})...",
+                test_counter
+            );
             flight_state.transmit().await;
 
             // 2. Listen for response
