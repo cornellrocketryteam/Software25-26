@@ -64,57 +64,78 @@ impl<'a> Ssa<'a> {
     }
 }
 
+// ============================================================================
 // Buzzer
+// ============================================================================
+//
+// CFC_ARM_Indicator (GPIO 21): on-board LED, driven directly by this struct.
+// CFC_ARM (GPIO 41):           400 Hz buzzer tone, driven by the separate
+//                              `buzzer_tone_task` in module.rs, which reads
+//                              `BUZZER_BEEPING` to know when to oscillate.
+
+use core::sync::atomic::{AtomicBool, Ordering};
+
+/// Set by the Buzzer struct, read by `buzzer_tone_task`.
+/// When true the task toggles GPIO 41 at 400 Hz; when false it stays low.
+pub static BUZZER_BEEPING: AtomicBool = AtomicBool::new(false);
+
 pub struct Buzzer<'a> {
-    pin: Output<'a>,
+    /// GPIO 21 – CFC_ARM_Indicator LED
+    led_pin: Output<'a>,
     remaining_beeps: u32,
     next_toggle_time: Option<Instant>,
     is_on: bool,
 }
 
 impl<'a> Buzzer<'a> {
-    pub fn new(pin: Output<'a>) -> Self {
+    /// `led_pin` = GPIO 21 (CFC_ARM_Indicator).
+    /// `buzzer_tone_task` must be spawned separately to drive GPIO 41.
+    pub fn new(led_pin: Output<'a>) -> Self {
         Self {
-            pin,
+            led_pin,
             remaining_beeps: 0,
             next_toggle_time: None,
             is_on: false,
         }
     }
 
-    // Each beep is 100ms on and 100ms off
+    /// Request `num` beeps (100 ms on / 100 ms off each).
+    /// Ignored if a beep sequence is already in progress.
     pub fn buzz(&mut self, num: u32) {
         if self.remaining_beeps == 0 {
             self.remaining_beeps = num;
-            self.pin.set_high();
+            BUZZER_BEEPING.store(true, Ordering::Relaxed);
+            self.led_pin.set_high();
             self.is_on = true;
-            // 100ms on
-            self.next_toggle_time = Some(Instant::now() + embassy_time::Duration::from_millis(100));
+            self.next_toggle_time =
+                Some(Instant::now() + embassy_time::Duration::from_millis(100));
         }
     }
 
-    // Call this every loop cycle
+    /// Call every loop cycle. Manages on/off beep pattern and the LED.
+    /// The actual 400 Hz tone on GPIO 41 is handled by `buzzer_tone_task`.
     pub fn update(&mut self) {
         if let Some(time) = self.next_toggle_time {
             if Instant::now() >= time {
                 if self.is_on {
-                    // Turn off
-                    self.pin.set_low();
+                    // End of ON phase
+                    BUZZER_BEEPING.store(false, Ordering::Relaxed);
+                    self.led_pin.set_low();
                     self.is_on = false;
                     self.remaining_beeps -= 1;
 
                     if self.remaining_beeps > 0 {
-                        // Wait 100ms before next beep
+                        // Gap before next beep
                         self.next_toggle_time =
                             Some(Instant::now() + embassy_time::Duration::from_millis(100));
                     } else {
-                        // Done
                         self.next_toggle_time = None;
                     }
                 } else {
-                    // Turn on for next beep (if remaining > 0)
+                    // End of gap phase — start next beep
                     if self.remaining_beeps > 0 {
-                        self.pin.set_high();
+                        BUZZER_BEEPING.store(true, Ordering::Relaxed);
+                        self.led_pin.set_high();
                         self.is_on = true;
                         self.next_toggle_time =
                             Some(Instant::now() + embassy_time::Duration::from_millis(100));
@@ -127,6 +148,7 @@ impl<'a> Buzzer<'a> {
     }
 }
 
+
 // MAV
 /// Servo driver for ProModeler DS2685BLHV
 ///
@@ -137,6 +159,7 @@ impl<'a> Buzzer<'a> {
 pub struct Mav<'a> {
     pwm: Pwm<'a>,
     open_deadline: Option<Instant>,
+    state_open: bool,
 }
 
 impl<'a> Mav<'a> {
@@ -158,6 +181,7 @@ impl<'a> Mav<'a> {
         let mut mav = Self {
             pwm,
             open_deadline: None,
+            state_open: false,
         };
 
         // Start at neutral position
@@ -191,6 +215,7 @@ impl<'a> Mav<'a> {
     /// Open valve to SERVO_OPEN_US (2015 µs)
     pub fn open(&mut self, duration_ms: u64) {
         self.set_pulse_width(Self::SERVO_OPEN_US);
+        self.state_open = true;
 
         if duration_ms > 0 {
             self.open_deadline = Some(Instant::now() + Duration::from_millis(duration_ms));
@@ -202,6 +227,7 @@ impl<'a> Mav<'a> {
     /// Close valve to SERVO_CLOSE_US (995 µs)
     pub fn close(&mut self) {
         self.set_pulse_width(Self::SERVO_CLOSE_US);
+        self.state_open = false;
         self.open_deadline = None;
     }
 
@@ -212,6 +238,10 @@ impl<'a> Mav<'a> {
                 self.close();
             }
         }
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.state_open
     }
 }
 
@@ -229,7 +259,7 @@ impl<'a> SV<'a> {
             open_delay: None,
             state_open: false,
         };
-        sv.close(); // Ensure closed initially
+        sv.open(0); // Ensure closed initially
         sv
     }
 

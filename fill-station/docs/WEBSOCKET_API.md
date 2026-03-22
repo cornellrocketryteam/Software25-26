@@ -13,9 +13,11 @@ This document provides a reference for all supported WebSocket commands for the 
 ### Connection Monitoring
 The server enforces a **15-second timeout** on idle connections to ensure safety. 
 - If no message is received from a connected client for 15 seconds, the server will:
-  1. **Close all Solenoid Valves** (SV1-SV5).
-  2. **Close the MAV**.
-  3. **Disconnect the client**.
+  1. **Close SV1**.
+  2. **Close the Ball Valve**.
+  3. **Send FSW Open SV command via umbilical**.
+  4. **Disconnect the client**.
+- After 20 seconds with no clients connected, the **QD will retract**.
 
 To prevent this, clients must send any valid JSON command at least once every 15 seconds. If no other command is needed, use the `heartbeat` command.
 
@@ -141,7 +143,7 @@ Sent periodically (at 100 Hz) after a `start_adc_stream` command.
 - `valid`: `true` if readings are fresh, `false` if ADC read failed.
 - `raw`: Raw 12-bit ADC value (-2048 to 2047).
 - `voltage`: Calculated voltage based on gain setting.
-- `scaled`: Pressure sensor value (only for ADC1 Ch0 and Ch1, `null` otherwise).
+- `scaled`: Scaled sensor value — PT1 (ADC1 Ch0), PT2 (ADC1 Ch1), Load Cell (ADC2 Ch1). `null` for all other channels.
 
 ---
 
@@ -164,7 +166,7 @@ An error occurred during command parsing or execution.
 ## Solenoid Valve Commands
 
 ### `get_valve_state`
-Query the current state of a solenoid valve (actuation status and continuity).
+Query the current state of a solenoid valve (open/closed and continuity).
 
 **Format:**
 ```json
@@ -175,107 +177,24 @@ Query the current state of a solenoid valve (actuation status and continuity).
 ```json
 {
   "type": "valve_state",
-  "actuated": true,
+  "open": true,
   "continuity": false
 }
 ```
-*   `actuated`: `true` if logically actuated (open).
+*   `open`: `true` if the valve is open, `false` if closed.
 *   `continuity`: `true` if continuity detected (signal high).
 
 ---
 
 ### `actuate_valve`
-Actuates (opens/energizes) or de-actuates (closes/de-energizes) a specific solenoid valve.
+Opens or closes a specific solenoid valve. The server automatically handles the correct GPIO level based on whether the valve is Normally Open (NO) or Normally Closed (NC).
 
 **Format:**
 ```json
-{"command": "actuate_valve", "valve": "SV1", "state": true}
+{"command": "actuate_valve", "valve": "SV1", "open": true}
 ```
-*   `valve`: Valve identifier ("SV1" through "SV5", case-insensitive).
-    *   *Note: For Normally Closed (NC) valves (SV1-SV4), `true` = HIGH (Open). SV5 is an NC valve in hardware but its logical state is inverted in software.*
-
-**Response:**
-```json
-{"type": "success"}
-```
-
----
-
-## MAV Commands
-
-### `get_mav_state`
-Query the current state of the MAV (angle and pulse width).
-
-**Format:**
-```json
-{"command": "get_mav_state", "valve": "MAV"}
-```
-
-**Response:**
-```json
-{
-  "type": "mav_state",
-  "angle": 45.0,
-  "pulse_width_us": 1422
-}
-```
-
----
-
-### `set_mav_angle`
-Sets the angle of the Mechanically Actuated Valve (MAV) servo.
-
-**Format:**
-```json
-{"command": "set_mav_angle", "valve": "MAV", "angle": 45.0}
-```
-*   `valve`: Valve identifier (currently "MAV").
-*   `angle`: Target angle in degrees (0.0 to 126.0).
-
-**Response:**
-```json
-{"type": "success"}
-```
-
----
-
-### `mav_open`
-Opens the MAV to its maximum position (90 degrees).
-
-**Format:**
-```json
-{"command": "mav_open", "valve": "MAV"}
-```
-
-**Response:**
-```json
-{"type": "success"}
-```
-
----
-
-### `mav_close`
-Closes the MAV to its minimum position (0 degrees).
-
-**Format:**
-```json
-{"command": "mav_close", "valve": "MAV"}
-```
-
-**Response:**
-```json
-{"type": "success"}
-```
-
----
-
-### `mav_neutral`
-Sets the MAV to its neutral position (1300 µs).
-
-**Format:**
-```json
-{"command": "mav_neutral", "valve": "MAV"}
-```
+*   `valve`: Valve identifier ("SV1", case-insensitive).
+*   `open`: `true` to open the valve, `false` to close it.
 
 **Response:**
 ```json
@@ -348,6 +267,57 @@ Set the Ball Valve ON_OFF line state manually.
 
 ---
 
+## QD Stepper Commands
+
+### `qd_move`
+Move the QD stepper motor a specific number of steps. Runs as a **non-blocking background task** (returns immediately).
+
+**Format:**
+```json
+{"command": "qd_move", "steps": 100, "direction": true}
+```
+* `steps`: Number of full steps to execute.
+* `direction`: `true` for CW (retract), `false` for CCW (extend).
+
+**Response:**
+```json
+{"type": "success"}
+```
+
+---
+
+### `qd_retract`
+Execute the QD retract preset (CW, preconfigured number of steps). Non-blocking.
+
+**Format:**
+```json
+{"command": "qd_retract"}
+```
+
+**Response:**
+```json
+{"type": "success"}
+```
+
+---
+
+### `qd_extend`
+Execute the QD extend preset (CCW, preconfigured number of steps). Non-blocking.
+
+**Format:**
+```json
+{"command": "qd_extend"}
+```
+
+**Response:**
+```json
+{"type": "success"}
+```
+
+See [QD_STEPPER.md](QD_STEPPER.md) for hardware details, calibration, and configuration.
+
+---
+
 ## FSW Umbilical Commands
 
 These commands interface with the Flight Software over the USB Umbilical. 
@@ -386,15 +356,22 @@ Stop streaming FSW telemetry data.
 
 The following commands send simple 1-byte command characters over the serial connection to the Flight Software. They all follow the same format and response structure.
 
-*   `fsw_open_mav`
-*   `fsw_close_mav`
-*   `fsw_open_sv`
-*   `fsw_close_sv`
-*   `fsw_launch`
-*   `fsw_safe`
-*   `fsw_reset_fram`
-*   `fsw_reset_card`
-*   `fsw_reboot`
+*   `fsw_launch` — Trigger launch sequence (`<L>`)
+*   `fsw_open_mav` — Open MAV on vehicle (`<M>`)
+*   `fsw_close_mav` — Close MAV on vehicle (`<m>`)
+*   `fsw_open_sv` — Open SV on vehicle (`<S>`)
+*   `fsw_close_sv` — Close SV on vehicle (`<s>`)
+*   `fsw_safe` — Safe all FSW actuators (`<V>`)
+*   `fsw_reset_fram` — Clear FRAM data (`<F>`)
+*   `fsw_reset_card` — Reset SD card writer (`<D>`)
+*   `fsw_reboot` — Reboot FSW (`<R>`)
+*   `fsw_dump_flash` — Dump flash memory (`<G>`)
+*   `fsw_wipe_flash` — Wipe flash memory (`<W>`)
+*   `fsw_flash_info` — Query flash info (`<I>`)
+*   `fsw_payload_n1` — Payload event N1 (`<1>`)
+*   `fsw_payload_n2` — Payload event N2 (`<2>`)
+*   `fsw_payload_n3` — Payload event N3 (`<3>`)
+*   `fsw_payload_n4` — Payload event N4 (`<4>`)
 
 **Format:**
 ```json
@@ -439,4 +416,4 @@ Data received back from the Flight software, pushed to clients when `start_fsw_s
 
 * `connected`: True if the background task can communicate with the serial device.
 * `flight_mode`: Human readable string.
-* `telemetry`: The full 80-byte `FswTelemetry` packet parsed into JSON variables.
+* `telemetry`: The full 82-byte `FswTelemetry` packet parsed into JSON variables.

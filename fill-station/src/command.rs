@@ -12,29 +12,14 @@ pub enum Command {
     StartAdcStream,
     /// Stop streaming ADC readings to this client
     StopAdcStream,
-    /// Actuate a solenoid valve
+    /// Open or close a solenoid valve
     ActuateValve {
-        /// Name of the valve (e.g. "SV1", "SV2")
+        /// Name of the valve (e.g. "SV1")
         valve: String,
-        /// True to actuate (open/active), False to deactivate.
-        /// Actual electrical state depends on NO/NC configuration.
-        state: bool,
+        /// True to open the valve, False to close it.
+        /// The server handles the correct GPIO level based on NO/NC configuration.
+        open: bool,
     },
-    /// Set MAV angle in degrees (0-90)
-    SetMavAngle {
-        /// Name of valve (usually "MAV", but just for logging context if needed)
-        valve: String,
-        angle: f32,
-    },
-    /// Open MAV (90 degrees)
-    MavOpen { valve: String },
-    /// Close MAV (0 degrees)
-    MavClose { valve: String },
-    /// Set MAV to neutral (1520us)
-    MavNeutral { valve: String },
-    /// Get current MAV state
-    GetMavState { valve: String },
-
     // Ball Valve Commands
     #[serde(rename = "bv_open")]
     BVOpen,
@@ -50,6 +35,13 @@ pub enum Command {
         /// Name of the valve (e.g. "SV1")
         valve: String,
     },
+    /// Move QD stepper a specific number of steps in a given direction
+    QdMove { steps: u32, direction: bool },
+    /// Retract QD using preset steps (CW)
+    QdRetract,
+    /// Extend QD using preset steps (CCW)
+    QdExtend,
+
     /// Client heartbeat to indicate connection is alive
     Heartbeat,
 
@@ -72,6 +64,20 @@ pub enum Command {
     FswResetCard,
     /// Reboot FSW
     FswReboot,
+    /// Dump flash memory on FSW
+    FswDumpFlash,
+    /// Wipe flash memory on FSW
+    FswWipeFlash,
+    /// Query flash info on FSW
+    FswFlashInfo,
+    /// Trigger payload event N1 on FSW
+    FswPayloadN1,
+    /// Trigger payload event N2 on FSW
+    FswPayloadN2,
+    /// Trigger payload event N3 on FSW
+    FswPayloadN3,
+    /// Trigger payload event N4 on FSW
+    FswPayloadN4,
     /// Start streaming FSW telemetry to this client
     StartFswStream,
     /// Stop streaming FSW telemetry to this client
@@ -94,18 +100,13 @@ pub enum CommandResponse {
     /// Solenoid valve state
     ValveState {
         valve: String,
-        actuated: bool,
+        open: bool,
         continuity: bool,
     },
     /// Igniter continuity state
     IgniterContinuity {
         id: u8,
         continuity: bool,
-    },
-    /// MAV state response
-    MavState {
-        angle: f32,
-        pulse_width_us: u32,
     },
     /// FSW telemetry data from umbilical
     FswTelemetry {

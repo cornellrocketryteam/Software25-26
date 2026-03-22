@@ -1,0 +1,70 @@
+U-Boot 2025.10 (Oct 06 2025 - 19:13:09 +0000)
+
+SoC:   AM64X SR2.0 HS-FS
+Model: Texas Instruments AM642 SK
+Board: AM64B-SKEVM rev A
+DRAM:  2 GiB
+Core:  90 devices, 33 uclasses, devicetree: separate
+MMC:   mmc@fa00000: 1
+Loading Environment from nowhere... OK
+In:    serial@2800000
+Out:   serial@2800000
+Err:   serial@2800000
+Hit any key to stop autoboot:  0
+=>
+   ~
+U-Boot SPL 2025.10 (Oct 06 2025 - 19:13:09 +0000)
+Resetting on cold boot to workaround ErrataID:i2331
+Please resend tiboot3.bin in case of UART/DFU boot
+resetting ...
+
+U-Boot SPL 2025.10 (Oct 06 2025 - 19:13:09 +0000)
+SYSFW ABI: 4.0 (firmware rev 0x000b '11.2.5--v11.02.05 (Fancy Rat)')
+EEPROM not available at 0x50, trying to read at 0x51
+SPL initial stack usage: 13496 bytes
+Trying to boot from MMC2
+Authentication passed
+Authentication passed
+Loading Environment from nowhere... OK
+Authentication passed
+Authentication passed
+Starting ATF on ARM64 core...
+
+NOTICE:  BL31: v2.13.0(release):
+NOTICE:  BL31: Built : 00:00:00, Jan  1 1980
+I/TC:
+I/TC: OP-TEE version: Unknown_4.8 (gcc version 14.3.0 (GCC)) #1 Tue Jan  1 00:00:00 UTC 1980 aarch64
+I/TC: WARNING: This OP-TEE configuration might be insecure!
+I/TC: WARNING: Please check https://optee.readthedocs.io/en/latest/architecture/porting_guidelines.html
+I/TC: Primary CPU initializing
+I/TC: GIC redistributor base address not provided
+I/TC: Assuming default GIC group status and modifier
+I/TC: SYSFW ABI: 4.0 (firmware rev 0x000b '11.2.5--v11.02.05 (Fancy Rat)')
+I/TC: Activated SA2UL device
+I/TC: Enabled firewalls for SA2UL TRNG device
+I/TC: EIP76D TRNG initialized
+I/TC: SA2UL Drivers initialized
+I/TC: HUK Initialized
+I/TC: Disabling output console
+
+U-Boot SPL 2025.10 (Oct 06 2025 - 19:13:09 +0000)
+SYSFW ABI: 4.0 (firmware rev 0x000b '11.2.5--v11.02.05 (Fancy Rat)')
+Trying to boot from MMC2
+Authentication passed
+Authentication passed
+
+
+U-Boot 2025.10 (Oct 06 2025 - 19:13:09 +0000)
+
+SoC:   AM64X SR2.0 HS-FS
+Model: Texas Instruments AM642 SK
+Board: AM64B-SKEVM rev A
+DRAM:  2 GiB
+Core:  90 devices, 33 uclasses, devicetree: separate
+MMC:   mmc@fa00000: 1
+Loading Environment from nowhere... OK
+In:    serial@2800000
+Out:   serial@2800000
+Err:   serial@2800000
+Hit any key to stop autoboot:  0
+=>

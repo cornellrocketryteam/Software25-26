@@ -57,14 +57,14 @@ pub async fn start_logging(
     };
 
     // Write Header
-    // SV columns: SV1_Actuated, SV1_Cont, ...
-    let header = "Loop,Timestamp_ms,MAV_Angle,MAV_Pulse_US,Igniter1_Active,Igniter2_Active,\
-SV1_Actuated,SV1_Cont,SV2_Actuated,SV2_Cont,SV3_Actuated,SV3_Cont,SV4_Actuated,SV4_Cont,SV5_Actuated,SV5_Cont,\
+    let header = "Loop,Timestamp_ms,Igniter1_Active,Igniter2_Active,\
+SV1_Open,SV1_Cont,\
 ADC1_0_Raw,ADC1_0_Scaled,ADC1_1_Raw,ADC1_1_Scaled,ADC1_2_Raw,ADC1_2_Scaled,ADC1_3_Raw,ADC1_3_Scaled,\
 ADC2_0_Raw,ADC2_0_Scaled,ADC2_1_Raw,ADC2_1_Scaled,ADC2_2_Raw,ADC2_2_Scaled,ADC2_3_Raw,ADC2_3_Scaled,\
 FSW_Connected,FSW_Mode,FSW_Pressure,FSW_Temp,FSW_Altitude,FSW_Lat,FSW_Lon,FSW_Sats,FSW_Timestamp,\
 FSW_MagX,FSW_MagY,FSW_MagZ,FSW_AccelX,FSW_AccelY,FSW_AccelZ,FSW_GyroX,FSW_GyroY,FSW_GyroZ,\
-FSW_PT3,FSW_PT4,FSW_RTD\n";
+FSW_PT3,FSW_PT4,FSW_RTD,FSW_SV_Open,FSW_MAV_Open,\
+QD_Enabled,QD_Direction\n";
     
     if let Err(e) = file.write_all(header.as_bytes()).await {
         error!("Failed to write header to log file: {}", e);
@@ -86,46 +86,34 @@ FSW_PT3,FSW_PT4,FSW_RTD\n";
             (reading.timestamp_ms, reading.valid, reading.adc1, reading.adc2)
         };
 
-        // 2. Gather Hardware Data (MAV, SV, Igniters)
+        // 2. Gather Hardware Data (SV, Igniters)
         // We lock hardware briefly
-        let (mav_angle, mav_pulse, ig1_active, ig2_active, sv_states) = {
+        let (ig1_active, ig2_active, sv_states) = {
             #[cfg(any(target_os = "linux", target_os = "android"))]
             {
                 let hw = _hardware.lock().await;
-                
-                // MAV
-                let mav_pulse = hw.mav.get_pulse_width_us().await.unwrap_or(0);
-                let mav_angle = hw.mav.get_angle().await.unwrap_or(0.0);
 
                 // Igniters
                 let ig1 = hw.ig1.is_igniting().await;
                 let ig2 = hw.ig2.is_igniting().await;
 
-                // SVs (Actuated, Continuity)
-                let sv1 = (hw.sv1.is_actuated().await.unwrap_or(false), hw.sv1.check_continuity().await.unwrap_or(false));
-                let sv2 = (hw.sv2.is_actuated().await.unwrap_or(false), hw.sv2.check_continuity().await.unwrap_or(false));
-                let sv3 = (hw.sv3.is_actuated().await.unwrap_or(false), hw.sv3.check_continuity().await.unwrap_or(false));
-                let sv4 = (hw.sv4.is_actuated().await.unwrap_or(false), hw.sv4.check_continuity().await.unwrap_or(false));
-                // SV5 Logic inverted as per main.rs
-                let sv5_act = hw.sv5.is_actuated().await.unwrap_or(false);
-                let sv5 = (!sv5_act, hw.sv5.check_continuity().await.unwrap_or(false));
+                // SV1 (Open, Continuity)
+                let sv1 = (hw.sv1.is_open().await.unwrap_or(false), hw.sv1.check_continuity().await.unwrap_or(false));
 
-                (mav_angle, mav_pulse, ig1, ig2, [sv1, sv2, sv3, sv4, sv5])
+                (ig1, ig2, sv1)
             }
             #[cfg(not(any(target_os = "linux", target_os = "android")))]
             {
-                (0.0, 0, false, false, [(false,false); 5])
+                (false, false, (false, false))
             }
         };
 
         // Format CSV Line
-        let mut line = format!("{},{},{:.2},{},{},{},", 
-            loop_count, adc_timestamp, mav_angle, mav_pulse, ig1_active, ig2_active);
+        let mut line = format!("{},{},{},{},",
+            loop_count, adc_timestamp, ig1_active, ig2_active);
 
-        // Append SVs
-        for (act, cont) in sv_states {
-            line.push_str(&format!("{},{},", act, cont));
-        }
+        // Append SV1
+        line.push_str(&format!("{},{},", sv_states.0, sv_states.1));
 
         // Append ADCs
         if adc_valid {
@@ -150,18 +138,34 @@ FSW_PT3,FSW_PT4,FSW_RTD\n";
             if umb.connected {
                 let t = &umb.telemetry;
                 line.push_str(&format!(
-                    "true,{},{:.2},{:.2},{:.2},{:.6},{:.6},{},{:.3},{:.2},{:.2},{:.2},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.2},{:.2},{:.2}",
+                    "true,{},{:.2},{:.2},{:.2},{:.6},{:.6},{},{:.3},{:.2},{:.2},{:.2},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.2},{:.2},{:.2},{},{}",
                     t.flight_mode, t.pressure, t.temp, t.altitude,
                     t.latitude, t.longitude, t.num_satellites, t.timestamp,
                     t.mag_x, t.mag_y, t.mag_z,
                     t.accel_x, t.accel_y, t.accel_z,
                     t.gyro_x, t.gyro_y, t.gyro_z,
                     t.pt3, t.pt4, t.rtd,
+                    t.sv_open, t.mav_open,
                 ));
             } else {
-                // 21 FSW columns: connected + 20 telemetry fields
-                let nas = std::iter::repeat("N/A").take(21).collect::<Vec<_>>().join(",");
+                // 23 FSW columns: connected + 20 telemetry fields + 2 valve states
+                let nas = std::iter::repeat("N/A").take(23).collect::<Vec<_>>().join(",");
                 line.push_str(&nas);
+            }
+        }
+
+        // 4. Gather QD Stepper state
+        {
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            {
+                let hw = _hardware.lock().await;
+                let qd_enabled = hw.qd_stepper.is_enabled().await;
+                let qd_direction = hw.qd_stepper.get_direction().await;
+                line.push_str(&format!(",{},{}", qd_enabled, qd_direction));
+            }
+            #[cfg(not(any(target_os = "linux", target_os = "android")))]
+            {
+                line.push_str(",false,false");
             }
         }
 

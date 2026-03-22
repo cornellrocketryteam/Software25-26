@@ -1,11 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-/// Sync header that the FSW prepends to every telemetry frame.
-/// The receiver scans the byte stream for this pattern to find packet boundaries.
-pub const SYNC_HEADER: [u8; 2] = [0xAA, 0x55];
-
-/// FSW telemetry packet — 80 bytes, little-endian.
-/// Mirrors the Packet struct serialized in fsw/src/state.rs:transmit().
+/// FSW telemetry packet parsed from CSV text lines.
+/// The FSW emits lines like: $TELEM,0,101325.0,25.0,0.0,...,0,0\n
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct FswTelemetry {
     pub flight_mode: u32,
@@ -28,13 +24,48 @@ pub struct FswTelemetry {
     pub pt3: f32,            // raw ADC counts
     pub pt4: f32,
     pub rtd: f32,
+    // valve states
+    pub sv_open: bool,
+    pub mav_open: bool,
 }
 
 impl FswTelemetry {
-    /// Total serialized size in bytes.
-    pub const SIZE: usize = 80;
+    /// Total serialized size in bytes (kept for binary compat if needed).
+    pub const SIZE: usize = 82;
 
-    /// Deserialize from an 80-byte little-endian buffer.
+    /// Parse from a CSV field slice (the 22 fields after the `$TELEM,` prefix).
+    /// Returns `None` if parsing fails.
+    pub fn from_csv(fields: &[&str]) -> Option<Self> {
+        if fields.len() < 22 {
+            return None;
+        }
+        Some(Self {
+            flight_mode:    fields[0].trim().parse().ok()?,
+            pressure:       fields[1].trim().parse().ok()?,
+            temp:           fields[2].trim().parse().ok()?,
+            altitude:       fields[3].trim().parse().ok()?,
+            latitude:       fields[4].trim().parse().ok()?,
+            longitude:      fields[5].trim().parse().ok()?,
+            num_satellites: fields[6].trim().parse().ok()?,
+            timestamp:      fields[7].trim().parse().ok()?,
+            mag_x:          fields[8].trim().parse().ok()?,
+            mag_y:          fields[9].trim().parse().ok()?,
+            mag_z:          fields[10].trim().parse().ok()?,
+            accel_x:        fields[11].trim().parse().ok()?,
+            accel_y:        fields[12].trim().parse().ok()?,
+            accel_z:        fields[13].trim().parse().ok()?,
+            gyro_x:         fields[14].trim().parse().ok()?,
+            gyro_y:         fields[15].trim().parse().ok()?,
+            gyro_z:         fields[16].trim().parse().ok()?,
+            pt3:            fields[17].trim().parse().ok()?,
+            pt4:            fields[18].trim().parse().ok()?,
+            rtd:            fields[19].trim().parse().ok()?,
+            sv_open:        fields[20].trim().parse::<u8>().ok()? != 0,
+            mav_open:       fields[21].trim().parse::<u8>().ok()? != 0,
+        })
+    }
+
+    /// Deserialize from an 82-byte little-endian buffer (legacy binary format).
     pub fn from_bytes(buf: &[u8; Self::SIZE]) -> Self {
         Self {
             flight_mode:    u32::from_le_bytes(buf[0..4].try_into().unwrap()),
@@ -57,6 +88,8 @@ impl FswTelemetry {
             pt3:            f32::from_le_bytes(buf[68..72].try_into().unwrap()),
             pt4:            f32::from_le_bytes(buf[72..76].try_into().unwrap()),
             rtd:            f32::from_le_bytes(buf[76..80].try_into().unwrap()),
+            sv_open:        buf[80] != 0,
+            mav_open:       buf[81] != 0,
         }
     }
 

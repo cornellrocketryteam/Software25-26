@@ -8,8 +8,8 @@ use crate::components::igniter::Igniter;
 use crate::components::solenoid_valve::{SolenoidValve, LinePull};
 
 use crate::components::ads1015::Ads1015;
-use crate::components::mav::Mav;
 use crate::components::ball_valve::BallValve;
+use crate::components::qd_stepper::QdStepper;
 
 const GPIO_CHIP0: &str = "gpiochip1";
 const GPIO_CHIP1: &str = "gpiochip2";
@@ -26,16 +26,8 @@ pub struct Hardware {
     pub adc2: Ads1015,
     #[cfg(any(target_os = "linux", target_os = "android"))]
     pub sv1: SolenoidValve,
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    pub sv2: SolenoidValve,
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    pub sv3: SolenoidValve,
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    pub sv4: SolenoidValve,
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    pub sv5: SolenoidValve,
-    pub mav: Mav,
     pub ball_valve: BallValve,
+    pub qd_stepper: QdStepper,
 }
 
 impl Hardware {
@@ -49,43 +41,12 @@ impl Hardware {
         let adc1 = Ads1015::new(I2C_BUS, ADC1_ADDRESS)?;
         let adc2 = Ads1015::new(I2C_BUS, ADC2_ADDRESS)?;
 
-        // SV1
+        // SV1 (Normally Closed)
         let sv1 = SolenoidValve::new(
             &chip0, 42, // pin to actuate
             &chip1, 51, // pin to sense
             LinePull::NormallyClosed
         ).await?;
-
-        // SV2
-        let sv2 = SolenoidValve::new(
-            &chip0, 32,
-            &chip0, 35,
-            LinePull::NormallyClosed
-        ).await?;
-        
-        // SV3
-        let sv3 = SolenoidValve::new(
-            &chip1, 44, 
-            &chip0, 37,
-            LinePull::NormallyClosed
-        ).await?;
-
-        // SV4
-        let sv4 = SolenoidValve::new(
-            &chip0, 41, // Signal4 - GPIO0_41 (R19)
-            &chip0, 36, // GPIO4 - GPIO0_36 (T19)
-            LinePull::NormallyClosed
-        ).await?;
-
-        // SV5
-        let sv5 = SolenoidValve::new(
-            &chip1, 48,
-            &chip1, 46,
-            LinePull::NormallyClosed
-        ).await?;
-
-        // MAV (Chip 0, Channel 1 for B)
-        let mav = Mav::new(0, 1, "MAV").await?;
 
         // Ball Valve
         // Signal: Chip 1, Line 62
@@ -96,16 +57,24 @@ impl Hardware {
             "BallValve"
         ).await?;
 
-        Ok(Self { ig1, ig2, adc1, adc2, sv1, sv2, sv3, sv4, sv5, mav, ball_valve })
+        // QD Stepper (STEP via GPIO bit-bang, DIR/ENA via GPIO)
+        let qd_stepper = QdStepper::new(
+            &chip0, 33,   // STEP: gpiochip1, line 33 (GPIO0_33)
+            &chip1, 43,   // DIR: gpiochip2, line 43
+            &chip1, 64,   // ENA: gpiochip2, line 64
+            "QD"
+        ).await?;
+
+        Ok(Self { ig1, ig2, adc1, adc2, sv1, ball_valve, qd_stepper })
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
     pub async fn new() -> Result<Self> {
         let adc1 = Ads1015::new(I2C_BUS, ADC1_ADDRESS)?;
         let adc2 = Ads1015::new(I2C_BUS, ADC2_ADDRESS)?;
-        let mav = Mav::new(0, 0, "MAV").await?;
         let ball_valve = BallValve::new(&(), 0, &(), 0, "BallValve").await?;
-        
-        Ok(Self { adc1, adc2, mav, ball_valve })
+        let qd_stepper = QdStepper::new(&(), 0, &(), 0, &(), 0, "QD").await?;
+
+        Ok(Self { adc1, adc2, ball_valve, qd_stepper })
     }
 }

@@ -229,6 +229,10 @@ impl FlightState {
         self.buzzer.update();
         self.mav.update();
         self.sv.update();
+
+        // Sync actuator state into telemetry packet
+        self.packet.sv_open = self.sv.is_open();
+        self.packet.mav_open = self.mav.is_open();
     }
 
     // Actuator wrappers with FRAM writing
@@ -389,8 +393,62 @@ impl FlightState {
             }
         }
 
-        // Share telemetry with umbilical sender task (no-op if logger mode)
-        crate::umbilical::update_telemetry(&data);
+        // Emit telemetry as a parseable text line over USB
+        crate::umbilical::emit_telemetry(&self.packet);
+    }
+
+    pub async fn receive_radio(&mut self, buffer: &mut [u8]) -> Result<(), embassy_rp::uart::Error> {
+        let result = self.radio.receive_packet(buffer).await;
+        if result.is_ok() {
+            log::info!("ACK: Packet received successfully!");
+        }
+        result
+    }
+
+    /// Receive and decode a full telemetry packet
+    pub async fn receive_telemetry(&mut self) -> Result<Packet, embassy_rp::uart::Error> {
+        let mut buf = [0u8; Packet::SIZE];
+        self.radio.receive_packet(&mut buf).await?;
+        let packet = Packet::from_bytes(&buf);
+        log::info!("ACK: Telemetry packet decoded successfully!");
+        Ok(packet)
+    }
+
+    pub async fn poll_radio_command(&mut self) -> Option<crate::packet::Command> {
+        #[cfg(feature = "sim_payload")]
+        if let Some(cmd) = self.sim_radio_command.take() {
+            return Some(cmd);
+        }
+
+        let mut buf = [0u8; 32];
+        // Short timeout read to check for commands without blocking the loop
+        // We use the basic receive here as commands might not have the sync-word
+        // unless they are sent by another FSW board. 
+        if let Ok(Ok(_)) = embassy_time::with_timeout(
+            embassy_time::Duration::from_millis(10),
+            self.radio.receive(&mut buf),
+        )
+        .await
+        {
+            // Simple string-based command parsing
+            if buf.starts_with(b"VNT") {
+                return Some(crate::packet::Command::Vent);
+            } else if buf.starts_with(b"N1") {
+                return Some(crate::packet::Command::N1);
+            } else if buf.starts_with(b"N2") {
+                return Some(crate::packet::Command::N2);
+            } else if buf.starts_with(b"N3") {
+                return Some(crate::packet::Command::N3);
+            } else if buf.starts_with(b"N4") {
+                return Some(crate::packet::Command::N4);
+            } else if buf.starts_with(b"FM") {
+                // Example: "FM2" for Coast
+                if let Some(digit) = (buf[2] as char).to_digit(10) {
+                    return Some(crate::packet::Command::ForceMode(digit as u32));
+                }
+            }
+        }
+        None
     }
 
     pub async fn receive_radio(&mut self, buffer: &mut [u8]) -> Result<(), embassy_rp::uart::Error> {

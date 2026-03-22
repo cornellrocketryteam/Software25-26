@@ -421,13 +421,13 @@ impl FlightLoop {
                 }
             }
             FlightMode::Ascent => {
-                if self.flight_state.umbilical_connected {
-                    log::error!(
-                        "CRITICAL: Umbilical still connected during Ascent! Transitioning to Fault"
-                    );
-                    self.flight_state.flight_mode = FlightMode::Fault;
-                    return;
-                }
+                // if self.flight_state.umbilical_connected {
+                //     log::error!(
+                //         "CRITICAL: Umbilical still connected during Ascent! Transitioning to Fault"
+                //     );
+                //     self.flight_state.flight_mode = FlightMode::Fault;
+                //     return;
+                // }
 
                 if self.flight_state.altimeter_state != crate::state::SensorState::VALID {
                     // altimeter is not working

@@ -1,0 +1,75 @@
+/dts-v1/;
+/plugin/;
+&main_pmx0 {
+ myepwm1_pins_default: myepwm1-default-pins {
+  pinctrl-single,pins = <
+   0x008c 0x00010003
+  >;
+ };
+ allgpio0_pins_default: allgpio0-default-pins {
+  pinctrl-single,pins = <
+   0x0084 0x00000007
+   0x0088 0x00000007
+   0x0090 0x00050007
+   0x0094 0x00050007
+   0x0098 0x00050007
+   0x009c 0x00000007
+   0x00a0 0x00040007
+   0x00a4 0x00000007
+   0x00a8 0x00000007
+   0x00ac 0x00000007
+  >;
+ };
+ allgpio1_pins_default: allgpio1-default-pins {
+  pinctrl-single,pins = <
+   0x0208 0x00050007
+   0x020c 0x00000007
+   0x0210 0x00000007
+   0x0218 0x00050007
+   0x0220 0x00000007
+   0x022c 0x00050007
+   0x0258 0x00000007
+   0x025c 0x00000007
+   0x0260 0x00010007
+  >;
+ };
+ senseboard_pins_default: senseboard-default-pins {
+  pinctrl-single,pins = <
+   0x00b0 0x00050001
+   0x00b4 0x00050001
+  >;
+ };
+ myusb1_pins_default: myusb1-default-pins {
+  pinctrl-single,pins = <
+   0x02a8 0x00010000
+  >;
+ };
+};
+&main_i2c2 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&senseboard_pins_default>;
+    clock-frequency = <400000>;
+};
+&epwm4 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&myepwm1_pins_default>;
+};
+&main_pmx0 {
+    pinctrl-names = "default";
+    pinctrl-0 = <&allgpio0_pins_default &allgpio1_pins_default>;
+};
+&usbss0 {
+    ti,vbus-divider;
+    ti,usb2-only;
+};
+&usb0 {
+    status = "okay";
+    dr_mode = "host";
+    maximum-speed = "high-speed";
+    pinctrl-names = "default";
+    pinctrl-0 = <&myusb1_pins_default>;
+    /delete-property/ phys;
+    /delete-property/ phy-names;
+};

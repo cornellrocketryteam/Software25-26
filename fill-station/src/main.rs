@@ -2,6 +2,7 @@ mod command;
 mod hardware;
 mod components;
 mod csv_logger;
+mod mqtt_publisher;
 use anyhow::Result;
 use async_tungstenite::{WebSocketStream, tungstenite};
 use smol::Async;
@@ -24,7 +25,7 @@ use crate::command::{AdcReadings, Command, CommandResponse, UmbilicalReadings};
 use crate::command::ChannelReading;
 use crate::hardware::Hardware;
 #[cfg(any(target_os = "linux", target_os = "android"))]
-use crate::components::umbilical::{FswTelemetry, SYNC_HEADER};
+use crate::components::umbilical::FswTelemetry;
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use crate::components::ads1015::{Channel, Gain, DataRate};
@@ -51,20 +52,20 @@ const ADC_MAX_RETRIES: u32 = 5;
 /// Delay between retry attempts (milliseconds)
 const ADC_RETRY_DELAY_MS: u64 = 10;
 
-/// Pressure sensor scaling for a PT with range to 1500
-/// Formula: scaled = raw * SCALE_A + OFFSET_A
+/// PT1 scaling (ADC1 Ch0) — 0-1500 PSI range
+/// Formula: scaled = raw * SCALE + OFFSET
 const PT1500_SCALE: f32 = 0.909754;
 const PT1500_OFFSET: f32 = 5.08926;
 
-/// Pressure sensor scaling for a PT with range to 2000
-/// Formula: scaled = raw * SCALE_B + OFFSET_B
-const PT2000_SCALE: f32 = 1.22124;
-const PT2000_OFFSET: f32 = 5.37052;
+/// PT2 scaling (ADC1 Ch1) — 0-1000 PSI range
+/// Formula: scaled = raw * SCALE + OFFSET
+const PT1000_SCALE: f32 = 0.6125;
+const PT1000_OFFSET: f32 = 5.0;
 
-/// Pressure sensor scaling for a LoadCell
-/// Formula: scaled = raw * SCALE_C + OFFSET_C
-const LOADCELL_SCALE: f32 = 1.69661;
-const LOADCELL_OFFSET: f32 = 75.37882;
+/// Load Cell scaling (ADC2 Ch1)
+/// Formula: scaled = raw * SCALE + OFFSET
+const LOADCELL_SCALE: f32 = 0.264;
+const LOADCELL_OFFSET: f32 = -14.9;
 
 // ============================================================================
 // UMBILICAL CONFIGURATION
@@ -132,7 +133,8 @@ fn main() -> Result<()> {
         info!("Starting Safety Monitor task...");
         let safety_hw = hardware.clone();
         let safety_counts = active_client_count.clone();
-        smol::spawn(safety_monitor_task(safety_hw, safety_counts)).detach();
+        let safety_umb_tx = umb_cmd_tx.clone();
+        smol::spawn(safety_monitor_task(safety_hw, safety_counts, safety_umb_tx)).detach();
 
         // Spawn background ADC monitoring task
         info!("Starting ADC monitoring task at {} Hz...", ADC_SAMPLE_RATE_HZ);
@@ -146,6 +148,12 @@ fn main() -> Result<()> {
         let log_adc = adc_readings.clone();
         let log_umb = umbilical_readings.clone();
         smol::spawn(csv_logger::start_logging(log_hw, log_adc, log_umb)).detach();
+
+        // Spawn MQTT Publisher Task
+        let mqtt_hw = hardware.clone();
+        let mqtt_adc = adc_readings.clone();
+        let mqtt_umb = umbilical_readings.clone();
+        smol::spawn(mqtt_publisher::start_mqtt_publisher(mqtt_hw, mqtt_adc, mqtt_umb)).detach();
 
         info!("Initializing web socket server...");
         let listener = Async::<TcpListener>::bind(([0, 0, 0, 0], 9000))?;
@@ -392,16 +400,12 @@ async fn execute_command(
                 CommandResponse::IgniterContinuity { id, continuity: false }
             }
         }
-        Command::ActuateValve { valve, state } => {
+        Command::ActuateValve { valve, open } => {
             #[cfg(any(target_os = "linux", target_os = "android"))]
             {
                 let hw = hardware.lock().await;
                 let result = match valve.to_lowercase().as_str() {
-                    "sv1" => hw.sv1.actuate(state).await,
-                    "sv2" => hw.sv2.actuate(state).await,
-                    "sv3" => hw.sv3.actuate(state).await,
-                    "sv4" => hw.sv4.actuate(state).await,
-                    "sv5" => hw.sv5.actuate(state).await,
+                    "sv1" => hw.sv1.set_open(open).await,
                     _ => {
                         warn!("Unknown valve: {}", valve);
                         return CommandResponse::Error;
@@ -410,11 +414,11 @@ async fn execute_command(
 
                 match result {
                     Ok(_) => {
-                        info!("Valve {} actuated: {}", valve, state);
+                        info!("Valve {} set to {}", valve, if open { "OPEN" } else { "CLOSED" });
                         CommandResponse::Success
                     }
                     Err(e) => {
-                        error!("Failed to actuate valve {}: {}", valve, e);
+                        error!("Failed to set valve {} {}: {}", valve, if open { "open" } else { "closed" }, e);
                         CommandResponse::Error
                     }
                 }
@@ -422,8 +426,8 @@ async fn execute_command(
             #[cfg(not(any(target_os = "linux", target_os = "android")))]
             {
                 let _ = hardware;
-                warn!("ActuateValve command not supported on this platform: {} -> {}", valve, state);
-                CommandResponse::Success // Maintain consistent response type even if mocked
+                warn!("ActuateValve command not supported on this platform: {} -> {}", valve, open);
+                CommandResponse::Success
             }
         }
         Command::GetValveState { valve } => {
@@ -431,20 +435,16 @@ async fn execute_command(
             {
                 let hw = hardware.lock().await;
                 let result = match valve.to_lowercase().as_str() {
-                    "sv1" => Some((hw.sv1.is_actuated().await, hw.sv1.check_continuity().await)),
-                    "sv2" => Some((hw.sv2.is_actuated().await, hw.sv2.check_continuity().await)),
-                    "sv3" => Some((hw.sv3.is_actuated().await, hw.sv3.check_continuity().await)),
-                    "sv4" => Some((hw.sv4.is_actuated().await, hw.sv4.check_continuity().await)),
-                    "sv5" => Some((hw.sv5.is_actuated().await.map(|b| !b), hw.sv5.check_continuity().await)), // using NOT operator for a external reason
+                    "sv1" => Some((hw.sv1.is_open().await, hw.sv1.check_continuity().await)),
                     _ => None,
                 };
 
                 match result {
-                    Some((Ok(actuated), Ok(continuity))) => {
-                        CommandResponse::ValveState { valve, actuated, continuity }
+                    Some((Ok(open), Ok(continuity))) => {
+                        CommandResponse::ValveState { valve, open, continuity }
                     }
                     Some((Err(e), _)) => {
-                        error!("Failed to get valve actuation state: {}", e);
+                        error!("Failed to get valve state: {}", e);
                         CommandResponse::Error
                     }
                     Some((_, Err(e))) => {
@@ -461,7 +461,7 @@ async fn execute_command(
             {
                 let _ = hardware;
                 warn!("GetValveState command not supported on this platform: {}", valve);
-                CommandResponse::ValveState { valve: valve.to_string(), actuated: false, continuity: false }
+                CommandResponse::ValveState { valve: valve.to_string(), open: false, continuity: false }
             }
         }
         Command::StartAdcStream => {
@@ -473,59 +473,6 @@ async fn execute_command(
             info!("Stopping ADC stream for client");
             *streaming_enabled = false;
             CommandResponse::Success
-        }
-        Command::SetMavAngle { valve: _, angle } => {
-            let hw = hardware.lock().await;
-            info!("Setting MAV angle to {}", angle);
-            if let Err(e) = hw.mav.set_angle(angle).await {
-                error!("Failed to set MAV angle: {}", e);
-                CommandResponse::Error
-            } else {
-                CommandResponse::Success
-            }
-        }
-        Command::MavOpen { valve: _ } => {
-            let hw = hardware.lock().await;
-            info!("Opening MAV");
-            if let Err(e) = hw.mav.open().await {
-                error!("Failed to open MAV: {}", e);
-                CommandResponse::Error
-            } else {
-                CommandResponse::Success
-            }
-        }
-        Command::MavClose { valve: _ } => {
-            let hw = hardware.lock().await;
-            info!("Closing MAV");
-            if let Err(e) = hw.mav.close().await {
-                error!("Failed to close MAV: {}", e);
-                CommandResponse::Error
-            } else {
-                CommandResponse::Success
-            }
-        }
-        Command::MavNeutral { valve: _ } => {
-            let hw = hardware.lock().await;
-            info!("Setting MAV to neutral");
-            if let Err(e) = hw.mav.neutral().await {
-                error!("Failed to set MAV neutral: {}", e);
-                CommandResponse::Error
-            } else {
-                CommandResponse::Success
-            }
-        }
-        Command::GetMavState { valve: _ } => {
-            let hw = hardware.lock().await;
-            match hw.mav.get_pulse_width_us().await {
-                Ok(us) => {
-                    let angle = hw.mav.get_angle().await.unwrap_or(0.0);
-                    CommandResponse::MavState { angle, pulse_width_us: us }
-                }
-                Err(e) => {
-                    error!("Failed to get MAV state: {}", e);
-                    CommandResponse::Error
-                }
-            }
         }
         Command::BVOpen => {
             let hw = hardware.lock().await;
@@ -585,6 +532,38 @@ async fn execute_command(
              } else {
                  CommandResponse::Success
              }
+        }
+        Command::QdMove { steps, direction } => {
+            let hw_bg = hardware.clone();
+            smol::spawn(async move {
+                let hw = hw_bg.lock().await;
+                if let Err(e) = hw.qd_stepper.move_steps(steps, direction).await {
+                    error!("QD move failed: {}", e);
+                }
+            }).detach();
+            CommandResponse::Success
+        }
+        Command::QdRetract => {
+            use crate::components::qd_stepper::{QD_RETRACT_STEPS, QD_RETRACT_DIRECTION};
+            let hw_bg = hardware.clone();
+            smol::spawn(async move {
+                let hw = hw_bg.lock().await;
+                if let Err(e) = hw.qd_stepper.move_steps(QD_RETRACT_STEPS, QD_RETRACT_DIRECTION).await {
+                    error!("QD retract failed: {}", e);
+                }
+            }).detach();
+            CommandResponse::Success
+        }
+        Command::QdExtend => {
+            use crate::components::qd_stepper::{QD_EXTEND_STEPS, QD_EXTEND_DIRECTION};
+            let hw_bg = hardware.clone();
+            smol::spawn(async move {
+                let hw = hw_bg.lock().await;
+                if let Err(e) = hw.qd_stepper.move_steps(QD_EXTEND_STEPS, QD_EXTEND_DIRECTION).await {
+                    error!("QD extend failed: {}", e);
+                }
+            }).detach();
+            CommandResponse::Success
         }
         Command::Heartbeat => {
             // Heartbeat command just keeps the connection alive
@@ -654,6 +633,55 @@ async fn execute_command(
                 Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
             }
         }
+        Command::FswDumpFlash => {
+            info!("Sending FSW Dump Flash command via umbilical");
+            match umb_cmd_tx.try_send("<G>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswWipeFlash => {
+            info!("Sending FSW Wipe Flash command via umbilical");
+            match umb_cmd_tx.try_send("<W>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswFlashInfo => {
+            info!("Sending FSW Flash Info command via umbilical");
+            match umb_cmd_tx.try_send("<I>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswPayloadN1 => {
+            info!("Sending FSW Payload N1 command via umbilical");
+            match umb_cmd_tx.try_send("<1>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswPayloadN2 => {
+            info!("Sending FSW Payload N2 command via umbilical");
+            match umb_cmd_tx.try_send("<2>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswPayloadN3 => {
+            info!("Sending FSW Payload N3 command via umbilical");
+            match umb_cmd_tx.try_send("<3>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswPayloadN4 => {
+            info!("Sending FSW Payload N4 command via umbilical");
+            match umb_cmd_tx.try_send("<4>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
         Command::StartFswStream => {
             info!("Starting FSW telemetry stream for client");
             *fsw_streaming_enabled = true;
@@ -682,28 +710,45 @@ async fn send_response(
 // ============================================================================
 
 async fn safety_monitor_task(
-    hardware: Arc<Mutex<Hardware>>, 
-    active_client_count: Arc<AtomicUsize>
+    hardware: Arc<Mutex<Hardware>>,
+    active_client_count: Arc<AtomicUsize>,
+    umb_cmd_tx: smol::channel::Sender<String>,
 ) {
     let mut disconnect_start: Option<Instant> = None;
     let mut safety_triggered = false;
+    let mut qd_retract_triggered = false;
 
     loop {
         let count = active_client_count.load(Ordering::SeqCst);
-        
+
         if count == 0 {
             // If no clients, verify how long we've been disconnected
             if disconnect_start.is_none() {
                 info!("No active clients. Starting safety timer.");
                 disconnect_start = Some(Instant::now());
                 safety_triggered = false;
+                qd_retract_triggered = false;
             }
 
             if let Some(start) = disconnect_start {
-                if !safety_triggered && start.elapsed() > Duration::from_secs(15) {
+                let elapsed = start.elapsed();
+
+                if !safety_triggered && elapsed > Duration::from_secs(15) {
                     warn!("SAFETY TIMEOUT (15s) - Executing Emergency Shutdown");
-                    perform_emergency_shutdown(&hardware).await;
+                    perform_emergency_shutdown(&hardware, &umb_cmd_tx).await;
                     safety_triggered = true;
+                }
+
+                if !qd_retract_triggered && elapsed > Duration::from_secs(20) {
+                    warn!("SAFETY TIMEOUT (20s) - Retracting QD");
+                    {
+                        use crate::components::qd_stepper::{QD_RETRACT_STEPS, QD_RETRACT_DIRECTION};
+                        let hw = hardware.lock().await;
+                        if let Err(e) = hw.qd_stepper.move_steps(QD_RETRACT_STEPS, QD_RETRACT_DIRECTION).await {
+                            error!("QD retract during safety timeout failed: {}", e);
+                        }
+                    }
+                    qd_retract_triggered = true;
                 }
             }
         } else {
@@ -712,6 +757,7 @@ async fn safety_monitor_task(
                 info!("Client connected. Safety timer cancelled.");
                 disconnect_start = None;
                 safety_triggered = false;
+                qd_retract_triggered = false;
             }
         }
 
@@ -719,28 +765,28 @@ async fn safety_monitor_task(
     }
 }
 
-async fn perform_emergency_shutdown(hardware: &Arc<Mutex<Hardware>>) {
+async fn perform_emergency_shutdown(
+    hardware: &Arc<Mutex<Hardware>>,
+    umb_cmd_tx: &smol::channel::Sender<String>,
+) {
     #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         let hw = hardware.lock().await;
         info!("EMERGENCY SHUTDOWN: Closing all Valves");
-        
-        // Close all SVs (Signal Low)
-        // Note: We use actuate(false) which sets standard "de-actuated" state.
-        // If NormallyClosed (default), this sets pin false (Low).
-        let _ = hw.sv1.actuate(false).await;
-        let _ = hw.sv2.actuate(false).await;
-        let _ = hw.sv3.actuate(false).await;
-        let _ = hw.sv4.actuate(false).await;
-        let _ = hw.sv5.actuate(false).await;
-        
-        // Close MAV
-        let _ = hw.mav.close().await;
+
+        // Close SV1
+        let _ = hw.sv1.set_open(false).await;
 
         // Close Ball Valve
         let _ = hw.ball_valve.close_sequence().await;
     }
-    
+
+    // Send FSW Safe command via umbilical to close FSW SV
+    info!("EMERGENCY SHUTDOWN: Sending FSW Open SV command via umbilical");
+    if let Err(e) = umb_cmd_tx.try_send("<S>".into()) {
+        error!("Failed to send FSW Open SV command during emergency shutdown: {}", e);
+    }
+
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
     {
         let _ = hardware;
@@ -849,11 +895,11 @@ async fn try_read_all_adcs(
         let raw = hw.adc1.read_raw(channel, ADC_GAIN, ADC_DATA_RATE)?;
         let voltage = (raw as f32) * ADC_GAIN.lsb_size();
         
-        // Apply PT1500 scaling to channel 0 on ADC 1 and PT2000 scaling on other channels
-        let scaled = if i == 0 {
-            Some(raw as f32 * PT1500_SCALE + PT1500_OFFSET)
-        } else {
-            Some(raw as f32 * PT2000_SCALE + PT2000_OFFSET)
+        // PT1 (Ch0): PT1500 scaling, PT2 (Ch1): PT2000 scaling, others: no scaling
+        let scaled = match i {
+            0 => Some(raw as f32 * PT1500_SCALE + PT1500_OFFSET),
+            1 => Some(raw as f32 * PT1000_SCALE + PT1000_OFFSET),
+            _ => None,
         };
         
         adc1_readings[i] = ChannelReading { raw, voltage, scaled };
@@ -864,11 +910,11 @@ async fn try_read_all_adcs(
         let raw = hw.adc2.read_raw(channel, ADC_GAIN, ADC_DATA_RATE)?;
         let voltage = (raw as f32) * ADC_GAIN.lsb_size();
         
-        // Apply Loadcell Scaling to channel 1 on ADC 2 and PT2000 scaling on other channels
+        // Load Cell (Ch1): LOADCELL scaling, others: no scaling
         let scaled = if i == 1 {
             Some(raw as f32 * LOADCELL_SCALE + LOADCELL_OFFSET)
         } else {
-            Some(raw as f32 * PT2000_SCALE + PT2000_OFFSET)
+            None
         };
         
         adc2_readings[i] = ChannelReading { raw, voltage, scaled };
@@ -895,7 +941,9 @@ async fn adc_monitoring_task(
 // ============================================================================
 
 /// Background task that manages the serial connection to the FSW Pico 2 via umbilical.
-/// Reads 80-byte telemetry packets and writes command tokens.
+/// Reads text lines from USB serial. Lines prefixed with `$TELEM,` are parsed as
+/// CSV telemetry; all other lines are FSW log output (ignored for data purposes).
+/// Commands are written as `<X>` tokens to the same serial port.
 #[cfg(any(target_os = "linux", target_os = "android"))]
 async fn umbilical_task(
     umbilical_readings: Arc<Mutex<UmbilicalReadings>>,
@@ -934,17 +982,8 @@ async fn umbilical_task(
             umb.connected = true;
         }
 
-        // Sync-scanning state machine: finds [0xAA, 0x55] header before
-        // accumulating 80 payload bytes.  This allows the receiver to
-        // re-synchronise if it connects mid-stream.
-        enum ReaderState {
-            Syncing,
-            Reading(usize), // offset into payload_buf
-        }
-
-        let mut state = ReaderState::Syncing;
-        let mut prev_byte: u8 = 0;
-        let mut payload_buf = [0u8; FswTelemetry::SIZE];
+        // Line buffer for accumulating text from the serial stream
+        let mut line_buf = String::with_capacity(1024);
 
         loop {
             // Check for pending commands to send
@@ -964,7 +1003,7 @@ async fn umbilical_task(
             let read_result = smol::unblock({
                 let mut port_clone = port.try_clone().expect("Failed to clone serial port");
                 move || {
-                    let mut temp = [0u8; 128];
+                    let mut temp = [0u8; 256];
                     match port_clone.read(&mut temp) {
                         Ok(n) => Ok((temp, n)),
                         Err(e) => Err(e),
@@ -974,44 +1013,45 @@ async fn umbilical_task(
 
             match read_result {
                 Ok((data, bytes_read)) => {
-                    // Process each byte through the sync state machine
-                    for &byte in &data[..bytes_read] {
-                        match state {
-                            ReaderState::Syncing => {
-                                if prev_byte == SYNC_HEADER[0] && byte == SYNC_HEADER[1] {
-                                    // Found sync pattern — start reading payload
-                                    state = ReaderState::Reading(0);
-                                    prev_byte = 0;
-                                    continue;
-                                }
-                                prev_byte = byte;
-                            }
-                            ReaderState::Reading(offset) => {
-                                payload_buf[offset] = byte;
-                                let next = offset + 1;
-                                if next >= FswTelemetry::SIZE {
-                                    // Full 80-byte payload received — deserialize
-                                    let telemetry = FswTelemetry::from_bytes(&payload_buf);
-                                    let timestamp_ms = SystemTime::now()
-                                        .duration_since(UNIX_EPOCH)
-                                        .unwrap()
-                                        .as_millis() as u64;
+                    // Append received bytes as text (lossy — non-UTF8 bytes become replacement chars)
+                    let text = String::from_utf8_lossy(&data[..bytes_read]);
+                    line_buf.push_str(&text);
 
-                                    {
-                                        let mut umb = umbilical_readings.lock().await;
-                                        umb.timestamp_ms = timestamp_ms;
-                                        umb.connected = true;
-                                        umb.telemetry = telemetry;
-                                    }
+                    // Process all complete lines in the buffer
+                    while let Some(newline_pos) = line_buf.find('\n') {
+                        let line: String = line_buf.drain(..=newline_pos).collect();
+                        let line = line.trim();
 
-                                    debug!("FSW telemetry received: mode={}", telemetry.flight_mode_name());
-                                    state = ReaderState::Syncing;
-                                    prev_byte = 0;
-                                } else {
-                                    state = ReaderState::Reading(next);
+                        if let Some(csv) = line.strip_prefix("$TELEM,") {
+                            // Telemetry line — parse CSV fields
+                            let fields: Vec<&str> = csv.split(',').collect();
+                            if let Some(telemetry) = FswTelemetry::from_csv(&fields) {
+                                let timestamp_ms = SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_millis() as u64;
+
+                                {
+                                    let mut umb = umbilical_readings.lock().await;
+                                    umb.timestamp_ms = timestamp_ms;
+                                    umb.connected = true;
+                                    umb.telemetry = telemetry;
                                 }
+
+                                debug!("FSW telemetry received: mode={}", telemetry.flight_mode_name());
+                            } else {
+                                warn!("Failed to parse FSW telemetry CSV: {}", line);
                             }
+                        } else if !line.is_empty() {
+                            // Regular FSW log line — pass through for debugging
+                            debug!("FSW: {}", line);
                         }
+                    }
+
+                    // Prevent unbounded buffer growth if no newlines arrive
+                    if line_buf.len() > 4096 {
+                        warn!("Umbilical line buffer overflow, clearing");
+                        line_buf.clear();
                     }
                 }
                 Err(e) => {

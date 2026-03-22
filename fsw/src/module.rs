@@ -6,8 +6,8 @@ use embassy_rp::dma::InterruptHandler as DmaInterruptHandler;
 use embassy_rp::gpio::Output;
 use embassy_rp::i2c::{Config as I2cConfig, I2c, InterruptHandler as I2cInterruptHandler};
 use embassy_rp::peripherals::{
-    DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, DMA_CH4, DMA_CH5, DMA_CH6, I2C0, PIN_0, PIN_1,
-    PIN_2, PIN_3, PIN_4, PIN_8, PIN_9, PIN_21, PIN_32, PIN_33, PIN_36, PIN_39, PIN_40, PIN_47,
+    DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, DMA_CH4, DMA_CH5, DMA_CH6, I2C0, PIN_0, PIN_1, PIN_2,
+    PIN_3, PIN_4, PIN_8, PIN_9, PIN_21, PIN_32, PIN_33, PIN_36, PIN_39, PIN_40, PIN_41, PIN_47,
     PWM_SLICE8, SPI0, UART0, UART1, USB,
 };
 use embassy_rp::spi::{Config as SpiConfig, Spi};
@@ -173,11 +173,31 @@ pub fn init_ssa(
     )
 }
 
-use crate::actuator::Buzzer;
+use crate::actuator::{BUZZER_BEEPING, Buzzer};
+use core::sync::atomic::Ordering;
 
-// Initialize Buzzer
-pub fn init_buzzer(pin: Peri<'static, PIN_21>) -> Buzzer<'static> {
-    Buzzer::new(Output::new(pin, embassy_rp::gpio::Level::Low))
+/// GPIO 21 = CFC_ARM_Indicator (LED), GPIO 41 = CFC_ARM (buzzer tone).
+/// The buzzer struct owns the LED pin; the tone task owns the buzzer pin.
+pub fn init_buzzer(led_pin: Peri<'static, PIN_21>) -> Buzzer<'static> {
+    Buzzer::new(Output::new(led_pin, embassy_rp::gpio::Level::Low))
+}
+
+/// Must be spawned once at startup.
+/// Reads `BUZZER_BEEPING` and toggles GPIO 41 at 400 Hz while true.
+#[embassy_executor::task]
+pub async fn buzzer_tone_task(mut buzzer_pin: Output<'static>) -> ! {
+    // 400 Hz → period = 2500 µs → half-period = 1250 µs
+    loop {
+        if BUZZER_BEEPING.load(Ordering::Relaxed) {
+            buzzer_pin.set_high();
+            embassy_time::Timer::after_micros(1250).await;
+            buzzer_pin.set_low();
+            embassy_time::Timer::after_micros(1250).await;
+        } else {
+            buzzer_pin.set_low();
+            embassy_time::Timer::after_millis(5).await; // idle poll
+        }
+    }
 }
 
 use crate::actuator::Mav;
@@ -205,17 +225,19 @@ pub fn init_sv(pin: Peri<'static, PIN_47>) -> SV<'static> {
     SV::new(Output::new(pin, embassy_rp::gpio::Level::High)) // Active Low, so now High (Closed)
 }
 
-// Initialize all actuators
+// Initialize all actuators.
+// `led_pin`    = GPIO 21 (CFC_ARM_Indicator, given to Buzzer struct for the LED)
+// `buzzer_pin` = GPIO 41 (CFC_ARM, passed separately to `buzzer_tone_task`)
 pub fn init_actuators(
     drogue_pin: Peri<'static, PIN_36>,
     main_pin: Peri<'static, PIN_39>,
-    buzzer_pin: Peri<'static, PIN_21>,
+    led_pin: Peri<'static, PIN_21>,
     mav_slice: Peri<'static, PWM_SLICE8>,
     mav_pin: Peri<'static, PIN_40>,
     sv_pin: Peri<'static, PIN_47>,
 ) -> (Ssa<'static>, Buzzer<'static>, Mav<'static>, SV<'static>) {
     let ssa = init_ssa(drogue_pin, main_pin);
-    let buzzer = init_buzzer(buzzer_pin);
+    let buzzer = init_buzzer(led_pin);
     let mav = init_mav(mav_slice, mav_pin);
     let sv = init_sv(sv_pin);
 

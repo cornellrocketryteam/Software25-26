@@ -29,7 +29,6 @@ class FillStationClient:
         self.valves = {
             f"SV{i}": {"actuated": False, "continuity": False} for i in range(1, 6)
         }
-        self.mav = {"angle": 0.0, "pulse_width_us": 0}
         self.igniters = {1: False, 2: False}
         self.last_update = time.time()
         self.launch_status = None # For UI Banner
@@ -85,9 +84,6 @@ class FillStationClient:
                         self.send_command({"command": "get_valve_state", "valve": val})
                         time.sleep(0.05) # Spacer
                     
-                    # Poll MAV
-                    self.send_command({"command": "get_mav_state", "valve": "MAV"})
-                    
                     # Poll Igniters
                     self.send_command({"command": "get_igniter_continuity", "id": 1})
                     self.send_command({"command": "get_igniter_continuity", "id": 2})
@@ -105,7 +101,6 @@ class FillStationClient:
             for val in ["SV1", "SV2", "SV3", "SV4", "SV5"]:
                 self.send_command({"command": "get_valve_state", "valve": val})
                 time.sleep(0.02)
-            self.send_command({"command": "get_mav_state", "valve": "MAV"})
             self.send_command({"command": "get_igniter_continuity", "id": 1})
             self.send_command({"command": "get_igniter_continuity", "id": 2})
 
@@ -124,10 +119,6 @@ class FillStationClient:
                     if valve_name and valve_name in self.valves:
                         self.valves[valve_name]["actuated"] = data.get("actuated", False)
                         self.valves[valve_name]["continuity"] = data.get("continuity", False) 
-
-                elif msg_type == "mav_state":
-                    self.mav["angle"] = data.get("angle", 0)
-                    self.mav["pulse_width_us"] = data.get("pulse_width_us", 0)
 
                 elif msg_type == "igniter_continuity":
                     ign_id = data.get("id")
@@ -227,9 +218,7 @@ class FillStationClient:
         Vent Ignite Launch:
         1. Vent (SV5 High) & Ignite at the same time -> wait 2s
         2. Set SV5 Low -> wait 1s
-        3. MAV Open -> wait 7.88s
-        4. MAV Close
-        5. Set SV1 and SV5 to High, others Low
+        3. Set SV1 and SV5 to High, others Low
         """
         def sequence():
             self.launch_status = "Step 1: Venting (SV2_Rocket High) & Firing Igniters..."
@@ -244,15 +233,6 @@ class FillStationClient:
             self.send_command({"command": "actuate_valve", "valve": "SV5", "state": False})
             self.update_valve_state_local("SV5", False)
             time.sleep(1.0)
-            
-            self.launch_status = "Step 3: Opening MAV..."
-            self.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 98})
-            self.mav["angle"] = 0.0
-            time.sleep(7.88)
-            
-            self.launch_status = "Step 4: Closing MAV & Setting SV1/SV2_Rocket High..."
-            self.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 11})
-            self.mav["angle"] = 95.0
             
             # Close All (Signal Low = False), EXCEPT SV1 and SV5 which go High
             for sv in ["SV1", "SV2", "SV3", "SV4", "SV5"]:
@@ -305,25 +285,8 @@ if ls:
 # V2 Layout: Left (MAV/Ign), Middle (SV), Right (ADC)
 col_left, col_mid, col_right = st.columns([1, 2, 2])
 
-# --- LEFT: MAV & Igniters ---
+# --- LEFT: Ball Valve & Igniters ---
 with col_left:
-    st.subheader("MAV Control")
-    st.metric("Angle", f"{client.mav.get('angle', 0):.1f}°")
-    
-    c1, c2 = st.columns(2)
-    if c1.button("OPEN", type="primary", use_container_width=True):
-        client.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 98})
-        # Force re-poll
-        time.sleep(0.1)
-        client.send_command({"command": "get_mav_state", "valve": "MAV"})
-
-    if c2.button("CLOSE", use_container_width=True):
-        client.send_command({"command": "set_mav_angle", "valve": "MAV", "angle": 11})
-        time.sleep(0.1)
-        client.send_command({"command": "get_mav_state", "valve": "MAV"})
-    
-    st.divider()
-
     st.subheader("Ball Valve Control")
     bvc1, bvc2, bvc3 = st.columns(3)
     
@@ -353,7 +316,24 @@ with col_left:
         client.send_command({"command": "bv_on_off", "state": "low"})
 
     st.divider()
-    
+
+    st.subheader("QD Stepper")
+    qd1, qd2 = st.columns(2)
+    if qd1.button("QD RETRACT", type="primary", use_container_width=True):
+        client.send_command({"command": "qd_retract"})
+    if qd2.button("QD EXTEND", use_container_width=True):
+        client.send_command({"command": "qd_extend"})
+
+    st.caption("Manual Step")
+    qd_steps = st.number_input("Steps", min_value=1, value=200, step=1, key="qd_steps")
+    qd_dir_col1, qd_dir_col2 = st.columns(2)
+    if qd_dir_col1.button("Step CW", use_container_width=True):
+        client.send_command({"command": "qd_move", "steps": qd_steps, "direction": True})
+    if qd_dir_col2.button("Step CCW", use_container_width=True):
+        client.send_command({"command": "qd_move", "steps": qd_steps, "direction": False})
+
+    st.divider()
+
     st.subheader("Igniters")
     i1 = client.igniters.get(1, False)
     i2 = client.igniters.get(2, False)
@@ -413,12 +393,17 @@ with col_right:
         adc2 = client.latest_adc.get("adc2", [])
         
         # Mapping Schema
+        # PT1000_SCALE: 0.6125, PT1000_OFFSET: 5.0
         # PT1500_SCALE: 0.909754, PT1500_OFFSET: 5.08926
         # PT2000_SCALE: 1.22124, PT2000_OFFSET: 5.37052
         # LOADCELL_SCALE: 1.69661, LOADCELL_OFFSET: 75.37882
+        
+        PT1000_SCALE = 0.6125
+        PT1000_OFFSET = 5.0
+        
         # Measurement mapping
         if len(adc1) > 0: data.append({"Name": "PT1", "Raw": adc1[0]['raw'], "Scaled": adc1[0]['raw'] * 0.909754 + 5.08926})
-        if len(adc1) > 1: data.append({"Name": "PT2", "Raw": adc1[1]['raw'], "Scaled": adc1[1]['raw'] * 0.6125 + 5.0})
+        if len(adc1) > 1: data.append({"Name": "PT2", "Raw": adc1[1]['raw'], "Scaled": adc1[1]['raw'] * PT1000_SCALE + PT1000_OFFSET})
         if len(adc1) > 2: data.append({"Name": "PT3", "Raw": adc1[2]['raw'], "Scaled": adc1[2]['raw'] * 0.909754 + 5.0892})
         if len(adc1) > 3: data.append({"Name": "", "Raw": adc1[3]['raw'], "Scaled": adc1[3]['raw'] * 1.22124 + 5.37052})
         
@@ -477,6 +462,12 @@ if client.fsw_telemetry and client.fsw_connected:
         st.metric("PT3 (ADC)", f"{t.get('pt3', 0):.2f}")
         st.metric("PT4 (ADC)", f"{t.get('pt4', 0):.2f}")
         st.metric("RTD (ADC)", f"{t.get('rtd', 0):.2f}")
+        sv_state = "OPEN" if t.get('sv_open', False) else "CLOSED"
+        sv_color = "green" if t.get('sv_open', False) else "red"
+        mav_state = "OPEN" if t.get('mav_open', False) else "CLOSED"
+        mav_color = "green" if t.get('mav_open', False) else "red"
+        st.markdown(f"**FSW SV:** :{sv_color}[{sv_state}]")
+        st.markdown(f"**FSW MAV:** :{mav_color}[{mav_state}]")
 
 # FSW Command Buttons
 st.caption("FSW Commands")

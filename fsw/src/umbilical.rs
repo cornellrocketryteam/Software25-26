@@ -7,30 +7,10 @@ use embassy_usb::{UsbDevice, driver::EndpointError};
 
 use crate::constants;
 use crate::module::{self, UsbDriver};
-use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, Ordering};
-
-/// Sync header prepended to every telemetry frame so the receiver can find
-/// packet boundaries in the byte stream.  Total frame = 2 + 82 = 84 bytes.
-pub const SYNC_HEADER: [u8; 2] = [0xAA, 0x55];
-const FRAME_SIZE: usize = SYNC_HEADER.len() + crate::packet::Packet::SIZE; // 84
 
 /// Global software umbilical connection tracked by embassy-usb.
 static IS_CONNECTED: AtomicBool = AtomicBool::new(false);
-
-/// Simple atomic telemetry buffer - no Signal, no blocking
-/// Main loop writes, sender task reads, both non-blocking
-struct TelemetryBuffer {
-    data: UnsafeCell<[u8; crate::packet::Packet::SIZE]>,
-    ready: AtomicBool,
-}
-
-unsafe impl Sync for TelemetryBuffer {}
-
-static TELEMETRY_BUF: TelemetryBuffer = TelemetryBuffer {
-    data: UnsafeCell::new([0; crate::packet::Packet::SIZE]),
-    ready: AtomicBool::new(false),
-};
 
 /// Returns whether the ground station umbilical is actively connected via USB.
 pub fn is_connected() -> bool {
@@ -61,15 +41,69 @@ pub enum UmbilicalCommand {
 /// Command channel: receiver task pushes commands, flight loop polls them.
 static COMMANDS: Channel<CriticalSectionRawMutex, UmbilicalCommand, 4> = Channel::new();
 
-/// Called by the flight loop to send telemetry
-/// Non-blocking: always succeeds immediately, overwrites previous data if not sent yet
-pub fn update_telemetry(data: &[u8; crate::packet::Packet::SIZE]) {
-    unsafe {
-        // Copy data to buffer
-        (*TELEMETRY_BUF.data.get()).copy_from_slice(data);
-        // Mark as ready
-        TELEMETRY_BUF.ready.store(true, Ordering::Release);
+/// Outbound text channel for logs and telemetry
+static RAW_OUTBOUND: Channel<CriticalSectionRawMutex, heapless::Vec<u8, 64>, 32> = Channel::new();
+
+/// Sends raw bytes over the USB connection, chunked to 64-byte packets
+fn send_bytes(data: &[u8]) {
+    let mut offset = 0;
+    while offset < data.len() {
+        let mut chunk = heapless::Vec::<u8, 64>::new();
+        let len = core::cmp::min(data.len() - offset, 64);
+        let _ = chunk.extend_from_slice(&data[offset..offset + len]);
+        if RAW_OUTBOUND.try_send(chunk).is_err() {
+            break; // Channel full, drop
+        }
+        offset += len;
     }
+}
+
+/// Sends a string over the USB connection (used by flash dump/status)
+pub fn print_str(s: &str) {
+    send_bytes(s.as_bytes());
+}
+
+/// Sends raw bytes over the USB connection (used by flash dump)
+pub fn print_bytes(data: &[u8]) {
+    send_bytes(data);
+}
+
+/// Emit a telemetry line in parseable CSV format.
+/// Format: $TELEM,<flight_mode>,<pressure>,<temp>,<altitude>,...,<sv_open>,<mav_open>\n
+pub fn emit_telemetry(packet: &crate::packet::Packet) {
+    let mut buf = [0u8; 512];
+    let len = {
+        use core::fmt::Write;
+        let mut w = BufWriter::new(&mut buf);
+        let _ = write!(
+            w,
+            "$TELEM,{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
+            packet.flight_mode,
+            packet.pressure,
+            packet.temp,
+            packet.altitude,
+            packet.latitude,
+            packet.longitude,
+            packet.num_satellites,
+            packet.timestamp,
+            packet.mag_x,
+            packet.mag_y,
+            packet.mag_z,
+            packet.accel_x,
+            packet.accel_y,
+            packet.accel_z,
+            packet.gyro_x,
+            packet.gyro_y,
+            packet.gyro_z,
+            packet.pt3,
+            packet.pt4,
+            packet.rtd,
+            packet.sv_open as u8,
+            packet.mav_open as u8,
+        );
+        w.offset
+    };
+    send_bytes(&buf[..len]);
 }
 
 /// Outbound raw byte channel for logs/dumps/telemetry
@@ -105,96 +139,120 @@ pub fn push_command(cmd: UmbilicalCommand) {
     let _ = COMMANDS.try_send(cmd);
 }
 
-/// Initialize USB subsystem: logger in debug mode, umbilical in release mode.
+/// Initialize USB subsystem: CdcAcmClass for bidirectional text communication.
+/// Logs go out as text (readable in any serial monitor), commands come in as `<X>` tokens.
 pub fn setup(spawner: &Spawner, usb_driver: UsbDriver) {
-    if cfg!(debug_assertions) {
-        // Debug: USB -> logger for development
-        spawner.spawn(logger_task(usb_driver).unwrap());
-    } else {
-        // Release: USB -> umbilical for flight/fill-station
-        let (usb_device, usb_class) = module::init_usb_device(usb_driver);
-        let (sender, receiver) = usb_class.split();
+    let (usb_device, usb_class) = module::init_usb_device(usb_driver);
+    let (sender, receiver) = usb_class.split();
 
-        spawner.spawn(usb_task(usb_device).unwrap());
-        spawner.spawn(umbilical_sender_task(sender).unwrap());
-        spawner.spawn(umbilical_receiver_task(receiver).unwrap());
+    // Register our USB serial logger as the global `log` implementation
+    init_logger();
+
+    spawner.spawn(usb_task(usb_device).unwrap());
+    spawner.spawn(usb_sender_task(sender).unwrap());
+    spawner.spawn(usb_receiver_task(receiver).unwrap());
+}
+
+// ============================================================================
+// USB Serial Logger (replaces embassy-usb-logger)
+// ============================================================================
+
+struct UsbSerialLogger;
+
+static LOGGER: UsbSerialLogger = UsbSerialLogger;
+
+fn init_logger() {
+    unsafe {
+        let _ = log::set_logger_racy(&LOGGER);
+    }
+    log::set_max_level(log::LevelFilter::Info);
+}
+
+impl log::Log for UsbSerialLogger {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        metadata.level() <= log::max_level()
+    }
+
+    fn log(&self, record: &log::Record) {
+        if !self.enabled(record.metadata()) {
+            return;
+        }
+        let mut buf = [0u8; 256];
+        let len = {
+            use core::fmt::Write;
+            let mut w = BufWriter::new(&mut buf);
+            let _ = write!(w, "[{}] {}\n", record.level(), record.args());
+            w.offset
+        };
+        send_bytes(&buf[..len]);
+    }
+
+    fn flush(&self) {}
+}
+
+// ============================================================================
+// Helper: fixed-size buffer writer for no_std formatting
+// ============================================================================
+
+struct BufWriter<'a> {
+    buf: &'a mut [u8],
+    offset: usize,
+}
+
+impl<'a> BufWriter<'a> {
+    fn new(buf: &'a mut [u8]) -> Self {
+        Self { buf, offset: 0 }
     }
 }
 
-#[embassy_executor::task]
-async fn logger_task(driver: UsbDriver) -> ! {
-    embassy_usb_logger::run!(
-        { constants::USB_LOGGER_BUFFER_SIZE },
-        log::LevelFilter::Info,
-        driver
-    );
+impl<'a> core::fmt::Write for BufWriter<'a> {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        let bytes = s.as_bytes();
+        let remaining = self.buf.len() - self.offset;
+        let len = core::cmp::min(bytes.len(), remaining);
+        self.buf[self.offset..self.offset + len].copy_from_slice(&bytes[..len]);
+        self.offset += len;
+        if len < bytes.len() {
+            Err(core::fmt::Error)
+        } else {
+            Ok(())
+        }
+    }
 }
+
+// ============================================================================
+// USB Tasks
+// ============================================================================
 
 #[embassy_executor::task]
 async fn usb_task(mut usb_device: UsbDevice<'static, UsbDriver>) -> ! {
     usb_device.run().await
 }
 
-/// Reads real telemetry from atomic buffer, prepends a 2-byte sync header,
-/// and sends as two USB packets (64 + 18 bytes = 82-byte frame).
-/// Only transmits when the flight loop has produced new data (no zero flooding).
+/// Reads text chunks from the outbound channel and writes them to the USB sender.
 #[embassy_executor::task]
-async fn umbilical_sender_task(mut sender: Sender<'static, UsbDriver>) -> ! {
+async fn usb_sender_task(mut sender: Sender<'static, UsbDriver>) -> ! {
     loop {
         sender.wait_connection().await;
         IS_CONNECTED.store(true, Ordering::Relaxed);
 
         loop {
-            // Priority 1: Check for logged strings/dumps
-            while let Ok(msg) = RAW_OUTBOUND.try_receive() {
-                match sender.write_packet(&msg).await {
-                    Ok(_) => {}
-                    Err(EndpointError::Disabled) => {
-                        IS_CONNECTED.store(false, Ordering::Relaxed);
-                        break;
-                    }
-                    Err(_) => break,
+            let msg = RAW_OUTBOUND.receive().await;
+            match sender.write_packet(&msg).await {
+                Ok(_) => {}
+                Err(EndpointError::Disabled) => {
+                    IS_CONNECTED.store(false, Ordering::Relaxed);
+                    break;
                 }
+                Err(_) => break,
             }
-
-            // Priority 2: Check for telemetry
-            if TELEMETRY_BUF.ready.load(Ordering::Acquire) {
-                let data = unsafe { *TELEMETRY_BUF.data.get() };
-                TELEMETRY_BUF.ready.store(false, Ordering::Release);
-
-                // Build framed packet: [0xAA, 0x55, ...82 bytes telemetry...] = 84 bytes
-                let mut frame = [0u8; FRAME_SIZE];
-                frame[0..2].copy_from_slice(&SYNC_HEADER);
-                frame[2..FRAME_SIZE].copy_from_slice(&data);
-
-                // Send first 64 bytes of frame
-                match sender.write_packet(&frame[0..64]).await {
-                    Ok(_) => {}
-                    Err(EndpointError::BufferOverflow) => panic!("Buffer overflow on first chunk"),
-                    Err(EndpointError::Disabled) => {
-                        IS_CONNECTED.store(false, Ordering::Relaxed);
-                        break;
-                    }
-                };
-
-                // Send remaining 20 bytes of frame
-                match sender.write_packet(&frame[64..FRAME_SIZE]).await {
-                    Ok(_) => {}
-                    Err(EndpointError::BufferOverflow) => panic!("Buffer overflow on second chunk"),
-                    Err(EndpointError::Disabled) => {
-                        IS_CONNECTED.store(false, Ordering::Relaxed);
-                        break;
-                    }
-                };
-            }
-
-            Timer::after_millis(50).await; // Faster poll for better responsiveness
         }
     }
 }
 
+/// Reads USB packets from the host and parses command tokens like `<L>`, `<M>`, etc.
 #[embassy_executor::task]
-async fn umbilical_receiver_task(mut receiver: Receiver<'static, UsbDriver>) -> ! {
+async fn usb_receiver_task(mut receiver: Receiver<'static, UsbDriver>) -> ! {
     let mut buf = [0; 64];
     loop {
         receiver.wait_connection().await;
