@@ -165,6 +165,40 @@ class FillStationClient:
             self.launch_status = None
         threading.Thread(target=sequence, daemon=True).start()
 
+    def run_vent_ignite_launch_2s(self):
+        """2 Sec Launch: Open SV2 + ignite, wait 2s, close SV2, wait 2s, open MAV 7.88s, close MAV."""
+        def sequence():
+            self.launch_status = "2s LAUNCH: Opening SV2 + Igniting..."
+            self.send_command({"command": "fsw_open_sv"})
+            self.send_command({"command": "ignite"})
+            time.sleep(2)
+            self.launch_status = "2s LAUNCH: Closing SV2..."
+            self.send_command({"command": "fsw_close_sv"})
+            time.sleep(2)
+            self.launch_status = "2s LAUNCH: MAV OPEN (7.88s)..."
+            self.send_command({"command": "fsw_open_mav"})
+            time.sleep(7.88)
+            self.send_command({"command": "fsw_close_mav"})
+            self.launch_status = None
+        threading.Thread(target=sequence, daemon=True).start()
+
+    def run_vent_ignite_launch_1s(self):
+        """1 Sec Launch: Open SV2 + ignite, wait 2s, close SV2, wait 1s, open MAV 7.88s, close MAV."""
+        def sequence():
+            self.launch_status = "1s LAUNCH: Opening SV2 + Igniting..."
+            self.send_command({"command": "fsw_open_sv"})
+            self.send_command({"command": "ignite"})
+            time.sleep(2)
+            self.launch_status = "1s LAUNCH: Closing SV2..."
+            self.send_command({"command": "fsw_close_sv"})
+            time.sleep(1)
+            self.launch_status = "1s LAUNCH: MAV OPEN (7.88s)..."
+            self.send_command({"command": "fsw_open_mav"})
+            time.sleep(7.88)
+            self.send_command({"command": "fsw_close_mav"})
+            self.launch_status = None
+        threading.Thread(target=sequence, daemon=True).start()
+
 
 # --- Singleton Client ---
 @st.cache_resource
@@ -312,6 +346,17 @@ with col_mid:
     st.caption("Fires igniters and sends FSW Launch command simultaneously.")
     if st.button("LAUNCH", type="primary", use_container_width=True):
         client.run_launch()
+
+    st.divider()
+
+    # --- Vent Ignite Launch Sequences ---
+    st.subheader("Vent Ignite Launch")
+    st.caption("Open SV2 + ignite, wait 2s, close SV2, wait delay, open MAV 7.88s, close MAV.")
+    vil_c1, vil_c2 = st.columns(2)
+    if vil_c1.button("2 SEC LAUNCH", type="primary", use_container_width=True):
+        client.run_vent_ignite_launch_2s()
+    if vil_c2.button("1 SEC LAUNCH", type="primary", use_container_width=True):
+        client.run_vent_ignite_launch_1s()
 
 
 # --- RIGHT COLUMN: Sensors ---
