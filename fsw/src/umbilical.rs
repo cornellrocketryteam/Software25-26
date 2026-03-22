@@ -5,7 +5,6 @@ use embassy_time::Timer;
 use embassy_usb::class::cdc_acm::{Receiver, Sender};
 use embassy_usb::{UsbDevice, driver::EndpointError};
 
-use crate::constants;
 use crate::module::{self, UsbDriver};
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -104,28 +103,6 @@ pub fn emit_telemetry(packet: &crate::packet::Packet) {
         w.offset
     };
     send_bytes(&buf[..len]);
-}
-
-/// Outbound raw byte channel for logs/dumps/telemetry
-static RAW_OUTBOUND: Channel<CriticalSectionRawMutex, heapless::Vec<u8, 64>, 32> = Channel::new();
-
-/// Sends a string over the umbilical USB connection (release mode only)
-pub fn print_str(s: &str) {
-    print_bytes(s.as_bytes());
-}
-
-/// Sends raw bytes over the umbilical USB connection
-pub fn print_bytes(data: &[u8]) {
-    let mut offset = 0;
-    while offset < data.len() {
-        let mut chunk = heapless::Vec::<u8, 64>::new();
-        let len = core::cmp::min(data.len() - offset, 64);
-        let _ = chunk.extend_from_slice(&data[offset..offset + len]);
-        if RAW_OUTBOUND.try_send(chunk).is_err() {
-            break; // Channel full
-        }
-        offset += len;
-    }
 }
 
 /// Called by the flight loop each cycle to poll for incoming umbilical commands.

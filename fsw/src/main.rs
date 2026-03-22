@@ -105,7 +105,7 @@ async fn main(spawner: Spawner) {
     let flash = module::init_onboard_flash(spi_bus, flash_cs);
 
     log::info!("Initializing Flight State (Sensors & Actuators)...");
-    let mut flight_state = state::FlightState::new(
+    let flight_state = state::FlightState::new(
         i2c_bus,
         spi_bus,
         fram_cs,
