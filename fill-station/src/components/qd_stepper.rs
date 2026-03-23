@@ -6,8 +6,8 @@ use tracing::info;
 use async_gpiod::{Chip, LineId, Lines, Options, Output};
 
 // Stepping Configuration
-const STEP_FREQUENCY_HZ: u32 = 200; // 1 KHz step rate (max 12 KHz for full-step ISD02)
-const HALF_PERIOD_US: u64 = 100; // 500 us HIGH + 500 us LOW = 1 KHz (>> 4 us min pulse)
+const STEP_FREQUENCY_HZ: u32 = 500; // 500 Hz step rate (max 12 KHz for full-step ISD02)
+const HALF_PERIOD_US: u64 = 1000; // 1000 us HIGH + 1000 us LOW = 500 Hz (>> 4 us min pulse)
 const ENABLE_WAKE_MS: u64 = 2; // Wait after enable before pulsing (spec: 1 ms min)
 const DIR_SETUP_MS: u64 = 5; // DIR must be stable before first STEP rising edge
 
