@@ -227,7 +227,7 @@ pub async fn start_mqtt_publisher(
         match serde_json::to_string(&payload) {
             Ok(json) => {
                 if let Err(e) = client.try_publish(MQTT_TOPIC, QoS::AtMostOnce, false, json.as_bytes()) {
-                    debug!("MQTT publish failed (broker may be offline): {}", e);
+                    warn!("MQTT publish failed (broker may be offline): {}", e);
                 }
             }
             Err(e) => {
