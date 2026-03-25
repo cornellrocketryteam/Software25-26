@@ -100,11 +100,11 @@ pub const ADS1015_I2C_ADDR: u8 = 0x48;
 
 // Linear scaling coefficients: scaled = m * raw + b
 // PT3 (channel 3)
-pub const ADS1015_PT3_SCALE_M: f32 = 0.918104;
-pub const ADS1015_PT3_SCALE_B: f32 = -23.35885;
+pub const ADS1015_PT3_SCALE_M: f32 = 0.905422;
+pub const ADS1015_PT3_SCALE_B: f32 = -13.27332;
 // PT4 (channel 2)
-pub const ADS1015_PT4_SCALE_M: f32 = 0.918104;
-pub const ADS1015_PT4_SCALE_B: f32 = -23.35885;
+pub const ADS1015_PT4_SCALE_M: f32 = 0.905422;
+pub const ADS1015_PT4_SCALE_B: f32 = -13.27332;
 // RTD (channel 1)
 pub const ADS1015_RTD_SCALE_M: f32 = 0.21656;
 pub const ADS1015_RTD_SCALE_B: f32 = -259.74;

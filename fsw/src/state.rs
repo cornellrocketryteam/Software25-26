@@ -81,6 +81,8 @@ pub struct FlightState {
     // actuators
     arming_switch: Input<'static>,
     umbilical_sense: Input<'static>,
+    cfc_arm: Input<'static>,
+    pub cfc_arm_active: bool,
     pub arming_altitude: f32,
 
     pub ssa: Ssa<'static>,
@@ -113,6 +115,7 @@ impl FlightState {
         altimeter_cs: Output<'static>,
         arming_switch: Input<'static>,
         umbilical_sense: Input<'static>,
+        cfc_arm: Input<'static>,
         uart: Uart<'static, Async>,
         ssa: Ssa<'static>,
         buzzer: Buzzer<'static>,
@@ -195,6 +198,8 @@ impl FlightState {
             adc: adc,
             arming_switch: arming_switch,
             umbilical_sense: umbilical_sense,
+            cfc_arm: cfc_arm,
+            cfc_arm_active: false,
             arming_altitude: 0.0,
             radio: radio,
             reference_pressure: 0.0,
@@ -297,6 +302,7 @@ impl FlightState {
         // Update key armed status
         self.key_armed = self.arming_switch.is_high();
         self.umbilical_connected = crate::umbilical::is_connected();
+        self.cfc_arm_active = self.cfc_arm.is_high();
 
         // Read from FRAM
         match self.fram.read_u32(0).await {
@@ -361,7 +367,7 @@ impl FlightState {
                 );
             }
             Err(e) => {
-                log::error!("Failed to read ICM-42688-P IMU: {:?}", e);
+                log::error!("Failed to read LSM6DSOX IMU: {:?}", e);
             }
         }
 

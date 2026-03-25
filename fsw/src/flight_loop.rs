@@ -47,6 +47,8 @@ pub struct FlightLoop {
     umbilical_disconnect_time: Option<Instant>,
     vent_signal_sent: bool,
     mav_open_time: Option<Instant>,
+    umbilical_prev: bool,
+    cfc_arm_prev: bool,
 
     // Flash logging timing
     last_flash_log: Option<Instant>,
@@ -89,6 +91,8 @@ impl FlightLoop {
             umbilical_disconnect_time: None,
             vent_signal_sent: false,
             mav_open_time: None,
+            umbilical_prev: false,
+            cfc_arm_prev: false,
             last_flash_log: None,
             launch_sequence_stage: LaunchStage::None,
             launch_stage_start_time: None,
@@ -297,6 +301,14 @@ impl FlightLoop {
         let _packet = &self.flight_state.packet;
         let _mode = self.flight_state.flight_mode;
 
+        // CFC_ARM rising edge: buzz once when arming signal goes high
+        let cfc_arm_now = self.flight_state.cfc_arm_active;
+        if cfc_arm_now && !self.cfc_arm_prev {
+            log::info!("CFC_ARM detected: arming signal received");
+            self.flight_state.buzz(2);
+        }
+        self.cfc_arm_prev = cfc_arm_now;
+
         // Transition logic
         match self.flight_state.flight_mode {
             FlightMode::Startup => {
@@ -312,7 +324,9 @@ impl FlightLoop {
                     log::info!("Umbilical connected");
                     self.umbilical_disconnect_time = None;
                     self.vent_signal_sent = false;
-                    self.flight_state.buzz(2);
+                    if !self.umbilical_prev {
+                        self.flight_state.buzz(2); // just reconnected
+                    }
                 } else {
                     log::info!("Umbilical disconnected");
                     // Start timer if not started
@@ -329,8 +343,11 @@ impl FlightLoop {
                             self.vent_signal_sent = true;
                         }
                     }
-                    self.flight_state.buzz(3);
+                    if self.umbilical_prev {
+                        self.flight_state.buzz(3); // just disconnected
+                    }
                 }
+                self.umbilical_prev = self.flight_state.umbilical_connected;
 
                 if self.flight_state.altimeter_state == crate::state::SensorState::INVALID {
                     self.alt_armed = false;
@@ -371,7 +388,9 @@ impl FlightLoop {
                     log::info!("Umbilical connected");
                     self.umbilical_disconnect_time = None;
                     self.vent_signal_sent = false;
-                    self.flight_state.buzz(2);
+                    if !self.umbilical_prev {
+                        self.flight_state.buzz(2); // just reconnected
+                    }
                 } else {
                     log::info!("Umbilical disconnected");
                     self.umbilical_launch = false; // Abort any pending launch command if umbilical drops
@@ -389,8 +408,11 @@ impl FlightLoop {
                             self.vent_signal_sent = true;
                         }
                     }
-                    self.flight_state.buzz(3);
+                    if self.umbilical_prev {
+                        self.flight_state.buzz(3); // just disconnected
+                    }
                 }
+                self.umbilical_prev = self.flight_state.umbilical_connected;
 
                 // Check altimeter for launch with umbilical
                 if self.umbilical_launch && self.flight_state.umbilical_connected {

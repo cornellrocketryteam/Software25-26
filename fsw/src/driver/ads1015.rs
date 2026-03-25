@@ -146,8 +146,12 @@ impl Ads1015Sensor {
 
         // Apply scaling
         packet.rtd = raw_rtd as f32 * constants::ADS1015_RTD_SCALE_M + constants::ADS1015_RTD_SCALE_B;
-        packet.pt4 = raw_pt4 as f32 * constants::ADS1015_PT4_SCALE_M + constants::ADS1015_PT4_SCALE_B;
-        packet.pt3 = raw_pt3 as f32 * constants::ADS1015_PT3_SCALE_M + constants::ADS1015_PT3_SCALE_B;
+
+        let scaled_pt4 = raw_pt4 as f32 * constants::ADS1015_PT4_SCALE_M + constants::ADS1015_PT4_SCALE_B;
+        packet.pt4 = if scaled_pt4 < 0.0 { -1.0 } else { scaled_pt4 };
+
+        let scaled_pt3 = raw_pt3 as f32 * constants::ADS1015_PT3_SCALE_M + constants::ADS1015_PT3_SCALE_B;
+        packet.pt3 = if scaled_pt3 < 0.0 { -1.0 } else { scaled_pt3 };
 
         Ok(())
     }

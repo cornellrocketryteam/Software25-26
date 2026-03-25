@@ -2,6 +2,7 @@ use embassy_rp::gpio::Output;
 use embassy_rp::pwm::Pwm;
 use embassy_time::{Duration, Instant};
 use embedded_hal::pwm::SetDutyCycle;
+
 // 330 Hz servo frequency, 3030 µs period
 // open = 2015 µs, close = 995 µs, neutral = 1520 µs
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -68,35 +69,39 @@ impl<'a> Ssa<'a> {
 // Buzzer
 // ============================================================================
 //
-// CFC_ARM_Indicator (GPIO 21): on-board LED, driven directly by this struct.
-// CFC_ARM (GPIO 41):           400 Hz buzzer tone, driven by the separate
-//                              `buzzer_tone_task` in module.rs, which reads
-//                              `BUZZER_BEEPING` to know when to oscillate.
-
-use core::sync::atomic::{AtomicBool, Ordering};
-
-/// Set by the Buzzer struct, read by `buzzer_tone_task`.
-/// When true the task toggles GPIO 41 at 400 Hz; when false it stays low.
-pub static BUZZER_BEEPING: AtomicBool = AtomicBool::new(false);
+// CFC_ARM_Indicator (GPIO 21): PWM output at 400 Hz driving the buzzer + LED.
+// CFC_ARM (GPIO 41):           Input (Pull::Down) — off-board arming signal.
 
 pub struct Buzzer<'a> {
-    /// GPIO 21 – CFC_ARM_Indicator LED
-    led_pin: Output<'a>,
+    /// GPIO 21 – CFC_ARM_Indicator, PWM at 400 Hz (50% duty = tone on, 0% = off)
+    pwm: Pwm<'a>,
     remaining_beeps: u32,
     next_toggle_time: Option<Instant>,
     is_on: bool,
 }
 
 impl<'a> Buzzer<'a> {
-    /// `led_pin` = GPIO 21 (CFC_ARM_Indicator).
-    /// `buzzer_tone_task` must be spawned separately to drive GPIO 41.
-    pub fn new(led_pin: Output<'a>) -> Self {
+    // 400 Hz: clk=150 MHz, divider=6, top=62499
+    // freq = 150_000_000 / (6 * (62499 + 1)) = 400 Hz
+    const TOP: u16 = 62499;
+
+    /// `pwm` = PWM on GPIO 21 (CFC_ARM_Indicator), configured for 400 Hz in module.rs.
+    pub fn new(pwm: Pwm<'a>) -> Self {
         Self {
-            led_pin,
+            pwm,
             remaining_beeps: 0,
             next_toggle_time: None,
             is_on: false,
         }
+    }
+
+    fn set_on(&mut self) {
+        // 50% duty cycle → square wave at 400 Hz
+        let _ = self.pwm.set_duty_cycle_fraction(1, 2);
+    }
+
+    fn set_off(&mut self) {
+        let _ = self.pwm.set_duty_cycle_fraction(0, Self::TOP);
     }
 
     /// Request `num` beeps (100 ms on / 100 ms off each).
@@ -104,23 +109,20 @@ impl<'a> Buzzer<'a> {
     pub fn buzz(&mut self, num: u32) {
         if self.remaining_beeps == 0 {
             self.remaining_beeps = num;
-            BUZZER_BEEPING.store(true, Ordering::Relaxed);
-            self.led_pin.set_high();
+            self.set_on();
             self.is_on = true;
             self.next_toggle_time =
                 Some(Instant::now() + embassy_time::Duration::from_millis(100));
         }
     }
 
-    /// Call every loop cycle. Manages on/off beep pattern and the LED.
-    /// The actual 400 Hz tone on GPIO 41 is handled by `buzzer_tone_task`.
+    /// Call every loop cycle. Manages on/off beep pattern via PWM duty cycle.
     pub fn update(&mut self) {
         if let Some(time) = self.next_toggle_time {
             if Instant::now() >= time {
                 if self.is_on {
                     // End of ON phase
-                    BUZZER_BEEPING.store(false, Ordering::Relaxed);
-                    self.led_pin.set_low();
+                    self.set_off();
                     self.is_on = false;
                     self.remaining_beeps -= 1;
 
@@ -134,8 +136,7 @@ impl<'a> Buzzer<'a> {
                 } else {
                     // End of gap phase — start next beep
                     if self.remaining_beeps > 0 {
-                        BUZZER_BEEPING.store(true, Ordering::Relaxed);
-                        self.led_pin.set_high();
+                        self.set_on();
                         self.is_on = true;
                         self.next_toggle_time =
                             Some(Instant::now() + embassy_time::Duration::from_millis(100));

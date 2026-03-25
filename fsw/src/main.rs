@@ -89,14 +89,15 @@ async fn main(spawner: Spawner) {
     let arming_switch = embassy_rp::gpio::Input::new(p.PIN_10, embassy_rp::gpio::Pull::Down);
     let umbilical_sense = embassy_rp::gpio::Input::new(p.PIN_24, embassy_rp::gpio::Pull::Down);
 
-    // Actuators –– GPIO 21 = LED indicator, GPIO 41 = buzzer tone (spawned task)
-    let buzzer_tone_pin = Output::new(p.PIN_41, embassy_rp::gpio::Level::Low);
-    spawner.spawn(module::buzzer_tone_task(buzzer_tone_pin).unwrap());
+    // CFC_ARM (GPIO 41): off-board arming signal, input with pull-down
+    let cfc_arm = embassy_rp::gpio::Input::new(p.PIN_41, embassy_rp::gpio::Pull::Down);
 
+    // CFC_ARM_Indicator (GPIO 21): PWM at 400 Hz, drives buzzer + LED on-board
     let (ssa, buzzer, mav, sv) = module::init_actuators(
         p.PIN_36,
         p.PIN_39,
-        p.PIN_21, // LED indicator
+        p.PWM_SLICE2, // CFC_ARM_Indicator buzzer slice
+        p.PIN_21,      // CFC_ARM_Indicator pin
         p.PWM_SLICE8,
         p.PIN_40,
         p.PIN_47,
@@ -112,6 +113,7 @@ async fn main(spawner: Spawner) {
         altimeter_cs,
         arming_switch,
         umbilical_sense,
+        cfc_arm,
         uart,
         ssa,
         buzzer,
