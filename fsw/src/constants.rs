@@ -13,8 +13,9 @@ pub const I2C_SCL_PIN: u8 = 1;
 
 // SPI Configuration
 
-/// SPI bus frequency in Hz (1MHz for FRAM)
-pub const SPI_FREQUENCY: u32 = 1_000_000;
+/// SPI bus frequency in Hz
+/// Shared bus limit is the BMP390 altimeter at 10 MHz max — using 8 MHz for margin
+pub const SPI_FREQUENCY: u32 = 8_000_000;
 
 // SPI Pin Assignments
 

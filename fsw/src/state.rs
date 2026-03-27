@@ -565,17 +565,16 @@ impl FlightState {
         let mut buffer = [0u8; 256];
 
         while offset < end {
-            let chunk_size = core::cmp::min(64, (end - offset) as usize);
+            let chunk_size = core::cmp::min(256, (end - offset) as usize);
             if let Err(e) = self.flash.read(offset, &mut buffer[..chunk_size]).await {
                 log::error!("Flash read error during dump: {:?}", e);
                 break;
             }
 
-            // Send raw bytes directly (host tool handles lossy conversion)
-            crate::umbilical::print_bytes(&buffer[..chunk_size]);
+            // Async send — back-pressures to USB speed so no data is dropped
+            crate::umbilical::print_bytes_async(&buffer[..chunk_size]).await;
 
             offset += chunk_size as u32;
-            embassy_time::Timer::after_millis(10).await;
         }
         log::info!("--- END FLASH CSV DUMP ---");
         crate::umbilical::print_str("--- END FLASH CSV DUMP ---\n");

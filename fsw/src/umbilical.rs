@@ -67,6 +67,19 @@ pub fn print_bytes(data: &[u8]) {
     send_bytes(data);
 }
 
+/// Sends raw bytes over USB, awaiting channel space instead of dropping.
+/// Use this for flash dumps where every byte must be delivered.
+pub async fn print_bytes_async(data: &[u8]) {
+    let mut offset = 0;
+    while offset < data.len() {
+        let mut chunk = heapless::Vec::<u8, 64>::new();
+        let len = core::cmp::min(data.len() - offset, 64);
+        let _ = chunk.extend_from_slice(&data[offset..offset + len]);
+        RAW_OUTBOUND.send(chunk).await; // blocks until channel has space
+        offset += len;
+    }
+}
+
 /// Emit a telemetry line in parseable CSV format.
 /// Format: $TELEM,<flight_mode>,<pressure>,<temp>,<altitude>,...,<sv_open>,<mav_open>\n
 pub fn emit_telemetry(packet: &crate::packet::Packet) {
@@ -214,6 +227,8 @@ async fn usb_sender_task(mut sender: Sender<'static, UsbDriver>) -> ! {
         IS_CONNECTED.store(true, Ordering::Relaxed);
 
         loop {
+            // Wait for the first packet then drain all queued packets back-to-back
+            // so we fill as many USB frames as possible without suspending between each one
             let msg = RAW_OUTBOUND.receive().await;
             match sender.write_packet(&msg).await {
                 Ok(_) => {}
@@ -222,6 +237,16 @@ async fn usb_sender_task(mut sender: Sender<'static, UsbDriver>) -> ! {
                     break;
                 }
                 Err(_) => break,
+            }
+            while let Ok(msg) = RAW_OUTBOUND.try_receive() {
+                match sender.write_packet(&msg).await {
+                    Ok(_) => {}
+                    Err(EndpointError::Disabled) => {
+                        IS_CONNECTED.store(false, Ordering::Relaxed);
+                        break;
+                    }
+                    Err(_) => break,
+                }
             }
         }
     }
