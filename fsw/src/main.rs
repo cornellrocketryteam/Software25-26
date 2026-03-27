@@ -252,7 +252,6 @@ async fn main(spawner: Spawner) {
     #[cfg(feature = "test_ssa")]
     {
         log::info!("Starting SSA Test Mode (Drogue and Main)...");
-        loop {
             log::info!("Firing Drogue SSA for {}ms", constants::SSA_THRESHOLD_MS);
             flight_state.trigger_drogue().await;
             flight_state.update_actuators().await;
@@ -262,7 +261,6 @@ async fn main(spawner: Spawner) {
             flight_state.trigger_main().await;
             flight_state.update_actuators().await;
             Timer::after_millis(5000).await;
-        }
     }
 
     #[cfg(feature = "test_buzzer")]
