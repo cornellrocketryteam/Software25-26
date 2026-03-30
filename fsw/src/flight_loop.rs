@@ -249,6 +249,10 @@ impl FlightLoop {
                     log::warn!("UMBILICAL CMD: Reset FRAM");
                     self.flight_state.reset_fram().await;
                 }
+                UmbilicalCommand::DumpFram => {
+                    log::warn!("UMBILICAL CMD: Dump FRAM");
+                    self.flight_state.dump_fram().await;
+                }
                 UmbilicalCommand::ResetCard => {
                     log::warn!("UMBILICAL CMD: Reset SD Card");
                     // TODO: Implement SD card reset when SD logging is enabled

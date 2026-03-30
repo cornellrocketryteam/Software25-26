@@ -304,16 +304,6 @@ impl FlightState {
         self.umbilical_connected = crate::umbilical::is_connected();
         self.cfc_arm_active = self.cfc_arm.is_high();
 
-        // Read from FRAM
-        match self.fram.read_u32(0).await {
-            Ok(raw) => {
-                log::info!("\nFlightMode read from FRAM: {:?}", FlightMode::from_u32(raw));
-            }
-            Err(_) => {
-                log::warn!("Failed to read the FlightMode from FRAM!");
-            }
-        }
-
         // Write state to FRAM
         self.write_state_to_fram().await;
         
@@ -500,6 +490,78 @@ impl FlightState {
         if let Err(_) = self.fram.write_u32(100, alt_bits).await {
              log::warn!("Failed to write PT data to FRAM");
         }
+    }
+
+    /// Read FRAM device ID and all stored fields, printing results over USB.
+    /// Expected device ID: 04 7F 48 03. All-FF or all-00 means no SPI response.
+    pub async fn dump_fram(&mut self) {
+        // Device ID check
+        match self.fram.read_device_id().await {
+            Ok(id) => {
+                let mut msg = heapless::String::<128>::new();
+                let _ = core::fmt::write(
+                    &mut msg,
+                    format_args!(
+                        "FRAM ID: {:02X} {:02X} {:02X} {:02X} (expect 04 7F 48 03)\n",
+                        id[0], id[1], id[2], id[3]
+                    ),
+                );
+                log::info!("{}", msg.as_str());
+                crate::umbilical::print_str(msg.as_str());
+            }
+            Err(_) => {
+                log::error!("FRAM: no response to RDID — check HOLD# pin and wiring");
+                crate::umbilical::print_str("FRAM: no response to RDID\n");
+                return;
+            }
+        }
+
+        // Status register (WEL bit)
+        if let Ok(sr) = self.fram.read_status_register().await {
+            let mut msg = heapless::String::<64>::new();
+            let _ = core::fmt::write(&mut msg, format_args!("FRAM SR: 0x{:02X} (WEL={})\n", sr, (sr >> 1) & 1));
+            log::info!("{}", msg.as_str());
+            crate::umbilical::print_str(msg.as_str());
+        }
+        embassy_time::Timer::after_millis(20).await;
+
+        // Known stored fields
+        let fields: [(&str, u32); 11] = [
+            ("FlightMode", 0),
+            ("CycleCount", 4),
+            ("Pressure",   8),
+            ("Temp",       12),
+            ("Altitude",   16),
+            ("MAV",        20),
+            ("SV",         24),
+            ("PT3",        28),
+            ("PT4",        32),
+            ("RTD",        36),
+            ("AltLog",     100),
+        ];
+
+        for (name, addr) in fields {
+            match self.fram.read_u32(addr).await {
+                Ok(raw) => {
+                    let as_f32 = f32::from_bits(raw);
+                    let mut msg = heapless::String::<128>::new();
+                    let _ = core::fmt::write(
+                        &mut msg,
+                        format_args!("  [{:>3}] {:<12} raw=0x{:08X}  f32={:.3}\n", addr, name, raw, as_f32),
+                    );
+                    log::info!("{}", msg.as_str());
+                    crate::umbilical::print_str(msg.as_str());
+                }
+                Err(_) => {
+                    let mut msg = heapless::String::<64>::new();
+                    let _ = core::fmt::write(&mut msg, format_args!("  [{:>3}] {} READ FAILED\n", addr, name));
+                    log::warn!("{}", msg.as_str());
+                    crate::umbilical::print_str(msg.as_str());
+                }
+            }
+            embassy_time::Timer::after_millis(10).await;
+        }
+        crate::umbilical::print_str("--- END FRAM DUMP ---\n");
     }
 
     // Reset FRAM state (FlightMode, CycleCount, Altitude log)
