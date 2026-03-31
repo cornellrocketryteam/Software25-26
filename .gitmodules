@@ -1,0 +1,3 @@
+[submodule "air-brake-controls"]
+	path = air-brake-controls
+	url = https://github.com/cornellrocketryteam/air-brake-controls.git
