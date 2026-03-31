@@ -1,6 +1,7 @@
 use core::f32;
 use embassy_time::Instant;
 
+use crate::airbrake_task::{AirbrakeInput, AirbrakePhase, AIRBRAKE_INPUT};
 use crate::constants;
 use crate::state::SensorState;
 use crate::state::{FlightMode, FlightState};
@@ -123,6 +124,28 @@ impl FlightLoop {
 
         // 2. Read sensor data
         self.flight_state.read_sensors().await;
+
+        // 2b. Forward latest sensor data to the airbrake controller on Core 1.
+        // Signal::signal() is non-blocking and always delivers the most recent
+        // value, so the flight loop is never delayed by airbrake computation.
+        let airbrake_phase = match self.flight_state.flight_mode {
+            FlightMode::Startup | FlightMode::Standby => Some(AirbrakePhase::Pad),
+            FlightMode::Ascent  => Some(AirbrakePhase::Boost),
+            FlightMode::Coast   => Some(AirbrakePhase::Coast),
+            _ => None, // DrogueDeployed / MainDeployed / Fault — airbrakes inactive
+        };
+        if let Some(phase) = airbrake_phase {
+            AIRBRAKE_INPUT.signal(AirbrakeInput {
+                time:     self.flight_state.packet.timestamp,
+                altitude: self.flight_state.packet.altitude,
+                gyro_x:   self.flight_state.packet.gyro_x,
+                gyro_y:   self.flight_state.packet.gyro_y,
+                accel_x:  self.flight_state.packet.accel_x,
+                accel_y:  self.flight_state.packet.accel_y,
+                accel_z:  self.flight_state.packet.accel_z,
+                phase,
+            });
+        }
 
         // 3. Process logic and transitions
         self.check_transitions().await;
@@ -493,12 +516,7 @@ impl FlightLoop {
                     log::error!("Altimeter invalid at Coast; transitioning to Fault");
                     return;
                 }
-                // TODO: Initiate airbrakes
-                if self.airbrakes_init && !self.airbrakes_logged {
-                    //airbrakes.initiate();
-                    self.airbrakes_logged = true;
-                    log::info!("Airbrakes initiated");
-                }
+
                 if self.flight_state.altimeter_state == SensorState::VALID && self.alt_armed {
                     // Remove old value from sum
                     self.alt_sum -= self.alt_buffer[self.alt_index];
@@ -512,8 +530,13 @@ impl FlightLoop {
                     if self.alt_index >= 10 {
                         self.alt_index = 0;
                     }
-
                     let avg_alt = self.alt_sum / 10.0;
+
+                    // Read latest airbrake deployment from Core 1 (non-blocking).
+                    // TODO: drive airbrake servo here once servo is added to actuator.rs
+                    let deployment = crate::airbrake_task::get_deployment();
+                    log::info!("Airbrake deployment: {:.1}%", deployment * 100.0);
+
                     // Apogee detection
                     self.filtered_alt[2] = self.filtered_alt[1];
                     self.filtered_alt[1] = self.filtered_alt[0];
@@ -529,8 +552,8 @@ impl FlightLoop {
                         // TODO: Trigger payload actuators right before apogee
                         // cameras_deployed();
                         self.camera_deployed = true;
-                        // TODO: Retract airbrakes
-                        // airbrakes.retract();
+                        // Airbrakes retract at apogee — Core 1 stops receiving
+                        // Coast signals so it will hold at 0.0 deployment.
                         self.airbrakes_init = false;
                         log::info!("Airbrakes retracted");
                         log::info!("Cameras deployed");

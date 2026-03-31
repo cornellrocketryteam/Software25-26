@@ -3,13 +3,16 @@
 #![no_std]
 #![no_main]
 
-use embassy_executor::Spawner;
+use embassy_executor::{Executor, Spawner};
 use embassy_rp::gpio::{Level, Output};
+use embassy_rp::multicore::{spawn_core1, Stack};
 use embassy_rp::uart::{Async, UartRx};
 use embassy_time::Timer;
+use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
 pub mod actuator;
+pub mod airbrake_task;
 mod constants;
 mod driver;
 mod flight_loop;
@@ -30,9 +33,22 @@ mod packet;
 mod state;
 pub mod umbilical;
 
+// Stack and executor for Core 1 (airbrake controller)
+static CORE1_STACK: StaticCell<Stack<8192>> = StaticCell::new();
+static CORE1_EXECUTOR: StaticCell<Executor> = StaticCell::new();
+
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
+
+    // Spawn the airbrake controller on Core 1.
+    // It blocks on AIRBRAKE_INPUT signal until the flight loop sends data.
+    spawn_core1(p.CORE1, CORE1_STACK.init(Stack::new()), move || {
+        let executor = CORE1_EXECUTOR.init(Executor::new());
+        executor.run(|spawner| {
+            spawner.spawn(airbrake_task::airbrake_core1_task().unwrap());
+        });
+    });
 
     // Initialize USB subsystem (umbilical in release mode)
     let usb_driver = module::init_usb_driver(p.USB);
