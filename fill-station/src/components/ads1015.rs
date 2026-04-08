@@ -154,8 +154,9 @@ impl DataRate {
 /// ADS1015 12-bit ADC driver
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub struct Ads1015 {
-    device: LinuxI2CDevice,
+    device: Option<LinuxI2CDevice>,
     address: u16,
+    disabled: bool,
 }
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -174,7 +175,13 @@ impl Ads1015 {
         let device = LinuxI2CDevice::new(bus, address)
             .with_context(|| format!("Failed to open I2C device {} at address 0x{:02X}", bus, address))?;
         
-        Ok(Self { device, address })
+        Ok(Self { device: Some(device), address, disabled: false })
+    }
+
+    /// Create a disabled ADS1015 instance that returns zeros without touching I2C.
+    /// Used on the i2c_cooked branch for testing with a damaged I2C bus.
+    pub fn new_disabled(address: u16) -> Self {
+        Self { device: None, address, disabled: true }
     }
 
     /// Get the I2C address of this device
@@ -186,6 +193,13 @@ impl Ads1015 {
     ///
     /// Returns the raw conversion value from -2048 to 2047
     pub fn read_raw(&mut self, channel: Channel, gain: Gain, data_rate: DataRate) -> Result<i16> {
+        // If I2C is disabled, return 0 without touching the bus
+        if self.disabled {
+            return Ok(0);
+        }
+
+        let device = self.device.as_mut().expect("I2C device not initialized");
+
         // Build configuration register value
         let config = OS_SINGLE                              // Start single conversion
             | ((channel as u16) << MUX_SHIFT)              // Set input multiplexer
@@ -196,7 +210,7 @@ impl Ads1015 {
 
         // Write configuration as 16-bit word to start conversion
         // ADS1015 expects MSB first (big-endian)
-        self.device.smbus_write_word_data(REG_CONFIG, config.swap_bytes())
+        device.smbus_write_word_data(REG_CONFIG, config.swap_bytes())
             .context("Failed to write config register")?;
 
         // Wait for conversion to complete
@@ -205,7 +219,7 @@ impl Ads1015 {
 
         // Read conversion result as 16-bit word
         // ADS1015 returns MSB first, but smbus_read_word_data expects little-endian
-        let raw_word = self.device.smbus_read_word_data(REG_CONVERSION)
+        let raw_word = device.smbus_read_word_data(REG_CONVERSION)
             .context("Failed to read conversion register")?;
         
         // Swap bytes back to big-endian and shift right by 4 
@@ -238,7 +252,12 @@ impl Ads1015 {
     ///
     /// Returns true if a conversion is complete and data is ready to read
     pub fn is_ready(&mut self) -> Result<bool> {
-        let config = self.device.smbus_read_word_data(REG_CONFIG)
+        if self.disabled {
+            return Ok(true);
+        }
+
+        let device = self.device.as_mut().expect("I2C device not initialized");
+        let config = device.smbus_read_word_data(REG_CONFIG)
             .context("Failed to read config register")?;
         
         // Swap bytes to get big-endian, then check OS bit (bit 15)
@@ -258,6 +277,10 @@ pub struct Ads1015 {
 impl Ads1015 {
     pub fn new(_bus: &str, address: u16) -> Result<Self> {
         Ok(Self { _address: address })
+    }
+
+    pub fn new_disabled(address: u16) -> Self {
+        Self { _address: address }
     }
 
     pub fn address(&self) -> u16 {

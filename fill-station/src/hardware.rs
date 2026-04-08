@@ -13,7 +13,8 @@ use crate::components::qd_stepper::QdStepper;
 
 const GPIO_CHIP0: &str = "gpiochip1";
 const GPIO_CHIP1: &str = "gpiochip2";
-const I2C_BUS: &str = "/dev/i2c-2";
+// I2C is disabled on this branch (i2c_cooked) — SKAM I2C bus is damaged
+// const I2C_BUS: &str = "/dev/i2c-2";
 const ADC1_ADDRESS: u16 = 0x48;
 const ADC2_ADDRESS: u16 = 0x49;
 
@@ -38,8 +39,9 @@ impl Hardware {
         let ig1 = Igniter::new(&chip0, 39, &chip0, 38).await?; // 38 is signal, 39 is continuity
         let ig2 = Igniter::new(&chip1, 42, &chip0, 40).await?; // 42 is continuity on chip 1, 40 is signal on chip 0
         
-        let adc1 = Ads1015::new(I2C_BUS, ADC1_ADDRESS)?;
-        let adc2 = Ads1015::new(I2C_BUS, ADC2_ADDRESS)?;
+        // I2C ADCs disabled on this branch (i2c_cooked) — SKAM I2C bus is damaged
+        let adc1 = Ads1015::new_disabled(ADC1_ADDRESS);
+        let adc2 = Ads1015::new_disabled(ADC2_ADDRESS);
 
         // SV1 (Normally Closed)
         let sv1 = SolenoidValve::new(
@@ -70,8 +72,8 @@ impl Hardware {
 
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
     pub async fn new() -> Result<Self> {
-        let adc1 = Ads1015::new(I2C_BUS, ADC1_ADDRESS)?;
-        let adc2 = Ads1015::new(I2C_BUS, ADC2_ADDRESS)?;
+        let adc1 = Ads1015::new_disabled(ADC1_ADDRESS);
+        let adc2 = Ads1015::new_disabled(ADC2_ADDRESS);
         let ball_valve = BallValve::new(&(), 0, &(), 0, "BallValve").await?;
         let qd_stepper = QdStepper::new(&(), 0, &(), 0, &(), 0, "QD").await?;
 
