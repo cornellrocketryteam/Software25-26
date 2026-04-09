@@ -120,6 +120,7 @@ async fn main(spawner: Spawner) {
     );
     let flash_cs = Output::new(p.PIN_6, embassy_rp::gpio::Level::High);
     let flash = module::init_onboard_flash(spi_bus, flash_cs);
+    let airbrake_system = module::init_airbrake(p.PIN_37, p.PWM_SLICE11, p.PIN_38);
 
     log::info!("Initializing Flight State (Sensors & Actuators)...");
     let flight_state = state::FlightState::new(
@@ -135,6 +136,7 @@ async fn main(spawner: Spawner) {
         buzzer,
         mav,
         sv,
+        airbrake_system,
         flash,
         payload_tx,
     )
@@ -271,8 +273,8 @@ async fn main(spawner: Spawner) {
             log::info!("Firing Drogue SSA for {}ms", constants::SSA_THRESHOLD_MS);
             flight_state.trigger_drogue().await;
             flight_state.update_actuators().await;
-            Timer::after_millis(constants::SSA_THRESHOLD_MS + 2000).await;
-
+            Timer::after_millis(constants::SSA_THRESHOLD_MS + 1000).await;
+            
             log::info!("Firing Main SSA for {}ms", constants::SSA_THRESHOLD_MS);
             flight_state.trigger_main().await;
             flight_state.update_actuators().await;

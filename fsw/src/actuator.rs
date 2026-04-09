@@ -246,6 +246,85 @@ impl<'a> Mav<'a> {
     }
 }
 
+// ============================================================================
+// AirbrakeActuator
+// ============================================================================
+//
+// Drives the ODrive S1 motor controller via standard RC PWM on GPIO 38.
+// ODrive S1 RC PWM input (G08, isolated IO):
+//   - 50 Hz frame rate (20 ms period)
+//   - 1000 µs pulse → fully retracted (0% deployment)
+//   - 2000 µs pulse → fully deployed  (100% deployment)
+//
+// GPIO 37 = ENABLE output (High = enable ODrive, Low = disable)
+// GPIO 38 = PWM signal to ODrive RC PWM IN
+
+pub struct AirbrakeActuator<'a> {
+    enable: Output<'a>,
+    pwm: Pwm<'a>,
+    current_deployment: f32,
+}
+
+impl<'a> AirbrakeActuator<'a> {
+    // RC PWM standard: 50 Hz, 1000–2000 µs
+    const SERVO_PERIOD_US: u16 = 20_000; // 20 ms period
+    const SERVO_CLOSE_US: u16  = 1_000;  // fully retracted
+    const SERVO_OPEN_US: u16   = 2_000;  // fully deployed
+
+    /// Create a new AirbrakeActuator.
+    /// PWM slice must be configured for 50 Hz in module.rs:
+    ///   top = 59999, divider = 50 (for 150 MHz system clock)
+    pub fn new(enable: Output<'a>, pwm: Pwm<'a>) -> Self {
+        let mut ab = Self {
+            enable,
+            pwm,
+            current_deployment: 0.0,
+        };
+        ab.retract(); // safe starting position
+        ab
+    }
+
+    /// Enable the ODrive (assert ENABLE pin high).
+    pub fn enable(&mut self) {
+        self.enable.set_high();
+    }
+
+    /// Disable the ODrive (assert ENABLE pin low).
+    pub fn disable(&mut self) {
+        self.enable.set_low();
+    }
+
+    /// Set airbrake deployment level.
+    /// `deployment`: 0.0 = fully retracted, 1.0 = fully deployed.
+    /// Outputs a proportional RC PWM pulse between 1000 µs and 2000 µs.
+    pub fn set_deployment(&mut self, deployment: f32) {
+        let dep = deployment.clamp(0.0, 1.0);
+        self.current_deployment = dep;
+
+        let span = (Self::SERVO_OPEN_US - Self::SERVO_CLOSE_US) as f32;
+        let pulse_us = Self::SERVO_CLOSE_US as f32 + span * dep;
+
+        self.set_pulse_width((pulse_us + 0.5) as u16);
+    }
+
+    /// Fully retract the airbrakes (1000 µs pulse).
+    pub fn retract(&mut self) {
+        self.set_deployment(0.0);
+    }
+
+    /// Returns the last commanded deployment level (0.0–1.0).
+    pub fn current_deployment(&self) -> f32 {
+        self.current_deployment
+    }
+
+    fn set_pulse_width(&mut self, pulse_us: u16) {
+        let pulse = pulse_us.clamp(Self::SERVO_CLOSE_US, Self::SERVO_OPEN_US);
+        let _ = self
+            .pwm
+            .set_duty_cycle_fraction(pulse, Self::SERVO_PERIOD_US);
+    }
+}
+
 // SV
 pub struct SV<'a> {
     pin: Output<'a>,

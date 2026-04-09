@@ -532,9 +532,10 @@ impl FlightLoop {
                     }
                     let avg_alt = self.alt_sum / 10.0;
 
-                    // Read latest airbrake deployment from Core 1 (non-blocking).
-                    // TODO: drive airbrake servo here once servo is added to actuator.rs
+                    // Read latest airbrake deployment from Core 1 (non-blocking)
+                    // and drive the ODrive RC PWM servo.
                     let deployment = crate::airbrake_task::get_deployment();
+                    self.flight_state.airbrake_system.set_deployment(deployment);
                     log::info!("Airbrake deployment: {:.1}%", deployment * 100.0);
 
                     // Apogee detection
@@ -554,6 +555,7 @@ impl FlightLoop {
                         self.camera_deployed = true;
                         // Airbrakes retract at apogee — Core 1 stops receiving
                         // Coast signals so it will hold at 0.0 deployment.
+                        self.flight_state.airbrake_system.retract();
                         self.airbrakes_init = false;
                         log::info!("Airbrakes retracted");
                         log::info!("Cameras deployed");

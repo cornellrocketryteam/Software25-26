@@ -91,10 +91,10 @@ pub const MAIN_DEPLOY_ALTITUDE: f32 = 610.0;
 pub const MAIN_LOG_TIMEOUT_MS: u64 = 1_200_000; // 20 minutes
 
 pub const UMBILICAL_TIMEOUT_MS: u64 = 15_000; // 15 seconds
-pub const MAV_OPEN_DURATION_MS: u64 = 7880; // 7.88 seconds 
-pub const LAUNCH_SV_PREVENT_MS: u64 = 2000;
-pub const LAUNCH_POST_MAV_WAIT_MS: u64 = 10000;
-pub const SSA_THRESHOLD_MS: u64 = 3000; // Duration to fire ematch
+pub const MAV_OPEN_DURATION_MS: u64 = 3000; // 3.5 seconds (gives time to advance altitude array past 100m during 1Hz loop)
+pub const LAUNCH_SV_PREVENT_MS: u64 = 5_000;  // 5 s pre-vent before closing SV
+pub const LAUNCH_POST_MAV_WAIT_MS: u64 = 10_000; // 10 s wait after MAV open before final vent
+pub const SSA_THRESHOLD_MS: u64 = 1000; // Duration to fire ematch
 
 // ADS1015 ADC Configuration
 pub const ADS1015_I2C_ADDR: u8 = 0x48;

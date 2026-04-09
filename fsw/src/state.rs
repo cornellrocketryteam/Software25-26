@@ -13,7 +13,7 @@ use crate::driver::onboard_flash::OnboardFlash;
 use embassy_rp::gpio::{Input, Output};
 use embassy_rp::uart::{Async, Uart, UartTx};
 
-use crate::actuator::{Ssa, Buzzer, Mav, SV, Chute};
+use crate::actuator::{Ssa, Buzzer, Mav, SV, Chute, AirbrakeActuator};
 
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -89,6 +89,7 @@ pub struct FlightState {
     pub buzzer: Buzzer<'static>,
     pub mav: Mav<'static>,
     pub sv: SV<'static>,
+    pub airbrake_system: AirbrakeActuator<'static>,
 
     // telemetry
     radio: Rfd900x<'static>,
@@ -121,6 +122,7 @@ impl FlightState {
         buzzer: Buzzer<'static>,
         mav: Mav<'static>,
         sv: SV<'static>,
+        airbrake_system: AirbrakeActuator<'static>,
         mut flash: OnboardFlash<'static>,
         payload_uart: UartTx<'static, Async>,
     ) -> Self {
@@ -209,6 +211,7 @@ impl FlightState {
             buzzer,
             mav,
             sv,
+            airbrake_system,
             flash,
             payload_uart,
 

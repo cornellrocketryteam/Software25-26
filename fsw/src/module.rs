@@ -7,8 +7,8 @@ use embassy_rp::gpio::Output;
 use embassy_rp::i2c::{Config as I2cConfig, I2c, InterruptHandler as I2cInterruptHandler};
 use embassy_rp::peripherals::{
     DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, DMA_CH4, DMA_CH5, DMA_CH6, I2C0, PIN_0, PIN_1, PIN_2,
-    PIN_3, PIN_4, PIN_8, PIN_9, PIN_21, PIN_32, PIN_33, PIN_36, PIN_39, PIN_40, PIN_47,
-    PWM_SLICE2, PWM_SLICE8, SPI0, UART0, UART1, USB,
+    PIN_3, PIN_4, PIN_8, PIN_9, PIN_21, PIN_32, PIN_33, PIN_36, PIN_37, PIN_38, PIN_39, PIN_40,
+    PIN_47, PWM_SLICE2, PWM_SLICE8, PWM_SLICE11, SPI0, UART0, UART1, USB,
 };
 use embassy_rp::spi::{Config as SpiConfig, Spi};
 use embassy_rp::uart::{Config as UartConfig, InterruptHandler as UartInterruptHandler, Uart};
@@ -203,6 +203,28 @@ pub fn init_mav(slice: Peri<'static, PWM_SLICE8>, pin: Peri<'static, PIN_40>) ->
     // Using output A for Pin 8 (Slice 4A) from pinout
     let pwm = Pwm::new_output_a(slice, pin, config);
     Mav::new(pwm)
+}
+
+use crate::actuator::AirbrakeActuator;
+
+// Initialize AirbrakeActuator
+//
+// GPIO 37 = ENABLE (active high → ODrive enabled)
+// GPIO 38 = RC PWM signal to ODrive S1 isolated IO (G08)
+// PWM config: 50 Hz at 150 MHz sysclk → divider=50, top=59999
+//   freq = 150_000_000 / (50 * (59999 + 1)) = 50 Hz
+pub fn init_airbrake(
+    enable_pin: Peri<'static, PIN_37>,
+    pwm_slice: Peri<'static, PWM_SLICE11>,
+    pwm_pin: Peri<'static, PIN_38>,
+) -> AirbrakeActuator<'static> {
+    let enable = Output::new(enable_pin, embassy_rp::gpio::Level::Low); // disabled until armed
+    let mut config = PwmConfig::default();
+    // 50 Hz: 150 MHz / (50 * (59999 + 1)) = 50 Hz
+    config.top = 59999;
+    config.divider = 50.into();
+    let pwm = Pwm::new_output_a(pwm_slice, pwm_pin, config);
+    AirbrakeActuator::new(enable, pwm)
 }
 
 use crate::actuator::SV;
