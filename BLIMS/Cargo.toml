@@ -3,21 +3,18 @@ name = "src"
 version = "0.1.0"
 edition = "2024"
 
-[features]
-default = ["std"]
-std     = []
-
 [dependencies]
-csv  = "1.4.0"
+embassy-executor = { git = "https://github.com/embassy-rs/embassy.git", features = ["platform-cortex-m", "executor-thread", "defmt"] }
+embassy-rp = { git = "https://github.com/embassy-rs/embassy.git", features = ["defmt", "time-driver", "critical-section-impl", "rp235xa", "binary-info"] }
+embassy-time = { git = "https://github.com/embassy-rs/embassy.git", features = ["defmt"] }
+cortex-m = { version = "0.7.7" }
+cortex-m-rt = "0.7.0"
+fixed = "1.23"
+defmt = "0.3"
+defmt-rtt = "0.4"
 libm = "0.2"
+panic-probe = { version = "0.3", features = ["print-defmt"] }
 
-[dev-dependencies]
-# No additional test dependencies needed
 
-# For embedded RP2040 targets, add to your application crate:
-#   rp2040-hal = { version = "0.10", features = ["rt"] }
-#   cortex-m-rt = "0.7"
 
-[[bin]]
-name = "simulate"
-path = "src/sim.rs"
+

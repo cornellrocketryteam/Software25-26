@@ -48,10 +48,8 @@ pub const LOITER_PAUSE_DURATION_MS: u32  = 2500;  // 2.5s pause between turns
 pub const LOITER_RIGHT_POS: f32 = 0.65;            // Right turn position
 pub const LOITER_LEFT_POS: f32 = 0.35;             // Left turn position
 
-// Minimum groundspeed for reliable heading (mm/s)
-//GPS heading is unreliable at low speeds due to position noise
-// 3000 mm/s = 3 m/s.
-pub const GSPEED_MIN_FOR_HEADING: i32 = 3000; // 3m/s
+pub const MAX_WIND_LAYERS: usize = 20;
+
 
 
 
