@@ -62,6 +62,10 @@ pub struct FlightLoop {
     low_alt_time: Option<Instant>,
     n3_sent: bool,
     n4_sent: bool,
+
+    // Fault signaling
+    fault_signal_sent: bool,
+    last_alt: f32,
 }
 
 impl FlightLoop {
@@ -100,6 +104,8 @@ impl FlightLoop {
             low_alt_time: None,
             n3_sent: false,
             n4_sent: false,
+            fault_signal_sent: false,
+            last_alt: 0.0,
         }
     }
 
@@ -170,6 +176,9 @@ impl FlightLoop {
             self.flight_state.save_packet_to_flash().await;
             self.last_flash_log = Some(now);
         }
+
+        // Track previous altitude for fault velocity estimate (A2 payload signal)
+        self.last_alt = self.flight_state.packet.altitude;
     }
 
     pub async fn check_ground_commands(&mut self) {
@@ -221,6 +230,10 @@ impl FlightLoop {
                         let _ = self.flight_state.payload_uart.write(b"N4\n").await;
                         self.n4_sent = true;
                     }
+                }
+                Command::A1 => {
+                    log::warn!("A1");
+                    let _ = self.flight_state.payload_uart.write(b"A1\n").await;
                 }
                 Command::ForceMode(mode_val) => {
                     log::warn!("CMD: Force Flight Mode {}", mode_val);
@@ -635,7 +648,24 @@ impl FlightLoop {
                 }
             }
             FlightMode::Fault => {
-                // TODO: Flight software does nothing in Fault mode
+                if !self.fault_signal_sent {
+                    if self.drogue_deployed {
+                        match self.flight_state.payload_uart.write(b"A3\n").await {
+                            Ok(_) => log::warn!("A3 — fault after apogee"),
+                            Err(e) => log::error!("PAYLOAD UART write A3 failed: {:?}", e),
+                        }
+                    } else {
+                        let alt = self.flight_state.packet.altitude;
+                        let vel = alt - self.last_alt;
+                        let mut buf = heapless::String::<32>::new();
+                        let _ = core::fmt::write(&mut buf, format_args!("A2,{:.1},{:.1}\n", alt, vel));
+                        match self.flight_state.payload_uart.write(buf.as_bytes()).await {
+                            Ok(_) => log::warn!("A2 — fault before apogee"),
+                            Err(e) => log::error!("PAYLOAD UART write A2 failed: {:?}", e),
+                        }
+                    }
+                    self.fault_signal_sent = true;
+                }
                 log::error!("Flight mode is Fault");
             }
         }
