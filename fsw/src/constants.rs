@@ -67,6 +67,19 @@ pub const SV_PIN: u8 = 47;
 /// Main loop cycle time in milliseconds
 pub const MAIN_LOOP_DELAY_MS: u64 = 50; // 20 Hz
 
+/// Maximum allowed time for one execute() call before logging an overrun warning
+pub const LOOP_BUDGET_MS: u64 = 100;
+
+/// Hardware watchdog timeout in milliseconds
+/// = LOOP_BUDGET_MS (100) + 20 ms for Embassy I2C/SPI async overhead.
+/// A second feed() after execute() covers the MAIN_LOOP_DELAY_MS sleep,
+/// so the watchdog only ever fires if execute() itself hangs
+pub const WATCHDOG_TIMEOUT_MS: u32 = 120;
+
+/// Stall duration used by test_watchdog to deliberately trigger the watchdog
+/// Must be > WATCHDOG_TIMEOUT_MS so the chip resets during the stall.
+pub const WATCHDOG_TEST_STALL_MS: u64 = 200;
+
 pub const FLASH_LOGGING_PERIOD_MS: u64 = 50; // Log every cycle at 20 Hz
 
 // USB Logger Configuration

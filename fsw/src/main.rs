@@ -7,7 +7,8 @@ use embassy_executor::{Executor, Spawner};
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::multicore::{spawn_core1, Stack};
 use embassy_rp::uart::{Async, UartRx};
-use embassy_time::Timer;
+use embassy_time::{Duration, Instant, Timer};
+use embassy_rp::watchdog::Watchdog;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
@@ -123,7 +124,7 @@ async fn main(spawner: Spawner) {
     let airbrake_system = module::init_airbrake(p.PIN_37, p.PWM_SLICE11, p.PIN_38);
 
     log::info!("Initializing Flight State (Sensors & Actuators)...");
-    let flight_state = state::FlightState::new(
+    let mut flight_state = state::FlightState::new(
         i2c_bus,
         spi_bus,
         fram_cs,
@@ -535,6 +536,130 @@ async fn main(spawner: Spawner) {
         }
     }
 
+    // --- AIRBRAKE ACTUATION TEST --- //
+    // Sweeps deployment 0% → 25% → 50% → 75% → 100% → 0%, holding each
+    // position for 2 seconds so you can observe the motor response.
+    // Logs the deployment % and the resulting pulse width (µs) at each step.
+    //
+    // Flash with:  cargo build --release --features test_airbrakes
+    //
+    // What to check on an oscilloscope:
+    //   GPIO 38: 50 Hz signal, pulse width stepping through:
+    //     0%   → 1000 µs
+    //     25%  → 1250 µs
+    //     50%  → 1500 µs
+    //     75%  → 1750 µs
+    //     100% → 2000 µs
+    //     0%   → 1000 µs  (retract)
+    #[cfg(feature = "test_airbrakes")]
+    {
+        let mut flight_state = flight_state; // rebind as mutable for direct access
+        log::info!("=== Airbrake Actuation Test ===");
+        log::info!("GPIO 37 = ENABLE (going HIGH now)");
+        log::info!("GPIO 38 = PWM signal (50 Hz, 1000-2000 us)");
+
+        // Enable the ODrive — GPIO 37 HIGH
+        flight_state.airbrake_system.enable();
+        // Give the ODrive 1 second to power up and recognise the enable line
+        Timer::after_millis(6000).await;
+
+        // Steps: (deployment_fraction, label)
+        let steps: [(f32, &str); 6] = [
+            (0.00, "0%   → 1000 us (fully retracted)"),
+            (0.25, "25%  → 1250 us"),
+            (0.50, "50%  → 1500 us (mid)"),
+            (0.75, "75%  → 1750 us"),
+            (1.00, "100% → 2000 us (fully deployed)"),
+            (0.00, "0%   → 1000 us (retract — SAFE END)"),
+        ];
+
+        for (dep, label) in steps {
+            log::info!("Setting airbrake deployment: {}", label);
+            flight_state.airbrake_system.set_deployment(dep);
+            led.toggle();
+            // Hold for 2 seconds — long enough to see panel movement
+            Timer::after_millis(2000).await;
+        }
+
+        // Disable ODrive after test — GPIO 37 LOW
+        flight_state.airbrake_system.disable();
+        log::info!("Test complete. ODrive disabled (GPIO 37 LOW).");
+        log::info!("Airbrakes should be fully retracted.");
+
+        // Sit idle — reflash to exit
+        loop {
+            Timer::after_millis(1000).await;
+        }
+    }
+
+    // --- WATCHDOG TEST --- //
+    // Verifies the hardware watchdog fires correctly when execute() hangs.
+    //
+    // Flash with:  cargo build --release --features test_watchdog
+    //
+    // Part 1 — 5 normal flight loop cycles with the watchdog active.
+    //   Each cycle's elapsed time is logged. If the watchdog fires here,
+    //   execute() is already overrunning in normal conditions — investigate.
+    //
+    // Part 2 — deliberate 200 ms stall without feeding the watchdog.
+    //   The chip must reset within WATCHDOG_TIMEOUT_MS (120 ms) of the last feed.
+    //   You will see the board reboot (boot message re-appears in the USB logger).
+    //   The "WATCHDOG FAILED" line after the stall must NEVER appear — if it
+    //   does, the watchdog is not working.
+    #[cfg(feature = "test_watchdog")]
+    {
+        const NORMAL_CYCLES: u32 = 5;
+
+        log::info!("=== Watchdog Test ===");
+        log::info!(
+            "Watchdog timeout: {} ms  |  Budget: {} ms  |  Test stall: {} ms",
+            constants::WATCHDOG_TIMEOUT_MS,
+            constants::LOOP_BUDGET_MS,
+            constants::WATCHDOG_TEST_STALL_MS,
+        );
+
+        let mut flight_loop = flight_loop::FlightLoop::new(flight_state);
+        let mut watchdog = Watchdog::new(p.WATCHDOG);
+        watchdog.start(Duration::from_millis(constants::WATCHDOG_TIMEOUT_MS as u64));
+
+        // Part 1: normal cycles — watchdog must not fire
+        log::info!("Part 1: running {} normal cycles...", NORMAL_CYCLES);
+        for cycle in 0..NORMAL_CYCLES {
+            watchdog.feed(Duration::from_millis(constants::WATCHDOG_TIMEOUT_MS as u64));
+            let start = Instant::now();
+            flight_loop.execute().await;
+            let elapsed = start.elapsed().as_millis();
+            watchdog.feed(Duration::from_millis(constants::WATCHDOG_TIMEOUT_MS as u64)); // cover the sleep below
+            log::info!(
+                "  Cycle {}/{}: {} ms (budget: {} ms) {}",
+                cycle + 1,
+                NORMAL_CYCLES,
+                elapsed,
+                constants::LOOP_BUDGET_MS,
+                if elapsed > constants::LOOP_BUDGET_MS { "OVERRUN" } else { "OK" },
+            );
+            led.toggle();
+            Timer::after_millis(constants::MAIN_LOOP_DELAY_MS).await;
+        }
+
+        // Part 2: deliberate stall — watchdog MUST fire and reset the chip
+        log::info!(
+            "Part 2: stalling for {} ms — chip must reset in ~{} ms...",
+            constants::WATCHDOG_TEST_STALL_MS,
+            constants::WATCHDOG_TIMEOUT_MS,
+        );
+        watchdog.feed(Duration::from_millis(constants::WATCHDOG_TIMEOUT_MS as u64)); // arm the countdown one last time
+        // No more feeds — the chip resets mid-sleep
+        Timer::after_millis(constants::WATCHDOG_TEST_STALL_MS).await;
+
+        // If execution reaches here the watchdog did NOT fire — that is a failure
+        log::error!("WATCHDOG FAILED — chip did not reset after {} ms stall!", constants::WATCHDOG_TEST_STALL_MS);
+        loop {
+            Timer::after_millis(500).await;
+            led.toggle();
+        }
+    }
+
     // --- NORMAL FLIGHT LOOP --- //
     #[cfg(not(any(
         feature = "test_mav",
@@ -547,6 +672,8 @@ async fn main(spawner: Spawner) {
         feature = "test_all",
         feature = "test_hw_all",
         feature = "test_payload_uart",
+        feature = "test_airbrakes",
+        feature = "test_watchdog",
         feature = "sim_simple",
         feature = "sim_fault",
         feature = "sim_stability",
@@ -558,16 +685,38 @@ async fn main(spawner: Spawner) {
     )))]
     {
         let mut flight_loop = flight_loop::FlightLoop::new(flight_state);
+        let mut watchdog = Watchdog::new(p.WATCHDOG);
+        watchdog.start(Duration::from_millis(constants::WATCHDOG_TIMEOUT_MS as u64));
 
-        // STEP 4: Run actual flight loop with real telemetry
         loop {
             flight_loop.flight_state.cycle_count += 1;
+
+            // feed before execute() and starts the countdown
+            // If execute() hangs for > WATCHDOG_TIMEOUT_MS, chip resets
+            watchdog.feed(Duration::from_millis(constants::WATCHDOG_TIMEOUT_MS as u64));
+            let start = Instant::now();
+
             flight_loop.execute().await;
+
+            let elapsed = start.elapsed().as_millis();
+
+            // Feed again immediately after execute() before sleep
+            // This prevents the 50 ms Timer delay from counting toward the timeout
+            watchdog.feed(Duration::from_millis(constants::WATCHDOG_TIMEOUT_MS as u64));
+
+            if elapsed > constants::LOOP_BUDGET_MS {
+                log::warn!(
+                    "Loop overrun: execute() took {} ms (budget: {} ms)",
+                    elapsed,
+                    constants::LOOP_BUDGET_MS,
+                );
+            }
 
             // Toggle LED for heartbeat (every 20 cycles = 1 Hz blink at 20 Hz loop)
             if flight_loop.flight_state.cycle_count % 20 == 0 {
                 led.toggle();
             }
+
             Timer::after_millis(constants::MAIN_LOOP_DELAY_MS).await;
         }
     }
