@@ -60,6 +60,8 @@ pub struct FlightLoop {
 
     // Payload Commands tracking
     low_alt_time: Option<Instant>,
+    n2_low_speed_time: Option<Instant>,
+    n2_sent: bool,
     n3_sent: bool,
     n4_sent: bool,
 
@@ -102,6 +104,8 @@ impl FlightLoop {
             launch_sequence_stage: LaunchStage::None,
             launch_stage_start_time: None,
             low_alt_time: None,
+            n2_low_speed_time: None,
+            n2_sent: false,
             n3_sent: false,
             n4_sent: false,
             fault_signal_sent: false,
@@ -206,30 +210,14 @@ impl FlightLoop {
                     log::info!("PAYLOAD: Sent N2");
                 }
                 Command::N3 => {
-                    if self.flight_state.packet.altitude < 250.0 {
-                        if self.low_alt_time.is_none() {
-                            self.low_alt_time = Some(Instant::now());
-                        } else if let Some(low_time) = self.low_alt_time {
-                            if low_time.elapsed().as_millis() as u64 > 1000 && !self.n3_sent {
-                                log::warn!("Low Altitude Detected (>1s).");
-                                let _ = self.flight_state.payload_uart.write(b"N3\n").await;
-                                self.n3_sent = true;
-                            }
-                        }
-                    } else {
-                        self.low_alt_time = None;
-                    }
+                    let _ = self.flight_state.payload_uart.write(b"N3\n").await;
+                    log::info!("PAYLOAD: Sent N3");
+                    self.n3_sent = true;
                 }
                 Command::N4 => {
-                    let ax = self.flight_state.packet.accel_x;
-                    let ay = self.flight_state.packet.accel_y;
-                    let az = self.flight_state.packet.accel_z;
-
-                    if (ax.abs() > 30.0 || ay.abs() > 30.0 || az.abs() > 30.0) && !self.n4_sent {
-                        log::warn!("High Acceleration Detected. Sending N4.");
-                        let _ = self.flight_state.payload_uart.write(b"N4\n").await;
-                        self.n4_sent = true;
-                    }
+                    let _ = self.flight_state.payload_uart.write(b"N4\n").await;
+                    log::info!("PAYLOAD: Sent N4");
+                    self.n4_sent = true;
                 }
                 Command::A1 => {
                     log::warn!("A1");
@@ -551,6 +539,20 @@ impl FlightLoop {
                     self.flight_state.airbrake_system.set_deployment(deployment);
                     log::info!("Airbrake deployment: {:.1}%", deployment * 100.0);
 
+                    // N2: vertical speed < 30 m/s for 0.5s
+                    let vert_speed = (current_alt - self.last_alt) * 20.0;
+                    if vert_speed < 30.0 && !self.n2_sent {
+                        if self.n2_low_speed_time.is_none() {
+                            self.n2_low_speed_time = Some(Instant::now());
+                        } else if self.n2_low_speed_time.unwrap().elapsed().as_millis() >= 500 {
+                            let _ = self.flight_state.payload_uart.write(b"N2\n").await;
+                            log::info!("PAYLOAD: Sent N2");
+                            self.n2_sent = true;
+                        }
+                    } else if vert_speed >= 30.0 {
+                        self.n2_low_speed_time = None;
+                    }
+
                     // Apogee detection
                     self.filtered_alt[2] = self.filtered_alt[1];
                     self.filtered_alt[1] = self.filtered_alt[0];
@@ -563,11 +565,9 @@ impl FlightLoop {
                         && self.filtered_alt[2] > self.filtered_alt[1]
                         && self.filtered_alt[1] > self.filtered_alt[0]
                     {
-                        // TODO: Trigger payload actuators right before apogee
-                        // cameras_deployed();
                         self.camera_deployed = true;
-                        // Airbrakes retract at apogee — Core 1 stops receiving
-                        // Coast signals so it will hold at 0.0 deployment.
+                        // Airbrakes retract at apogee
+                        // Coast signals so it will hold at 0.0 deployment
                         self.flight_state.airbrake_system.retract();
                         self.airbrakes_init = false;
                         log::info!("Airbrakes retracted");
@@ -603,6 +603,31 @@ impl FlightLoop {
                     return;
                 }
 
+                // N3: altitude < 76.2m (250ft) for 1s
+                if self.flight_state.packet.altitude < 76.2 && !self.n3_sent {
+                    if self.low_alt_time.is_none() {
+                        self.low_alt_time = Some(Instant::now());
+                    } else if self.low_alt_time.unwrap().elapsed().as_millis() >= 1000 {
+                        let _ = self.flight_state.payload_uart.write(b"N3\n").await;
+                        log::info!("PAYLOAD: Sent N3");
+                        self.n3_sent = true;
+                    }
+                } else if self.flight_state.packet.altitude >= 76.2 {
+                    self.low_alt_time = None;
+                }
+
+                // N4: any accel axis > 30 m/s²
+                if !self.n4_sent {
+                    let ax = self.flight_state.packet.accel_x;
+                    let ay = self.flight_state.packet.accel_y;
+                    let az = self.flight_state.packet.accel_z;
+                    if ax.abs() > 30.0 || ay.abs() > 30.0 || az.abs() > 30.0 {
+                        let _ = self.flight_state.payload_uart.write(b"N4\n").await;
+                        log::info!("PAYLOAD: Sent N4");
+                        self.n4_sent = true;
+                    }
+                }
+
                 // Get time since entry
                 if let Some(entry_time) = self.drogue_entry_time {
                     if entry_time.elapsed().as_millis() >= constants::MAIN_DEPLOY_DELAY_MS {
@@ -627,6 +652,31 @@ impl FlightLoop {
                     self.flight_state.write_state_to_fram().await;
                     log::error!("Altimeter invalid at MainDeployed; transitioning to Fault");
                     return;
+                }
+
+                // N3: altitude < 76.2m (250ft) for 1s
+                if self.flight_state.packet.altitude < 76.2 && !self.n3_sent {
+                    if self.low_alt_time.is_none() {
+                        self.low_alt_time = Some(Instant::now());
+                    } else if self.low_alt_time.unwrap().elapsed().as_millis() >= 1000 {
+                        let _ = self.flight_state.payload_uart.write(b"N3\n").await;
+                        log::info!("PAYLOAD: Sent N3");
+                        self.n3_sent = true;
+                    }
+                } else if self.flight_state.packet.altitude >= 76.2 {
+                    self.low_alt_time = None;
+                }
+
+                // N4: any accel axis > 30 m/s²
+                if !self.n4_sent {
+                    let ax = self.flight_state.packet.accel_x;
+                    let ay = self.flight_state.packet.accel_y;
+                    let az = self.flight_state.packet.accel_z;
+                    if ax.abs() > 30.0 || ay.abs() > 30.0 || az.abs() > 30.0 {
+                        let _ = self.flight_state.payload_uart.write(b"N4\n").await;
+                        log::info!("PAYLOAD: Sent N4");
+                        self.n4_sent = true;
+                    }
                 }
 
                 if let Some(entry_time) = self.main_entry_time {
@@ -656,7 +706,7 @@ impl FlightLoop {
                         }
                     } else {
                         let alt = self.flight_state.packet.altitude;
-                        let vel = alt - self.last_alt;
+                        let vel = (alt - self.last_alt) * 20.0;
                         let mut buf = heapless::String::<32>::new();
                         let _ = core::fmt::write(&mut buf, format_args!("A2,{:.1},{:.1}\n", alt, vel));
                         match self.flight_state.payload_uart.write(buf.as_bytes()).await {
