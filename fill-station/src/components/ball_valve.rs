@@ -5,8 +5,8 @@ use std::time::Duration;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use async_gpiod::{Chip, LineId, Lines, Options, Output};
 
-/// Time to hold ON_OFF high to ensure valve movement (default 3 seconds)
-const VALVE_ACTUATION_TIME: Duration = Duration::from_secs(3);
+// Time to hold ON_OFF high to ensure valve movement (default 3 seconds) - No longer used in new fast sequences
+// const VALVE_ACTUATION_TIME: Duration = Duration::from_secs(3);
 
 pub struct BallValve {
     name: String,
@@ -51,41 +51,35 @@ impl BallValve {
         })
     }
 
-    /// Open sequence: Signal=HIGH, ON_OFF=HIGH (wait), ON_OFF=LOW
+    /// Open sequence: ON_OFF=LOW, wait 100ms, Signal=HIGH
     pub async fn open_sequence(&self) -> Result<()> {
-        // 1. Ensure Signal is HIGH (Open)
-        // We can only change signal if ON_OFF is currently low, which we assume/enforce.
-        // But here we are IN the sequence to actuate, so we set signal first.
+        tracing::info!("BallValve {} opening (on_off=low, signal=high)", self.name);
+        
+        // 1. Ensure ON_OFF is LOW
+        self.set_on_off_internal(false).await?;
+        
+        Timer::after(Duration::from_millis(100)).await;
+        
+        // 2. Set Signal to HIGH (Open)
         self.set_signal_internal(true).await?;
         
-        // 2. Turn ON_OFF High to start movement
-        self.set_on_off_internal(true).await?;
-        
-        tracing::info!("BallValve {} opening (waiting {:?})", self.name, VALVE_ACTUATION_TIME);
-        Timer::after(VALVE_ACTUATION_TIME).await;
-        
-        // 3. Turn ON_OFF Low to stop/finish
-        self.set_on_off_internal(false).await?;
         tracing::info!("BallValve {} open sequence complete", self.name);
-        
         Ok(())
     }
 
-    /// Close sequence: Signal=LOW, ON_OFF=HIGH (wait), ON_OFF=LOW
+    /// Close sequence: ON_OFF=LOW, wait 100ms, Signal=LOW
     pub async fn close_sequence(&self) -> Result<()> {
-        // 1. Ensure Signal is LOW (Close)
+        tracing::info!("BallValve {} closing (on_off=low, signal=low)", self.name);
+        
+        // 1. Ensure ON_OFF is LOW
+        self.set_on_off_internal(false).await?;
+        
+        Timer::after(Duration::from_millis(100)).await;
+        
+        // 2. Set Signal to LOW (Close)
         self.set_signal_internal(false).await?;
         
-        // 2. Turn ON_OFF High
-        self.set_on_off_internal(true).await?;
-        
-        tracing::info!("BallValve {} closing (waiting {:?})", self.name, VALVE_ACTUATION_TIME);
-        Timer::after(VALVE_ACTUATION_TIME).await;
-        
-        // 3. Turn ON_OFF Low
-        self.set_on_off_internal(false).await?;
         tracing::info!("BallValve {} close sequence complete", self.name);
-        
         Ok(())
     }
 
