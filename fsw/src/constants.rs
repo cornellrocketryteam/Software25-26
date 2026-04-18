@@ -82,6 +82,17 @@ pub const WATCHDOG_TEST_STALL_MS: u64 = 200;
 
 pub const FLASH_LOGGING_PERIOD_MS: u64 = 50; // Log every cycle at 20 Hz
 
+// I²C/SPI timeouts: if a bus transaction hangs (e.g. GPS NACK holds SDA low),
+// bail out instead of blocking the flight loop forever.
+/// Per-cycle sensor read timeout (BMP390, GPS, IMU, ADC).
+pub const SENSOR_READ_TIMEOUT_MS: u64 = 30;
+/// Single FRAM read/write timeout.
+pub const FRAM_TIMEOUT_MS: u64 = 30;
+/// QSPI flash op timeout (erase/program can be legitimately slow).
+pub const FLASH_TIMEOUT_MS: u64 = 200;
+/// One-time driver init timeout (happens once at boot, be generous).
+pub const SENSOR_INIT_TIMEOUT_MS: u64 = 500;
+
 // USB Logger Configuration
 
 /// USB logger ring buffer size in bytes

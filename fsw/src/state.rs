@@ -1,3 +1,4 @@
+use crate::constants;
 use crate::module::*;
 
 use crate::packet::Packet;
@@ -12,6 +13,7 @@ use crate::driver::onboard_flash::OnboardFlash;
 
 use embassy_rp::gpio::{Input, Output};
 use embassy_rp::uart::{Async, Uart, UartTx};
+use embassy_time::{Duration, with_timeout};
 
 use crate::actuator::{Ssa, Buzzer, Mav, SV, Chute, AirbrakeActuator};
 
@@ -128,8 +130,18 @@ impl FlightState {
         payload_uart: UartTx<'static, Async>,
     ) -> Self {
         let mut packet = Packet::default();
+        let init_to = Duration::from_millis(constants::SENSOR_INIT_TIMEOUT_MS);
+        let fram_to = Duration::from_millis(constants::FRAM_TIMEOUT_MS);
+        let flash_to = Duration::from_millis(constants::FLASH_TIMEOUT_MS);
+
         log::info!("STATE: Initializing altimeter (BMP390)...");
-        let altimeter = Bmp390Sensor::new(spi_bus, altimeter_cs).await;
+        let altimeter = match with_timeout(init_to, Bmp390Sensor::new(spi_bus, altimeter_cs)).await {
+            Ok(s) => s,
+            Err(_) => {
+                log::error!("STATE: BMP390 init TIMEOUT — marking unavailable");
+                Bmp390Sensor::unavailable()
+            }
+        };
         let altimeter_init = if altimeter.is_init() {
             log::info!("STATE: Altimeter OK");
             SensorState::VALID
@@ -144,10 +156,14 @@ impl FlightState {
         let mut gps = UbloxMaxM10s::new(i2c_bus);
 
         // Configure GPS module to output NAV-PVT messages
-        let gps_ok = match gps.configure().await {
-            Ok(_) => { log::info!("STATE: GPS configured OK"); true }
-            Err(e) => {
+        let gps_ok = match with_timeout(init_to, gps.configure()).await {
+            Ok(Ok(_)) => { log::info!("STATE: GPS configured OK"); true }
+            Ok(Err(e)) => {
                 log::error!("STATE: GPS configure FAILED: {:?}", e);
+                false
+            }
+            Err(_) => {
+                log::error!("STATE: GPS configure TIMEOUT — I²C bus may be locked");
                 false
             }
         };
@@ -156,9 +172,21 @@ impl FlightState {
         // hanging all subsequent I2C transactions indefinitely.
         let (imu, adc) = if gps_ok {
             log::info!("STATE: Initializing IMU (LSM6DSOX)...");
-            let imu = Lsm6dsoxSensor::new(i2c_bus).await;
+            let imu = match with_timeout(init_to, Lsm6dsoxSensor::new(i2c_bus)).await {
+                Ok(s) => s,
+                Err(_) => {
+                    log::error!("STATE: IMU init TIMEOUT — marking unavailable");
+                    Lsm6dsoxSensor::unavailable(i2c_bus)
+                }
+            };
             log::info!("STATE: Initializing ADC (ADS1015)...");
-            let adc = Ads1015Sensor::new(i2c_bus).await;
+            let adc = match with_timeout(init_to, Ads1015Sensor::new(i2c_bus)).await {
+                Ok(s) => s,
+                Err(_) => {
+                    log::error!("STATE: ADC init TIMEOUT — marking unavailable");
+                    Ads1015Sensor::unavailable(i2c_bus)
+                }
+            };
             log::info!("STATE: IMU and ADC init complete");
             (imu, adc)
         } else {
@@ -170,31 +198,46 @@ impl FlightState {
         log::info!("STATE: Radio ready");
 
         // Read stored state from FRAM
-        let (stored_mode, stored_cycle_count) = match fram.read_u32(0).await {
-            Ok(mode_raw) => {
+        let (stored_mode, stored_cycle_count) = match with_timeout(fram_to, fram.read_u32(0)).await {
+            Ok(Ok(mode_raw)) => {
                 let mode = FlightMode::from_u32(mode_raw);
                 log::info!("FlightMode read from FRAM: {:?}", mode);
-                match fram.read_u32(4).await {
-                    Ok(count) => (mode, count),
-                    Err(_) => {
+                match with_timeout(fram_to, fram.read_u32(4)).await {
+                    Ok(Ok(count)) => (mode, count),
+                    Ok(Err(_)) => {
                         log::warn!("Failed to read CycleCount from FRAM");
+                        (mode, 0)
+                    }
+                    Err(_) => {
+                        log::warn!("FRAM read CycleCount TIMEOUT");
                         (mode, 0)
                     }
                 }
             }
-            Err(_) => {
+            Ok(Err(_)) => {
                 log::warn!("Failed to read FlightMode from FRAM");
+                (FlightMode::Startup, 0)
+            }
+            Err(_) => {
+                log::warn!("FRAM read FlightMode TIMEOUT");
                 (FlightMode::Startup, 0)
             }
         };
 
-        let flash_ok = match flash.initialize_logging().await {
-            Ok(_) => {
+        let flash_ok = match with_timeout(
+            Duration::from_millis(constants::SENSOR_INIT_TIMEOUT_MS),
+            flash.initialize_logging(),
+        ).await {
+            Ok(Ok(_)) => {
                 log::info!("QSPI Flash logging initialized.");
                 true
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 log::error!("Failed to initialize QSPI Flash logging: {:?}", e);
+                false
+            }
+            Err(_) => {
+                log::error!("QSPI Flash init TIMEOUT");
                 false
             }
         };
@@ -202,8 +245,8 @@ impl FlightState {
 
         // Attempt to read the last packet state from Onboard QSPI Flash
         if flash_ok {
-            match flash.read_packet().await {
-                Ok(recovered_packet) => {
+            match with_timeout(flash_to, flash.read_packet()).await {
+                Ok(Ok(recovered_packet)) => {
                     if recovered_packet.flight_mode <= (FlightMode::Fault as u32) {
                         log::info!("Successfully recovered previous packet from QSPI Flash.");
                         packet = recovered_packet;
@@ -211,8 +254,11 @@ impl FlightState {
                         log::info!("QSPI Flash data appears uninitialized or invalid.");
                     }
                 }
-                Err(_) => {
+                Ok(Err(_)) => {
                     log::warn!("Failed to recover packet from QSPI Flash.");
+                }
+                Err(_) => {
+                    log::warn!("QSPI Flash recover-packet TIMEOUT");
                 }
             }
         }
@@ -296,36 +342,43 @@ impl FlightState {
         log::info!("ACTUATOR: Opening MAV");
         self.mav.open(duration);
         // Open (1)
-        if let Err(_) = self.fram.write_u32(20, 1).await {
-             log::warn!("Failed to write MAV state to FRAM");
-        }
+        Self::fram_write_or_warn(&mut self.fram, 20, 1, "MAV state").await;
     }
 
     pub async fn close_mav(&mut self) {
         log::info!("ACTUATOR: Closing MAV");
         self.mav.close();
         // Closed (0)
-        if let Err(_) = self.fram.write_u32(20, 0).await {
-             log::warn!("Failed to write MAV state to FRAM");
-        }
+        Self::fram_write_or_warn(&mut self.fram, 20, 0, "MAV state").await;
     }
-    
+
 
     pub async fn open_sv(&mut self, duration: u64) {
         log::info!("ACTUATOR: Opening SV");
         self.sv.open(duration);
         // Open (1)
-        if let Err(_) = self.fram.write_u32(24, 1).await {
-             log::warn!("Failed to write SV state to FRAM");
-        }
+        Self::fram_write_or_warn(&mut self.fram, 24, 1, "SV state").await;
     }
 
     pub async fn close_sv(&mut self) {
          log::info!("ACTUATOR: Closing SV");
          self.sv.close();
          // Closed (0)
-         if let Err(_) = self.fram.write_u32(24, 0).await {
-             log::warn!("Failed to write SV state to FRAM");
+         Self::fram_write_or_warn(&mut self.fram, 24, 0, "SV state").await;
+    }
+
+    /// Helper: write to FRAM with a timeout; log on error or timeout.
+    async fn fram_write_or_warn(
+        fram: &mut Fram<'static>,
+        addr: u32,
+        value: u32,
+        label: &str,
+    ) {
+        let to = Duration::from_millis(constants::FRAM_TIMEOUT_MS);
+        match with_timeout(to, fram.write_u32(addr, value)).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(_)) => log::warn!("FRAM: write {} failed", label),
+            Err(_) => log::warn!("FRAM: write {} TIMEOUT", label),
         }
     }
 
@@ -346,9 +399,11 @@ impl FlightState {
         // Write sensor data to FRAM
         self.write_sensor_data_to_fram().await;
 
+        let read_to = Duration::from_millis(constants::SENSOR_READ_TIMEOUT_MS);
+
         // Read altimeter and update packet
-        match self.altimeter.read_into_packet(&mut self.packet).await {
-            Ok(_) => {
+        match with_timeout(read_to, self.altimeter.read_into_packet(&mut self.packet)).await {
+            Ok(Ok(_)) => {
                 self.altimeter_state = SensorState::VALID;
                 log::info!(
                     "BMP | Pressure = {:.2} Pa, Temp = {:.2} °C, Alt = {:.2} m",
@@ -357,16 +412,20 @@ impl FlightState {
                     self.packet.altitude
                 );
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 self.altimeter_state = SensorState::INVALID;
                 log::error!("Failed to read BMP390: {:?}", e);
+            }
+            Err(_) => {
+                self.altimeter_state = SensorState::INVALID;
+                log::error!("BMP390 read TIMEOUT");
             }
         }
 
         // Read GPS and update packet
         if self.gps_ok {
-            match self.gps.read_into_packet(&mut self.packet).await {
-                Ok(_) => {
+            match with_timeout(read_to, self.gps.read_into_packet(&mut self.packet)).await {
+                Ok(Ok(_)) => {
                     log::info!(
                         "GPS | Lat = {:.6}°, Lon = {:.6}°, Sats = {}, Time = {:.0} s",
                         self.packet.latitude,
@@ -375,15 +434,18 @@ impl FlightState {
                         self.packet.timestamp
                     );
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     log::error!("Failed to read GPS: {:?}", e);
+                }
+                Err(_) => {
+                    log::error!("GPS read TIMEOUT — I²C bus may be locked");
                 }
             }
         }
 
         // Read IMU and update packet
-        match self.imu.read_into_packet(&mut self.packet).await {
-            Ok(_) => {
+        match with_timeout(read_to, self.imu.read_into_packet(&mut self.packet)).await {
+            Ok(Ok(_)) => {
                 log::info!(
                     "IMU | Accel: X={:.2} Y={:.2} Z={:.2} m/s² | Gyro: X={:.2} Y={:.2} Z={:.2} °/s",
                     self.packet.accel_x,
@@ -394,14 +456,17 @@ impl FlightState {
                     self.packet.gyro_z
                 );
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 log::error!("Failed to read LSM6DSOX IMU: {:?}", e);
+            }
+            Err(_) => {
+                log::error!("LSM6DSOX IMU read TIMEOUT");
             }
         }
 
         // Read ADC and update packet
-        match self.adc.read_into_packet(&mut self.packet).await {
-            Ok(_) => {
+        match with_timeout(read_to, self.adc.read_into_packet(&mut self.packet)).await {
+            Ok(Ok(_)) => {
                 log::info!(
                     "ADC | PT3={:.0} PT4={:.0} RTD={:.0} (raw)",
                     self.packet.pt3,
@@ -409,8 +474,11 @@ impl FlightState {
                     self.packet.rtd
                 );
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 log::error!("Failed to read ADS1015 ADC: {:?}", e);
+            }
+            Err(_) => {
+                log::error!("ADS1015 ADC read TIMEOUT");
             }
         }
     }
@@ -503,8 +571,11 @@ impl FlightState {
         if !self.flash.flash_ok {
             return;
         }
-        if let Err(e) = self.flash.append_packet_csv(&self.packet).await {
-            log::warn!("Failed to append packet CSV to QSPI Flash: {:?}", e);
+        let to = Duration::from_millis(constants::FLASH_TIMEOUT_MS);
+        match with_timeout(to, self.flash.append_packet_csv(&self.packet)).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => log::warn!("Failed to append packet CSV to QSPI Flash: {:?}", e),
+            Err(_) => log::warn!("QSPI Flash append TIMEOUT"),
         }
     }
 
@@ -526,19 +597,23 @@ impl FlightState {
     }
 
     // Logs critical PT (Pressure/Temperature/Altitude) data to FRAM
-    pub async fn log_to_fram(&mut self) {        
+    pub async fn log_to_fram(&mut self) {
         let alt_bits = self.packet.altitude.to_bits();
-        if let Err(_) = self.fram.write_u32(100, alt_bits).await {
-             log::warn!("Failed to write PT data to FRAM");
-        }
+        Self::fram_write_or_warn(&mut self.fram, 100, alt_bits, "PT data").await;
     }
 
     /// Read FRAM device ID and all stored fields, printing results over USB.
     /// Expected device ID: 04 7F 48 03. All-FF or all-00 means no SPI response.
     pub async fn dump_fram(&mut self) {
+        let fram_to = Duration::from_millis(constants::FRAM_TIMEOUT_MS);
         // Device ID check
-        match self.fram.read_device_id().await {
-            Ok(id) => {
+        match with_timeout(fram_to, self.fram.read_device_id()).await {
+            Err(_) => {
+                log::error!("FRAM: RDID TIMEOUT");
+                crate::umbilical::print_str("FRAM: RDID TIMEOUT\n");
+                return;
+            }
+            Ok(Ok(id)) => {
                 let mut msg = heapless::String::<128>::new();
                 let _ = core::fmt::write(
                     &mut msg,
@@ -550,7 +625,7 @@ impl FlightState {
                 log::info!("{}", msg.as_str());
                 crate::umbilical::print_str(msg.as_str());
             }
-            Err(_) => {
+            Ok(Err(_)) => {
                 log::error!("FRAM: no response to RDID — check HOLD# pin and wiring");
                 crate::umbilical::print_str("FRAM: no response to RDID\n");
                 return;
@@ -558,7 +633,7 @@ impl FlightState {
         }
 
         // Status register (WEL bit)
-        if let Ok(sr) = self.fram.read_status_register().await {
+        if let Ok(Ok(sr)) = with_timeout(fram_to, self.fram.read_status_register()).await {
             let mut msg = heapless::String::<64>::new();
             let _ = core::fmt::write(&mut msg, format_args!("FRAM SR: 0x{:02X} (WEL={})\n", sr, (sr >> 1) & 1));
             log::info!("{}", msg.as_str());
@@ -582,8 +657,8 @@ impl FlightState {
         ];
 
         for (name, addr) in fields {
-            match self.fram.read_u32(addr).await {
-                Ok(raw) => {
+            match with_timeout(fram_to, self.fram.read_u32(addr)).await {
+                Ok(Ok(raw)) => {
                     let as_f32 = f32::from_bits(raw);
                     let mut msg = heapless::String::<128>::new();
                     let _ = core::fmt::write(
@@ -593,9 +668,9 @@ impl FlightState {
                     log::info!("{}", msg.as_str());
                     crate::umbilical::print_str(msg.as_str());
                 }
-                Err(_) => {
+                Ok(Err(_)) | Err(_) => {
                     let mut msg = heapless::String::<64>::new();
-                    let _ = core::fmt::write(&mut msg, format_args!("  [{:>3}] {} READ FAILED\n", addr, name));
+                    let _ = core::fmt::write(&mut msg, format_args!("  [{:>3}] {} READ FAILED/TIMEOUT\n", addr, name));
                     log::warn!("{}", msg.as_str());
                     crate::umbilical::print_str(msg.as_str());
                 }
@@ -607,23 +682,22 @@ impl FlightState {
 
     // Reset FRAM state (FlightMode, CycleCount, Altitude log)
     pub async fn reset_fram(&mut self) {
-        if let Err(_) = self.fram.reset().await {
-            log::error!("Failed to reset FRAM");
-        } else {
-            log::info!("FRAM Reset successfully");
-            self.flight_mode = FlightMode::Startup;
-            self.cycle_count = 0;
+        let to = Duration::from_millis(constants::FRAM_TIMEOUT_MS);
+        match with_timeout(to, self.fram.reset()).await {
+            Ok(Ok(_)) => {
+                log::info!("FRAM Reset successfully");
+                self.flight_mode = FlightMode::Startup;
+                self.cycle_count = 0;
+            }
+            Ok(Err(_)) => log::error!("Failed to reset FRAM"),
+            Err(_) => log::error!("FRAM reset TIMEOUT"),
         }
     }
 
     // Write critical state variables (Mode, CycleCount) to FRAM
     pub async fn write_state_to_fram(&mut self) {
-        if let Err(_) = self.fram.write_u32(0, self.flight_mode as u32).await {
-            log::warn!("Failed to write FlightMode to FRAM");
-        }
-        if let Err(_) = self.fram.write_u32(4, self.cycle_count).await {
-            log::warn!("Failed to write CycleCount to FRAM");
-        }
+        Self::fram_write_or_warn(&mut self.fram, 0, self.flight_mode as u32, "FlightMode").await;
+        Self::fram_write_or_warn(&mut self.fram, 4, self.cycle_count, "CycleCount").await;
     }
 
     // Write latest sensor data (Pressure, Temp, Altitude, ADC) to FRAM
@@ -631,31 +705,16 @@ impl FlightState {
         let press_bits = self.packet.pressure.to_bits();
         let temp_bits = self.packet.temp.to_bits();
         let alt_bits = self.packet.altitude.to_bits();
-
-        if let Err(_) = self.fram.write_u32(8, press_bits).await {
-            //log::warn!("Failed to write Pressure to FRAM");
-        }
-        if let Err(_) = self.fram.write_u32(12, temp_bits).await {
-            //log::warn!("Failed to write Temp to FRAM");
-        }
-        if let Err(_) = self.fram.write_u32(16, alt_bits).await {
-            //log::warn!("Failed to write Altitude to FRAM");
-        }
-
-        // ADC channels (PT3, PT4, RTD)
         let pt3_bits = self.packet.pt3.to_bits();
         let pt4_bits = self.packet.pt4.to_bits();
         let rtd_bits = self.packet.rtd.to_bits();
 
-        if let Err(_) = self.fram.write_u32(28, pt3_bits).await {
-            //log::warn!("Failed to write PT3 to FRAM");
-        }
-        if let Err(_) = self.fram.write_u32(32, pt4_bits).await {
-            //log::warn!("Failed to write PT4 to FRAM");
-        }
-        if let Err(_) = self.fram.write_u32(36, rtd_bits).await {
-            //log::warn!("Failed to write RTD to FRAM");
-        }
+        Self::fram_write_or_warn(&mut self.fram, 8,  press_bits, "Pressure").await;
+        Self::fram_write_or_warn(&mut self.fram, 12, temp_bits,  "Temp").await;
+        Self::fram_write_or_warn(&mut self.fram, 16, alt_bits,   "Altitude").await;
+        Self::fram_write_or_warn(&mut self.fram, 28, pt3_bits,   "PT3").await;
+        Self::fram_write_or_warn(&mut self.fram, 32, pt4_bits,   "PT4").await;
+        Self::fram_write_or_warn(&mut self.fram, 36, rtd_bits,   "RTD").await;
     }
 
     /// Reads all stored CSV data from flash and prints it to the log
@@ -666,12 +725,20 @@ impl FlightState {
         let end = self.flash.get_write_offset();
         let mut offset = start;
         let mut buffer = [0u8; 256];
+        let flash_to = Duration::from_millis(constants::FLASH_TIMEOUT_MS);
 
         while offset < end {
             let chunk_size = core::cmp::min(256, (end - offset) as usize);
-            if let Err(e) = self.flash.read(offset, &mut buffer[..chunk_size]).await {
-                log::error!("Flash read error during dump: {:?}", e);
-                break;
+            match with_timeout(flash_to, self.flash.read(offset, &mut buffer[..chunk_size])).await {
+                Ok(Ok(_)) => {}
+                Ok(Err(e)) => {
+                    log::error!("Flash read error during dump: {:?}", e);
+                    break;
+                }
+                Err(_) => {
+                    log::error!("Flash read TIMEOUT during dump");
+                    break;
+                }
             }
 
             // Async send — back-pressures to USB speed so no data is dropped
@@ -687,12 +754,21 @@ impl FlightState {
     pub async fn wipe_flash_storage(&mut self) {
         log::info!("Wiping QSPI Flash storage...");
         crate::umbilical::print_str("Wiping QSPI Flash... Please wait.\n");
-        if let Err(e) = self.flash.wipe_storage().await {
-            log::error!("Failed to wipe flash storage: {:?}", e);
-            crate::umbilical::print_str("ERASE FAILED!\n");
-        } else {
-            log::info!("Flash storage wiped successfully.");
-            crate::umbilical::print_str("Flash wiped successfully.\n");
+        // Wiping a full sector bank can take several seconds — use a generous timeout.
+        let wipe_to = Duration::from_millis(constants::FLASH_TIMEOUT_MS * 50);
+        match with_timeout(wipe_to, self.flash.wipe_storage()).await {
+            Ok(Ok(_)) => {
+                log::info!("Flash storage wiped successfully.");
+                crate::umbilical::print_str("Flash wiped successfully.\n");
+            }
+            Ok(Err(e)) => {
+                log::error!("Failed to wipe flash storage: {:?}", e);
+                crate::umbilical::print_str("ERASE FAILED!\n");
+            }
+            Err(_) => {
+                log::error!("Flash wipe TIMEOUT");
+                crate::umbilical::print_str("ERASE TIMEOUT!\n");
+            }
         }
     }
 
