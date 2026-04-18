@@ -71,6 +71,7 @@ pub struct FlightState {
 
     // gps
     gps: UbloxMaxM10s<'static, I2cDevice<'static>>,
+    gps_ok: bool,
 
     // imu
     imu: Lsm6dsoxSensor,
@@ -127,23 +128,46 @@ impl FlightState {
         payload_uart: UartTx<'static, Async>,
     ) -> Self {
         let mut packet = Packet::default();
+        log::info!("STATE: Initializing altimeter (BMP390)...");
         let altimeter = Bmp390Sensor::new(spi_bus, altimeter_cs).await;
         let altimeter_init = if altimeter.is_init() {
+            log::info!("STATE: Altimeter OK");
             SensorState::VALID
         } else {
+            log::error!("STATE: Altimeter FAILED — flight will fault");
             SensorState::INVALID
         };
+        log::info!("STATE: Initializing FRAM...");
         let mut fram = Fram::new(spi_bus, fram_cs);
+        log::info!("STATE: FRAM ready");
+        log::info!("STATE: Initializing GPS (uBlox MAX-M10S)...");
         let mut gps = UbloxMaxM10s::new(i2c_bus);
 
         // Configure GPS module to output NAV-PVT messages
-        if let Err(e) = gps.configure().await {
-            log::error!("Failed to configure GPS: {:?}", e);
-        }
+        let gps_ok = match gps.configure().await {
+            Ok(_) => { log::info!("STATE: GPS configured OK"); true }
+            Err(e) => {
+                log::error!("STATE: GPS configure FAILED: {:?}", e);
+                false
+            }
+        };
 
-        let imu = Lsm6dsoxSensor::new(i2c_bus).await;
-        let adc = Ads1015Sensor::new(i2c_bus).await;
+        // Only init I2C sensors if GPS succeeded — a GPS NACK can leave SDA stuck low,
+        // hanging all subsequent I2C transactions indefinitely.
+        let (imu, adc) = if gps_ok {
+            log::info!("STATE: Initializing IMU (LSM6DSOX)...");
+            let imu = Lsm6dsoxSensor::new(i2c_bus).await;
+            log::info!("STATE: Initializing ADC (ADS1015)...");
+            let adc = Ads1015Sensor::new(i2c_bus).await;
+            log::info!("STATE: IMU and ADC init complete");
+            (imu, adc)
+        } else {
+            log::warn!("STATE: Skipping IMU/ADC — GPS failure may have left I2C bus locked");
+            (Lsm6dsoxSensor::unavailable(i2c_bus), Ads1015Sensor::unavailable(i2c_bus))
+        };
+        log::info!("STATE: Initializing radio (RFD900x)...");
         let radio = Rfd900x::new(uart);
+        log::info!("STATE: Radio ready");
 
         // Read stored state from FRAM
         let (stored_mode, stored_cycle_count) = match fram.read_u32(0).await {
@@ -164,24 +188,32 @@ impl FlightState {
             }
         };
 
-        if let Err(e) = flash.initialize_logging().await {
-            log::error!("Failed to initialize QSPI Flash logging: {:?}", e);
-        } else {
-            log::info!("QSPI Flash logging initialized.");
-        }
+        let flash_ok = match flash.initialize_logging().await {
+            Ok(_) => {
+                log::info!("QSPI Flash logging initialized.");
+                true
+            }
+            Err(e) => {
+                log::error!("Failed to initialize QSPI Flash logging: {:?}", e);
+                false
+            }
+        };
+        flash.flash_ok = flash_ok;
 
         // Attempt to read the last packet state from Onboard QSPI Flash
-        match flash.read_packet().await {
-            Ok(recovered_packet) => {
-                if recovered_packet.flight_mode <= (FlightMode::Fault as u32) {
-                    log::info!("Successfully recovered previous packet from QSPI Flash.");
-                    packet = recovered_packet;
-                } else {
-                    log::info!("QSPI Flash data appears uninitialized or invalid.");
+        if flash_ok {
+            match flash.read_packet().await {
+                Ok(recovered_packet) => {
+                    if recovered_packet.flight_mode <= (FlightMode::Fault as u32) {
+                        log::info!("Successfully recovered previous packet from QSPI Flash.");
+                        packet = recovered_packet;
+                    } else {
+                        log::info!("QSPI Flash data appears uninitialized or invalid.");
+                    }
                 }
-            }
-            Err(_) => {
-                log::warn!("Failed to recover packet from QSPI Flash.");
+                Err(_) => {
+                    log::warn!("Failed to recover packet from QSPI Flash.");
+                }
             }
         }
 
@@ -193,9 +225,10 @@ impl FlightState {
             umbilical_connected: false,
             altimeter: altimeter,
             altimeter_state: altimeter_init,
-            sd_logging_enabled: false, // Default to false (SD failure assumed for now)
+            sd_logging_enabled: false,
             fram: fram,
             gps: gps,
+            gps_ok,
             imu: imu,
             adc: adc,
             arming_switch: arming_switch,
@@ -331,18 +364,20 @@ impl FlightState {
         }
 
         // Read GPS and update packet
-        match self.gps.read_into_packet(&mut self.packet).await {
-            Ok(_) => {
-                log::info!(
-                    "GPS | Lat = {:.6}°, Lon = {:.6}°, Sats = {}, Time = {:.0} s",
-                    self.packet.latitude,
-                    self.packet.longitude,
-                    self.packet.num_satellites,
-                    self.packet.timestamp
-                );
-            }
-            Err(e) => {
-                log::error!("Failed to read GPS: {:?}", e);
+        if self.gps_ok {
+            match self.gps.read_into_packet(&mut self.packet).await {
+                Ok(_) => {
+                    log::info!(
+                        "GPS | Lat = {:.6}°, Lon = {:.6}°, Sats = {}, Time = {:.0} s",
+                        self.packet.latitude,
+                        self.packet.longitude,
+                        self.packet.num_satellites,
+                        self.packet.timestamp
+                    );
+                }
+                Err(e) => {
+                    log::error!("Failed to read GPS: {:?}", e);
+                }
             }
         }
 
@@ -465,6 +500,9 @@ impl FlightState {
 
     // Appends the current packet as CSV to the onboard QSPI Flash memory
     pub async fn save_packet_to_flash(&mut self) {
+        if !self.flash.flash_ok {
+            return;
+        }
         if let Err(e) = self.flash.append_packet_csv(&self.packet).await {
             log::warn!("Failed to append packet CSV to QSPI Flash: {:?}", e);
         }

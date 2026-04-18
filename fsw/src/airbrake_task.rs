@@ -80,13 +80,29 @@ pub fn get_deployment() -> f32 {
 // ---------------------------------------------------------------------------
 #[embassy_executor::task]
 pub async fn airbrake_core1_task() {
+    log::info!("CORE1: Task started — allocating AirbrakeSystem...");
     let mut system = AirbrakeSystem::new();
+    log::info!("CORE1: AirbrakeSystem ready — entering signal wait loop");
+
+    let mut frame_count: u32 = 0;
 
     loop {
         // Block until Core 0 signals new sensor data.
         // Signal::wait() clears the signal after returning, so we never
         // process the same frame twice.
         let input = AIRBRAKE_INPUT.wait().await;
+        frame_count += 1;
+
+        let phase_str = match input.phase {
+            AirbrakePhase::Pad   => "Pad",
+            AirbrakePhase::Boost => "Boost",
+            AirbrakePhase::Coast => "Coast",
+        };
+
+        if frame_count <= 3 {
+            log::info!("CORE1: Frame {} received — phase={}, alt={:.1}m, t={:.2}s",
+                frame_count, phase_str, input.altitude, input.time);
+        }
 
         let ctrl_phase = match input.phase {
             AirbrakePhase::Pad   => Phase::Pad,
@@ -104,6 +120,10 @@ pub async fn airbrake_core1_task() {
             input.accel_z,
             ctrl_phase,
         );
+
+        if frame_count <= 3 {
+            log::info!("CORE1: Frame {} done — deployment={:.3}", frame_count, output.deployment);
+        }
 
         // Store result — Core 0 reads this with get_deployment()
         AIRBRAKE_DEPLOYMENT.store(output.deployment.to_bits(), Ordering::Release);

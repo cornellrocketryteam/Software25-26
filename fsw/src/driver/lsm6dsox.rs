@@ -37,16 +37,22 @@ impl<E> From<E> for Lsm6dsoxError<E> {
 /// LSM6DSOX 6-axis IMU driver
 pub struct Lsm6dsoxSensor {
     i2c: I2cDevice<'static>,
+    initialized: bool,
 }
 
 impl Lsm6dsoxSensor {
+    pub fn unavailable(i2c_bus: &'static SharedI2c) -> Self {
+        Self { i2c: SharedI2cDevice::new(i2c_bus), initialized: false }
+    }
+
     pub async fn new(i2c_bus: &'static SharedI2c) -> Self {
         let mut sensor = Self {
             i2c: SharedI2cDevice::new(i2c_bus),
+            initialized: false,
         };
 
         match sensor.init().await {
-            Ok(_) => log::info!("LSM6DSOX initialized"),
+            Ok(_) => { log::info!("LSM6DSOX initialized"); sensor.initialized = true; }
             Err(e) => log::error!("Failed to initialize LSM6DSOX: {:?}", e),
         }
 
@@ -90,6 +96,9 @@ impl Lsm6dsoxSensor {
     }
 
     pub async fn read_into_packet(&mut self,packet: &mut crate::packet::Packet,) -> Result<(), Lsm6dsoxError<<I2cDevice<'static> as embedded_hal_async::i2c::ErrorType>::Error>> {
+        if !self.initialized {
+            return Ok(());
+        }
 
         let mut data = [0u8; 12];
 

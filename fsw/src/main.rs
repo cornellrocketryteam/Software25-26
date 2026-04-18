@@ -42,16 +42,7 @@ static CORE1_EXECUTOR: StaticCell<Executor> = StaticCell::new();
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
 
-    // Spawn the airbrake controller on Core 1.
-    // It blocks on AIRBRAKE_INPUT signal until the flight loop sends data.
-    spawn_core1(p.CORE1, CORE1_STACK.init(Stack::new()), move || {
-        let executor = CORE1_EXECUTOR.init(Executor::new());
-        executor.run(|spawner| {
-            spawner.spawn(airbrake_task::airbrake_core1_task().unwrap());
-        });
-    });
-
-    // Initialize USB subsystem (umbilical in release mode)
+    // Initialize USB subsystem first so the logger is ready before Core 1 starts.
     let usb_driver = module::init_usb_driver(p.USB);
     umbilical::setup(&spawner, usb_driver);
 
@@ -61,7 +52,9 @@ async fn main(spawner: Spawner) {
     }
     log::info!("Booting Cornell Rocketry FSW...");
     Timer::after_millis(1000).await;
+    log::info!("INIT [1/8]: Starting I2C bus...");
     let i2c_bus = module::init_shared_i2c(p.I2C0, p.PIN_0, p.PIN_1);
+    log::info!("INIT [1/8]: I2C bus ready");
 
     // Perform an I2C scan
     /*
@@ -85,10 +78,14 @@ async fn main(spawner: Spawner) {
     }
     */
 
+    log::info!("INIT [2/8]: Starting SPI bus...");
     let spi_bus = module::init_shared_spi(p.SPI0, p.PIN_4, p.PIN_3, p.PIN_2, p.DMA_CH2, p.DMA_CH3);
+    log::info!("INIT [2/8]: SPI bus ready");
+    log::info!("INIT [3/8]: Starting UARTs...");
     let uart = module::init_uart1(p.UART1, p.PIN_8, p.PIN_9, p.DMA_CH0, p.DMA_CH1);
     let payload_uart = module::init_uart0(p.UART0, p.PIN_32, p.PIN_33, p.DMA_CH5, p.DMA_CH6);
     let (payload_tx, payload_rx) = payload_uart.split();
+    log::info!("INIT [3/8]: UARTs ready");
 
     #[cfg(feature = "test_payload_uart")]
     spawner.spawn(payload_loopback_task(payload_rx).unwrap());
@@ -119,11 +116,23 @@ async fn main(spawner: Spawner) {
         p.PIN_40,
         p.PIN_47,
     );
+    log::info!("INIT [4/8]: Initializing actuators and GPIO...");
     let flash_cs = Output::new(p.PIN_6, embassy_rp::gpio::Level::High);
     let flash = module::init_onboard_flash(spi_bus, flash_cs);
-    let airbrake_system = module::init_airbrake(p.PIN_37, p.PWM_SLICE11, p.PIN_38);
+    let airbrake_system = module::init_airbrake(p.PIN_13, p.PWM_SLICE7, p.PIN_14);
+    log::info!("INIT [4/8]: Actuators and GPIO ready");
 
-    log::info!("Initializing Flight State (Sensors & Actuators)...");
+    log::info!("INIT [5/8]: Spawning Core 1 (airbrake controller)...");
+    // Spawn airbrake controller on Core 1 now that USB logger is ready.
+    spawn_core1(p.CORE1, CORE1_STACK.init(Stack::new()), move || {
+        let executor = CORE1_EXECUTOR.init(Executor::new());
+        executor.run(|spawner| {
+            spawner.spawn(airbrake_task::airbrake_core1_task().unwrap());
+        });
+    });
+    log::info!("INIT [5/8]: Core 1 spawned — airbrake task starting on Core 1");
+
+    log::info!("INIT [6/8]: Initializing Flight State (sensors, flash, FRAM)...");
     let mut flight_state = state::FlightState::new(
         i2c_bus,
         spi_bus,
@@ -142,7 +151,9 @@ async fn main(spawner: Spawner) {
         payload_tx,
     )
     .await;
-    log::info!("Flight State Initialized.");
+    log::info!("INIT [6/8]: Flight State initialized — all sensors probed");
+    log::info!("INIT [7/8]: Skipping FRAM reset (flight mode)");
+    log::info!("INIT [8/8]: Entering flight loop...");
 
     // Reset FRAM for testing (COMMENT OUT FOR REAL FLIGHT)
     //flight_state.reset_fram().await;
@@ -561,7 +572,7 @@ async fn main(spawner: Spawner) {
         // Enable the ODrive — GPIO 37 HIGH
         flight_state.airbrake_system.enable();
         // Give the ODrive 1 second to power up and recognise the enable line
-        Timer::after_millis(6000).await;
+        Timer::after_millis(3000).await;
 
         // Steps: (deployment_fraction, label)
         let steps: [(f32, &str); 6] = [
@@ -685,11 +696,16 @@ async fn main(spawner: Spawner) {
     )))]
     {
         let mut flight_loop = flight_loop::FlightLoop::new(flight_state);
+        log::info!("FLIGHT LOOP: FlightLoop created, starting watchdog...");
         let mut watchdog = Watchdog::new(p.WATCHDOG);
         watchdog.start(Duration::from_millis(constants::WATCHDOG_TIMEOUT_MS as u64));
+        log::info!("FLIGHT LOOP: Watchdog started ({} ms timeout). Loop running.", constants::WATCHDOG_TIMEOUT_MS);
 
         loop {
             flight_loop.flight_state.cycle_count += 1;
+            if flight_loop.flight_state.cycle_count <= 3 {
+                log::info!("FLIGHT LOOP: Cycle {} starting...", flight_loop.flight_state.cycle_count);
+            }
 
             // feed before execute() and starts the countdown
             // If execute() hangs for > WATCHDOG_TIMEOUT_MS, chip resets
@@ -704,6 +720,9 @@ async fn main(spawner: Spawner) {
             // This prevents the 50 ms Timer delay from counting toward the timeout
             watchdog.feed(Duration::from_millis(constants::WATCHDOG_TIMEOUT_MS as u64));
 
+            if flight_loop.flight_state.cycle_count <= 3 {
+                log::info!("FLIGHT LOOP: Cycle {} complete in {} ms", flight_loop.flight_state.cycle_count, elapsed);
+            }
             if elapsed > constants::LOOP_BUDGET_MS {
                 log::warn!(
                     "Loop overrun: execute() took {} ms (budget: {} ms)",

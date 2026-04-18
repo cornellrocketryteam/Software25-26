@@ -7,8 +7,8 @@ use embassy_rp::gpio::Output;
 use embassy_rp::i2c::{Config as I2cConfig, I2c, InterruptHandler as I2cInterruptHandler};
 use embassy_rp::peripherals::{
     DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, DMA_CH4, DMA_CH5, DMA_CH6, I2C0, PIN_0, PIN_1, PIN_2,
-    PIN_3, PIN_4, PIN_8, PIN_9, PIN_21, PIN_32, PIN_33, PIN_36, PIN_37, PIN_38, PIN_39, PIN_40,
-    PIN_47, PWM_SLICE2, PWM_SLICE8, PWM_SLICE11, SPI0, UART0, UART1, USB,
+    PIN_3, PIN_4, PIN_8, PIN_9, PIN_21, PIN_32, PIN_33, PIN_36, PIN_13, PIN_14, PIN_39, PIN_40,
+    PIN_47, PWM_SLICE2, PWM_SLICE8, PWM_SLICE7, SPI0, UART0, UART1, USB,
 };
 use embassy_rp::spi::{Config as SpiConfig, Spi};
 use embassy_rp::uart::{Config as UartConfig, InterruptHandler as UartInterruptHandler, Uart};
@@ -214,9 +214,9 @@ use crate::actuator::AirbrakeActuator;
 // PWM config: 50 Hz at 150 MHz sysclk → divider=50, top=59999
 //   freq = 150_000_000 / (50 * (59999 + 1)) = 50 Hz
 pub fn init_airbrake(
-    enable_pin: Peri<'static, PIN_37>,
-    pwm_slice: Peri<'static, PWM_SLICE11>,
-    pwm_pin: Peri<'static, PIN_38>,
+    enable_pin: Peri<'static, PIN_13>,
+    pwm_slice: Peri<'static, PWM_SLICE7>,
+    pwm_pin: Peri<'static, PIN_14>,
 ) -> AirbrakeActuator<'static> {
     let enable = Output::new(enable_pin, embassy_rp::gpio::Level::Low); // disabled until armed
     let mut config = PwmConfig::default();

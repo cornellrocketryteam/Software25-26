@@ -264,7 +264,10 @@ async fn usb_receiver_task(mut receiver: Receiver<'static, UsbDriver>) -> ! {
         loop {
             let n = match receiver.read_packet(&mut buf).await {
                 Ok(n) => n,
-                Err(EndpointError::BufferOverflow) => panic!("Buffer overflow"),
+                Err(EndpointError::BufferOverflow) => {
+                    log::warn!("USB RX: buffer overflow, dropping packet");
+                    continue;
+                }
                 Err(EndpointError::Disabled) => {
                     IS_CONNECTED.store(false, Ordering::Relaxed);
                     break;
