@@ -123,9 +123,7 @@ async fn main(spawner: Spawner) {
     log::info!("INIT [4/8]: Actuators and GPIO ready");
 
     log::info!("INIT [5/8]: Spawning Core 1 (airbrake controller)...");
-    // Core 1 must NOT call log::info! — the USB logger's critical section
-    // is a cross-core hardware spinlock that blocks Core 0's I²C/SPI and
-    // trips the flight-loop watchdog. See airbrake_task.rs.
+    // Spawn airbrake controller on Core 1 now that USB logger is ready.
     spawn_core1(p.CORE1, CORE1_STACK.init(Stack::new()), move || {
         let executor = CORE1_EXECUTOR.init(Executor::new());
         executor.run(|spawner| {

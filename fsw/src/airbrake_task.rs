@@ -95,16 +95,16 @@ pub async fn airbrake_core1_task() {
         };
 
         let output = system.execute(
-            input.time,
-            input.altitude,
-            input.gyro_x,
-            input.gyro_y,
-            input.accel_x,
-            input.accel_y,
-            input.accel_z,
+            input.time as f64,
+            input.altitude as f64,
+            input.gyro_x as f64,
+            input.gyro_y as f64,
+            input.accel_x as f64,
+            input.accel_y as f64,
+            input.accel_z as f64,
             ctrl_phase,
         );
 
-        AIRBRAKE_DEPLOYMENT.store(output.deployment.to_bits(), Ordering::Release);
+        AIRBRAKE_DEPLOYMENT.store((output.deployment as f32).to_bits(), Ordering::Release);
     }
 }
