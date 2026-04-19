@@ -37,22 +37,22 @@ pub struct BlimsDataIn {
     // Altitude (BMP390 barometer, processed by FSW)
     pub altitude_ft: f32, // AGL in feet
  
-    // Accuracy estimates
-    pub h_acc: u32,        // horizontal accuracy  mm
-    pub v_acc: u32,        // vertical accuracy    mm
+    // acceleration estimates
+    pub h_acc: u32,        // horizontal acceleration  m
+    pub v_acc: u32,        // vertical acceleration    m
  
     // Velocity
-    pub vel_n: i32,        // north velocity  mm/s
-    pub vel_e: i32,        // east velocity   mm/s
-    pub vel_d: i32,        // down velocity   mm/s  (positive = descending)
+    pub vel_n: i32,        // north velocity  m/s
+    pub vel_e: i32,        // east velocity   m/s
+    pub vel_d: i32,        // down velocity   m/s  (positive = descending)
  
     // Speed / heading
-    pub g_speed:  i32,     // ground speed         mm/s
+    pub g_speed:  i32,     // ground speed         m/s
     pub head_mot: i32,     // heading of motion    degrees × 1e5
  
-    // Accuracy estimates
-    pub s_acc:    u32,     // speed accuracy       mm/s
-    pub head_acc: u32,     // heading accuracy     degrees × 1e5
+    // acceleration estimates
+    pub s_acc:    u32,     // speed acceleration       m/s
+    pub head_acc: u32,     // heading acceleration     degrees × 1e5
  
     // GPS status
     pub fix_type:   u8,    // 0=none  2=2D  3=3D  4=3D+DGPS
