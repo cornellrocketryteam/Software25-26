@@ -130,7 +130,12 @@ pub fn setup(spawner: &Spawner, usb_driver: UsbDriver) {
     let (usb_device, usb_class) = module::init_usb_device(usb_driver);
     let (sender, receiver) = usb_class.split();
 
-    // Register our USB serial logger as the global `log` implementation
+    // Register our USB serial logger only in debug builds. In release we
+    // leave the global logger as the no-op default, so `log::info!` etc.
+    // compile to nothing visible on the wire — only binary telemetry and
+    // explicit print_str/print_bytes output (flash/FRAM dumps, status
+    // strings) are transmitted.
+    #[cfg(debug_assertions)]
     init_logger();
 
     spawner.spawn(usb_task(usb_device).unwrap());
@@ -139,13 +144,16 @@ pub fn setup(spawner: &Spawner, usb_driver: UsbDriver) {
 }
 
 // ============================================================================
-// USB Serial Logger (replaces embassy-usb-logger)
+// USB Serial Logger (replaces embassy-usb-logger) — debug builds only
 // ============================================================================
 
+#[cfg(debug_assertions)]
 struct UsbSerialLogger;
 
+#[cfg(debug_assertions)]
 static LOGGER: UsbSerialLogger = UsbSerialLogger;
 
+#[cfg(debug_assertions)]
 fn init_logger() {
     unsafe {
         let _ = log::set_logger_racy(&LOGGER);
@@ -153,6 +161,7 @@ fn init_logger() {
     log::set_max_level(log::LevelFilter::Info);
 }
 
+#[cfg(debug_assertions)]
 impl log::Log for UsbSerialLogger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
         metadata.level() <= log::max_level()
