@@ -6,8 +6,8 @@ use tracing::info;
 use async_gpiod::{Chip, LineId, Lines, Options, Output};
 
 // Stepping Configuration
-const STEP_FREQUENCY_HZ: u32 = 500; // 500 Hz step rate (max 12 KHz for full-step ISD02)
-const HALF_PERIOD_US: u64 = 1000; // 1000 us HIGH + 1000 us LOW = 500 Hz (>> 4 us min pulse)
+const STEP_FREQUENCY_HZ: u32 = 134; // 134 Hz step rate (~5 seconds for 670 steps)
+const HALF_PERIOD_US: u64 = 3731; // 3731 us HIGH + 3731 us LOW = 134 Hz
 const ENABLE_WAKE_MS: u64 = 2; // Wait after enable before pulsing (spec: 1 ms min)
 const DIR_SETUP_MS: u64 = 5; // DIR must be stable before first STEP rising edge
 
@@ -59,9 +59,9 @@ impl QdStepper {
         let dir_line = chip_dir.request_lines(opts_dir).await
             .context("Failed to request DIR GPIO line")?;
 
-        // 3. Configure ENA GPIO (output, start HIGH = driver enabled)
+        // 3. Configure ENA GPIO (output, start LOW = driver disabled)
         let opts_ena = Options::output([pin_ena])
-            .values([true])
+            .values([false])
             .consumer(format!("{}-ena", name));
         let ena_line = chip_ena.request_lines(opts_ena).await
             .context("Failed to request ENA GPIO line")?;
@@ -130,6 +130,10 @@ impl QdStepper {
                     .context("Failed to set STEP LOW")?;
                 smol::Timer::after(half_period).await;
             }
+
+            // Disable driver after movement is complete
+            self.ena_line.set_values([false]).await
+                .context("Failed to disable ENA GPIO")?;
         }
 
         #[cfg(not(any(target_os = "linux", target_os = "android")))]
