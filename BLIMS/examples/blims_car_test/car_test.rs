@@ -3,29 +3,29 @@
 //! PURPOSE:
 //! Tests the full BLiMS LV flight logic by calling new() once then execute()
 //! at 20 Hz (50 ms cycle), exactly as FSW does in MainDeployedMode.
-//! Real GPS provides lat/lon/heading; simulated altitude from L3 Launch 4
-//! descent data drives phase transitions through the landing pattern.
+//! Real GPS provides lat/lon/heading; altitude from descent_alt_data.rs
+//! (L3 Launch 4 real descent data) drives phase transitions.
 //!
 //! FSW PATTERN THIS REPLICATES:
 //!   StartupMode::execute()      → Blims::new(...)
 //!   MainDeployedMode::execute() → pack BlimsDataIn, call blims.execute()
 //!   flight_loop                 → sleep remaining cycle time (50 ms target)
 //!
-//! NOTE — FSW BUG (same as C++ version):
-//! Make sure altitude_ft is populated in BlimsDataIn before flight.
-//! It defaults to 0, meaning BLiMS always sees Phase::Neutral otherwise.
-//!   data_in.altitude_ft = barometer_altitude_m * 3.28084;
-//!
 //! WIRING:
 //!   PWM    → GPIO 28     ODrive enable → GPIO 0
 //!   SDA    → GPIO 12     SCL           → GPIO 13   (I2C0, 400 kHz)
 //!
-//! OUTPUT CSV (13 fields, compatible with car_test_visualizer.py):
-//!   lat,lon,target_lat,target_lon,heading,bearing,motor_pos,
-//!   timestamp_ms,P,I,phase,altitude,loiter_step
+//! SERIAL OUTPUT (USB CDC-ACM, open with any serial terminal at any baud):
+//!   Comment lines begin with '#'.
+//!   CSV lines (one per 20 Hz cycle when GPS fix is valid):
+//!     lat,lon,target_lat,target_lon,heading,bearing,motor_pos,
+//!     timestamp_ms,P,I,phase,altitude,loiter_step
 
 #![no_std]
 #![no_main]
+
+mod descent_alt_data;
+use descent_alt_data::{DESCENT_ALT_FT, DESCENT_DATA_SIZE};
 
 use core::fmt::Write as FmtWrite;
 
@@ -37,12 +37,10 @@ use embassy_rp::peripherals::{I2C0, USB};
 use embassy_rp::pwm::{Config as PwmConfig, Pwm};
 use embassy_rp::usb::{Driver, InterruptHandler as UsbIrqHandler};
 use embassy_time::{Duration, Instant, Timer};
-use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
-use embassy_usb::{Builder, Config as UsbConfig};
 use fixed::types::extra::U4;
 use fixed::FixedU16;
 use heapless::String;
-use {panic_probe as _};
+use {defmt_rtt as _, panic_probe as _};
 
 use blims::blims_constants::*;
 use blims::blims_state::BlimsDataIn;
@@ -53,7 +51,7 @@ use blims::Blims;
 // ============================================================================
 
 bind_interrupts!(struct Irqs {
-    I2C0_IRQ => I2cIrqHandler<I2C0>;
+    I2C0_IRQ    => I2cIrqHandler<I2C0>;
     USBCTRL_IRQ => UsbIrqHandler<USB>;
 });
 
@@ -73,7 +71,7 @@ const I2C_SCL_NUM:    u8 = 13;
 const TARGET_LAT: f32 = 42.446610;
 const TARGET_LON: f32 = -76.461304;
 
-/// 50 ms = 20 Hz, matches FSW constants::cycle_time
+/// 50 ms = 20 Hz, matches FSW cycle_time
 const CYCLE_TIME_MS: u64 = 50;
 
 // ============================================================================
@@ -88,22 +86,13 @@ const WIND_DIRS_DEG: [f32; WIND_PROFILE_SIZE] =
 const WIND_FROM_DEG: f32 = 45.0;
 
 // ============================================================================
-// SIMULATED DESCENT DATA
+// USB LOGGER TASK
 // ============================================================================
 
-const DESCENT_DATA_SIZE: usize = 200;
-
-const fn make_descent_data() -> [f32; DESCENT_DATA_SIZE] {
-    let mut data = [0.0f32; DESCENT_DATA_SIZE];
-    let mut i = 0usize;
-    while i < DESCENT_DATA_SIZE {
-        data[i] = 1500.0 - (1500.0 / DESCENT_DATA_SIZE as f32) * i as f32;
-        i += 1;
-    }
-    data
+#[embassy_executor::task]
+async fn logger_task(driver: Driver<'static, USB>) {
+    embassy_usb_logger::run!(1024, log::LevelFilter::Info, driver);
 }
-
-static DESCENT_ALT_FT: [f32; DESCENT_DATA_SIZE] = make_descent_data();
 
 // ============================================================================
 // HELPERS
@@ -126,11 +115,11 @@ fn phase_name(phase_id: i8) -> &'static str {
 // U-BLOX GPS — minimal UBX-NAV-PVT I2C driver
 // ============================================================================
 
-const UBLOX_ADDR:     u8 = 0x42;
-const UBX_CLASS_NAV:  u8 = 0x01;
-const UBX_ID_PVT:     u8 = 0x07;
-const UBX_CLASS_CFG:  u8 = 0x06;
-const UBX_ID_RATE:    u8 = 0x08;
+const UBLOX_ADDR:    u8 = 0x42;
+const UBX_CLASS_NAV: u8 = 0x01;
+const UBX_ID_PVT:    u8 = 0x07;
+const UBX_CLASS_CFG: u8 = 0x06;
+const UBX_ID_RATE:   u8 = 0x08;
 const NAV_PVT_LEN: usize = 100;
 
 #[derive(Default, Clone)]
@@ -167,11 +156,11 @@ async fn gps_set_rate_20hz(i2c: &mut I2c<'_, I2C0, embassy_rp::i2c::Async>) -> b
     frame[3]  = UBX_ID_RATE;
     frame[4]  = 0x06;
     frame[5]  = 0x00;
-    frame[6]  = 0x32;
+    frame[6]  = 0x32; // measRate = 50 ms (20 Hz)
     frame[7]  = 0x00;
-    frame[8]  = 0x01;
+    frame[8]  = 0x01; // navRate = 1
     frame[9]  = 0x00;
-    frame[10] = 0x01;
+    frame[10] = 0x01; // timeRef = GPS
     frame[11] = 0x00;
     let (ck_a, ck_b) = ubx_checksum(&frame[2..12]);
     frame[12] = ck_a;
@@ -226,24 +215,19 @@ async fn read_nav_pvt(i2c: &mut I2c<'_, I2C0, embassy_rp::i2c::Async>) -> Option
     })
 }
 
-async fn i2c_scan(
-    i2c:  &mut I2c<'_, I2C0, embassy_rp::i2c::Async>,
-    usb:  &mut CdcAcmClass<'_, Driver<'_, USB>>,
-) {
-    log::info!(usb, "# I2C scan on I2C0:").await;
+async fn i2c_scan(i2c: &mut I2c<'_, I2C0, embassy_rp::i2c::Async>) {
+    log::info!("# I2C scan on I2C0:");
     let mut addr: u8 = 0x08;
     while addr < 0x78 {
         let mut dummy = [0u8; 1];
         if i2c.read_async(addr, &mut dummy).await.is_ok() {
             let mut s: String<32> = String::new();
             let _ = write!(s, "#   Found device at 0x{:02X}", addr);
-            log::info!(usb, s.as_str()).await;
+            log::info!("{}", s.as_str());
         }
         addr += 1;
     }
-    log::info!(usb, "# I2C scan complete").await;
-}
-
+    log::info!("# I2C scan complete");
 }
 
 // ============================================================================
@@ -251,71 +235,16 @@ async fn i2c_scan(
 // ============================================================================
 
 #[embassy_executor::main]
-async fn main(_spawner: Spawner) {
+async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
-   
-    embassy_usb_logger::usb_logger_task!(1024, log::LevelFilter::Info, spawner, p.USB);
 
-    Timer::after_millis(5000).await;
+    // ── USB logger (runs as a background task) ────────────────────────────────
+    // All log::info!() calls are routed through this over USB CDC-ACM.
+    // Open the Pico's USB serial port in any terminal to see output.
+    spawner.spawn(logger_task(Driver::new(p.USB, Irqs)).unwrap());
 
-    log::info!("Hello from RP2040!");
-
-    loop {
-        log::info!("Still running...");
-        Timer::after_millis(1000).await;
-    }
-
-    // ── USB CDC-ACM serial ────────────────────────────────────────────────────
-    let driver = Driver::new(p.USB, Irqs);
-
-    let mut usb_config = UsbConfig::new(0xc0de, 0xcafe);
-    usb_config.manufacturer = Some("BLiMS");
-    usb_config.product      = Some("Car Test");
-    usb_config.serial_number = Some("01");
-    usb_config.max_power    = 100;
-    usb_config.max_packet_size_0 = 64;
-
-    let mut device_descriptor  = [0u8; 256];
-    let mut config_descriptor  = [0u8; 256];
-    let mut bos_descriptor     = [0u8; 256];
-    let mut msos_descriptor    = [0u8; 256];
-    let mut control_buf        = [0u8; 64];
-
-    let mut cdc_state = State::new();
-
-    let mut builder = Builder::new(
-        driver,
-        usb_config,
-        &mut device_descriptor,
-        &mut config_descriptor,
-        &mut bos_descriptor,
-        &mut msos_descriptor,
-        &mut control_buf,
-    );
-
-    let mut cdc = CdcAcmClass::new(&mut builder, &mut cdc_state, 64);
-    let mut usb_dev = builder.build();
-
-    // Run USB in the background.  We use a simple split: poll usb_dev once per
-    // cycle before writing.  For a real app you'd spawn a task, but that needs
-    // a 'static CdcAcmClass which requires static State — kept simple here.
-    //
-    // Instead we rely on the fact that embassy-usb's write_packet future will
-    // internally service the USB stack while awaiting.  The device must be
-    // polled at least once to enumerate, so we do that upfront.
-    embassy_futures::select::select(
-        usb_dev.run(),
-        async {
-            // Wait for host to open the port (DTR set), up to 100 s
-            let deadline = Instant::now() + Duration::from_secs(100);
-            loop {
-                if cdc.dtr() { break; }
-                if Instant::now() > deadline { break; }
-                Timer::after(Duration::from_millis(10)).await;
-            }
-        },
-    )
-    .await;
+    // Wait for the host to enumerate the USB device (~2 s is enough)
+    Timer::after_millis(2000).await;
 
     // ── I2C0 ─────────────────────────────────────────────────────────────────
     let mut i2c_config = I2cConfig::default();
@@ -339,31 +268,32 @@ async fn main(_spawner: Spawner) {
     blims.set_wind_from_deg(WIND_FROM_DEG);
     blims.set_wind_profile(&WIND_ALTITUDES_M, &WIND_DIRS_DEG);
 
+    // Give the motor time to settle at neutral before starting
     Timer::after(Duration::from_secs(5)).await;
 
     // ── GPS init ──────────────────────────────────────────────────────────────
     if !gps_set_rate_20hz(&mut i2c).await {
-       log::info!(&mut cdc, "# ERROR: GPS rate config failed").await;
+        log::info!("# ERROR: GPS rate config failed");
     } else {
-        log::info!(&mut cdc, "# GPS configured at 20 Hz").await;
+        log::info!("# GPS configured at 20 Hz");
     }
 
-    i2c_scan(&mut i2c, &mut cdc).await;
+    i2c_scan(&mut i2c).await;
 
     // ── Banner ────────────────────────────────────────────────────────────────
-    log::info!(&mut cdc, "# ================================================").await;
-    log::info!(&mut cdc, "# BLiMS Car Test (FSW begin/execute pattern)").await;
-    log::info!(&mut cdc, "# ================================================").await;
+    log::info!("# ================================================");
+    log::info!("# BLiMS Car Test (FSW begin/execute pattern)");
+    log::info!("# ================================================");
     {
         let mut s: String<64> = String::new();
         let _ = write!(s, "# Target:   {:.6}, {:.6}", TARGET_LAT, TARGET_LON);
-        log::info!(&mut cdc, s.as_str()).await;
+        log::info!("{}", s.as_str());
     }
     {
         let mut s: String<64> = String::new();
         let _ = write!(s, "# Wind:     {} layers, surface {} deg",
             WIND_PROFILE_SIZE, WIND_DIRS_DEG[0] as u32);
-        log::info!(&mut cdc, s.as_str()).await;
+        log::info!("{}", s.as_str());
     }
     {
         let mut s: String<80> = String::new();
@@ -371,22 +301,22 @@ async fn main(_spawner: Spawner) {
             DESCENT_DATA_SIZE,
             DESCENT_ALT_FT[0],
             DESCENT_ALT_FT[DESCENT_DATA_SIZE - 1]);
-        log::info!(&mut cdc, s.as_str()).await;
+        log::info!("{}", s.as_str());
     }
     {
         let mut s: String<48> = String::new();
         let _ = write!(s, "# Cycle:    {} ms (20 Hz)", CYCLE_TIME_MS);
-        log::info!(&mut cdc, s.as_str()).await;
+        log::info!("{}", s.as_str());
     }
     {
         let mut s: String<64> = String::new();
         let _ = write!(s, "# Pins:     PWM={} EN={} SDA={} SCL={}",
             PWM_PIN_NUM, ENABLE_PIN_NUM, I2C_SDA_NUM, I2C_SCL_NUM);
-        log::info!(&mut cdc, s.as_str()).await;
+        log::info!("{}", s.as_str());
     }
-    log::info!(&mut cdc, "# CSV: lat,lon,target_lat,target_lon,heading,bearing,motor_pos,timestamp_ms,P,I,phase,altitude,loiter_step").await;
-    log::info!(&mut cdc, "# ================================================").await;
-    log::info!(&mut cdc, "# Waiting for GPS fix to start descent...").await;
+    log::info!("# CSV: lat,lon,target_lat,target_lon,heading,bearing,motor_pos,timestamp_ms,P,I,phase,altitude,loiter_step");
+    log::info!("# ================================================");
+    log::info!("# Waiting for GPS fix to start descent...");
 
     // ── Loop state ────────────────────────────────────────────────────────────
     let mut pvt             = UbxNavPvt::default();
@@ -413,7 +343,7 @@ async fn main(_spawner: Spawner) {
             let mut s: String<80> = String::new();
             let _ = write!(s, "# DESCENT STARTED — alt {:.1} ft (0/{})",
                 DESCENT_ALT_FT[0], DESCENT_DATA_SIZE);
-            log::info!(&mut cdc, s.as_str()).await;
+            log::info!("{}", s.as_str());
         }
 
         let current_alt_ft = DESCENT_ALT_FT[alt_index];
@@ -454,7 +384,7 @@ async fn main(_spawner: Spawner) {
                 current_alt_ft,
                 alt_index,
                 DESCENT_DATA_SIZE);
-            log::info!(&mut cdc, s.as_str()).await;
+            log::info!("{}", s.as_str());
             last_phase_id = data_out.phase_id;
         }
 
@@ -465,8 +395,7 @@ async fn main(_spawner: Spawner) {
             let lon_f       = pvt.lon as f32 * 1e-7;
             let now_ms      = Instant::now().as_millis();
 
-            // Build the CSV row into a heapless String.
-            // 13 fields — matches car_test_visualizer.py column order exactly:
+            // 13 fields — matches car_test_visualizer.py column order:
             //   lat,lon,target_lat,target_lon,heading,bearing,motor_pos,
             //   timestamp_ms,P,I,phase,altitude,loiter_step
             let mut row: String<192> = String::new();
@@ -487,11 +416,11 @@ async fn main(_spawner: Spawner) {
                 current_alt_ft,
                 data_out.loiter_step,
             );
-            log::info!(&mut cdc, row.as_str()).await;
+            log::info!("{}", row.as_str());
         } else {
             let mut s: String<32> = String::new();
             let _ = write!(s, "# No fix (type={})", pvt.fix_type);
-            log::info!(&mut cdc, s.as_str()).await;
+            log::info!("{}", s.as_str());
         }
 
         // ── 7. Cycle timing ───────────────────────────────────────────────────
@@ -501,7 +430,7 @@ async fn main(_spawner: Spawner) {
         } else {
             let mut s: String<48> = String::new();
             let _ = write!(s, "# WARN: cycle overrun {} ms", elapsed_ms);
-            log::info!(&mut cdc, s.as_str()).await;
+            log::info!("{}", s.as_str());
         }
     }
 }
