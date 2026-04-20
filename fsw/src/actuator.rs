@@ -4,7 +4,7 @@ use embassy_time::{Duration, Instant};
 use embedded_hal::pwm::SetDutyCycle;
 
 // 330 Hz servo frequency, 3030 µs period
-// open = 2015 µs, close = 995 µs, neutral = 1520 µs
+// open = 2015 µs, close = 995 µs
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Chute {
     Drogue,
@@ -172,7 +172,6 @@ impl<'a> Mav<'a> {
     const SERVO_MAX_US: u16 = 2200;
     const SERVO_OPEN_US: u16 = 1950;
     const SERVO_CLOSE_US: u16 = 883;
-    const SERVO_NEUTRAL_US: u16 = 1300;
 
     /// Create new MAV servo driver.
     /// Assumes PWM slice already configured for:
@@ -185,8 +184,8 @@ impl<'a> Mav<'a> {
             state_open: false,
         };
 
-        // Start at neutral position
-        mav.set_pulse_width(Self::SERVO_NEUTRAL_US);
+        // Start at close position
+        mav.set_pulse_width(Self::SERVO_CLOSE_US);
         mav
     }
 
