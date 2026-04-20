@@ -105,6 +105,11 @@ pub async fn print_bytes_async(data: &[u8]) {
 /// Publish a telemetry packet for the sender task. Non-blocking: writes the
 /// 82-byte LE serialization into the atomic buffer and marks it ready,
 /// overwriting any prior frame the sender hasn't drained yet.
+///
+/// Release builds only. In debug builds this is a no-op, keeping the USB
+/// serial stream pure text (logs) so a human-readable serial monitor is
+/// usable for bring-up without binary frames getting mixed in.
+#[cfg(not(debug_assertions))]
 pub fn emit_telemetry(packet: &crate::packet::Packet) {
     let bytes = packet.to_bytes();
     unsafe {
@@ -112,6 +117,9 @@ pub fn emit_telemetry(packet: &crate::packet::Packet) {
     }
     TELEMETRY_BUF.ready.store(true, Ordering::Release);
 }
+
+#[cfg(debug_assertions)]
+pub fn emit_telemetry(_packet: &crate::packet::Packet) {}
 
 /// Called by the flight loop each cycle to poll for incoming umbilical commands.
 /// Returns `None` if no command is pending.
