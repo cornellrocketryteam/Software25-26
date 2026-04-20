@@ -53,6 +53,7 @@ pub struct FlightLoop {
 
     // Flash logging timing
     last_flash_log: Option<Instant>,
+    last_heartbeat: Option<Instant>,
 
     // Launch sequence
     pub launch_sequence_stage: LaunchStage,
@@ -101,6 +102,7 @@ impl FlightLoop {
             umbilical_prev: false,
             cfc_arm_prev: false,
             last_flash_log: None,
+            last_heartbeat: None,
             launch_sequence_stage: LaunchStage::None,
             launch_stage_start_time: None,
             low_alt_time: None,
@@ -169,6 +171,16 @@ impl FlightLoop {
 
         // Save packet to QSPI Flash
         let now = Instant::now();
+
+        // 6. Payload Heartbeat (1 Hz)
+        let should_heartbeat = match self.last_heartbeat {
+            None => true,
+            Some(last) => now.duration_since(last).as_millis() >= 1000,
+        };
+        if should_heartbeat {
+            let _ = self.flight_state.payload_uart.write(b"A\n").await;
+            self.last_heartbeat = Some(now);
+        }
         let should_log = match self.last_flash_log {
             None => true,
             Some(last) => {

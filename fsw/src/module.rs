@@ -175,13 +175,13 @@ pub fn init_ssa(
 
 use crate::actuator::Buzzer;
 
-/// GPIO 21 = CFC_ARM_Indicator, PWM at 400 Hz (drives buzzer + LED).
+/// GPIO 21 = CFC_ARM_Indicator, PWM at 4 kHz (drives buzzer + LED).
 /// GPIO 41 = CFC_ARM, Input::new(p.PIN_41, Pull::Down) — handled in main.rs.
 pub fn init_buzzer(slice: Peri<'static, PWM_SLICE2>, pin: Peri<'static, PIN_21>) -> Buzzer<'static> {
     let mut config = PwmConfig::default();
-    // 400 Hz: 150 MHz / (6 * (62499 + 1)) = 400 Hz
+    // 4 kHz: 150 MHz / (6 * (6249 + 1)) = 4000 Hz — matches PS1440P02BT resonant frequency
     // GPIO 21 is output B of PWM slice 10
-    config.top = 62499;
+    config.top = 6249;
     config.divider = 6.into();
     let pwm = Pwm::new_output_b(slice, pin, config);
     Buzzer::new(pwm)

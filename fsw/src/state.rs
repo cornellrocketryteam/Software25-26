@@ -438,7 +438,7 @@ impl FlightState {
                     log::error!("Failed to read GPS: {:?}", e);
                 }
                 Err(_) => {
-                    log::error!("GPS read TIMEOUT — I²C bus may be locked");
+                    log::error!("GPS read TIMEOUT — I2C bus may be locked");
                 }
             }
         }
@@ -482,7 +482,7 @@ impl FlightState {
             }
         }
 
-        log::info!("Flight mode: {:?}", self.flight_mode);
+        log::info!("Flight mode: {:?}\n", self.flight_mode);
     }
 
     pub async fn transmit(&mut self) {
@@ -490,10 +490,10 @@ impl FlightState {
 
         match self.radio.send(&data).await {
             Ok(_) => {
-                log::info!("ACK: Data transmitted successfully!");
+                log::info!("RFD | Data transmitted successfully!");
             }
             Err(e) => {
-                log::warn!("Failed to transmit packet via radio: {:?}", e);
+                log::warn!("RFD | Failed to transmit packet via radio: {:?}", e);
             }
         }
 
@@ -504,7 +504,7 @@ impl FlightState {
     pub async fn receive_radio(&mut self, buffer: &mut [u8]) -> Result<(), embassy_rp::uart::Error> {
         let result = self.radio.receive_packet(buffer).await;
         if result.is_ok() {
-            log::info!("ACK: Packet received successfully!");
+            log::info!("RFD | Packet received successfully!");
         }
         result
     }
@@ -514,7 +514,7 @@ impl FlightState {
         let mut buf = [0u8; Packet::SIZE];
         self.radio.receive_packet(&mut buf).await?;
         let packet = Packet::from_bytes(&buf);
-        log::info!("ACK: Telemetry packet decoded successfully!");
+        log::info!("RFD | Telemetry packet decoded successfully!");
         Ok(packet)
     }
 
@@ -554,19 +554,6 @@ impl FlightState {
         }
         None
     }
-    /*
-    pub async fn transition(&mut self) {
-        self.flight_mode = match self.flight_mode {
-            FlightMode::Startup => FlightMode::Standby,
-            FlightMode::Standby => FlightMode::Ascent,
-            FlightMode::Ascent => FlightMode::Coast,
-            FlightMode::Coast => FlightMode::DrogueDeployed,
-            FlightMode::DrogueDeployed => FlightMode::MainDeployed,
-            FlightMode::MainDeployed => FlightMode::Fault,
-            FlightMode::Fault => FlightMode::Startup,
-        }
-    }
-    */
 
     // Appends the current packet as CSV to the onboard QSPI Flash memory
     pub async fn save_packet_to_flash(&mut self) {

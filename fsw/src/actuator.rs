@@ -81,9 +81,9 @@ pub struct Buzzer<'a> {
 }
 
 impl<'a> Buzzer<'a> {
-    // 400 Hz: clk=150 MHz, divider=6, top=62499
-    // freq = 150_000_000 / (6 * (62499 + 1)) = 400 Hz
-    const TOP: u16 = 62499;
+    // 4 kHz: clk=150 MHz, divider=6, top=6249
+    // freq = 150_000_000 / (6 * (6249 + 1)) = 4000 Hz
+    const TOP: u16 = 6249;
 
     /// `pwm` = PWM on GPIO 21 (CFC_ARM_Indicator), configured for 400 Hz in module.rs.
     pub fn new(pwm: Pwm<'a>) -> Self {
