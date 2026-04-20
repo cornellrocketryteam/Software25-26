@@ -33,6 +33,7 @@ pub struct OnboardFlash<'a> {
     spi: SpiDeviceType<'a>,
     write_offset: u32,
     needs_header: bool,
+    pub flash_ok: bool,
 }
 
 impl<'a> OnboardFlash<'a> {
@@ -44,32 +45,27 @@ impl<'a> OnboardFlash<'a> {
     const CMD_RDSR1: u8 = 0x05;
     const CMD_JEDEC_ID: u8 = 0x9F;
 
-    fn debug_print(s: &str) {
-        log::info!("{}", s);
-        crate::umbilical::print_str(s);
-        crate::umbilical::print_str("\n");
-    }
-
     pub fn new(spi: SpiDeviceType<'a>) -> Self {
         Self {
             spi,
             write_offset: STORAGE_OFFSET,
             needs_header: true,
+            flash_ok: false,
         }
     }
 
     async fn wait_busy(&mut self) -> Result<(), Error> {
-        loop {
+        for _ in 0..500_000 {
             let mut status = [0u8; 1];
             self.spi.transaction(&mut [
                 embedded_hal_async::spi::Operation::Write(&[Self::CMD_RDSR1]),
                 embedded_hal_async::spi::Operation::Read(&mut status),
             ]).await.map_err(|_| Error::Spi)?;
             if status[0] & 0x01 == 0 {
-                break;
+                return Ok(());
             }
         }
-        Ok(())
+        Err(Error::Spi)
     }
 
     async fn write_enable(&mut self) -> Result<(), Error> {
@@ -86,18 +82,18 @@ impl<'a> OnboardFlash<'a> {
     }
 
     pub async fn initialize_logging(&mut self) -> Result<(), Error> {
+        // Validate chip presence via JEDEC ID before doing anything else
+        let id = self.read_jedec_id().await.map_err(|_| Error::Spi)?;
+        log::info!("Flash: JEDEC ID: {:02x} {:02x} {:02x}", id[0], id[1], id[2]);
+        if id[0] == 0xFF && id[1] == 0xFF && id[2] == 0xFF {
+            log::error!("Flash: no chip detected (JEDEC = ff ff ff)");
+            return Err(Error::Spi);
+        }
+
+        log::info!("Flash(SPI): Init logging scan...");
         let mut buffer = [0u8; PAGE_SIZE as usize];
         let mut low = STORAGE_OFFSET;
         let mut high = STORAGE_OFFSET + STORAGE_SIZE - PAGE_SIZE;
-
-        Self::debug_print("Flash(SPI): Init logging scan...");
-
-        // JEDEC ID Check
-        if let Ok(id) = self.read_jedec_id().await {
-            let mut msg = heapless::String::<64>::new();
-            let _ = core::fmt::write(&mut msg, format_args!("Flash: JEDEC ID: {:02x} {:02x} {:02x}", id[0], id[1], id[2]));
-            Self::debug_print(msg.as_str());
-        }
 
         while low <= high {
             let mid = low + ((high - low) / (2 * PAGE_SIZE)) * PAGE_SIZE;
@@ -118,9 +114,7 @@ impl<'a> OnboardFlash<'a> {
         self.write_offset = low;
         self.needs_header = self.write_offset == STORAGE_OFFSET;
         
-        let mut msg = heapless::String::<64>::new();
-        let _ = core::fmt::write(&mut msg, format_args!("Flash: Offset set to {:#x}", self.write_offset));
-        Self::debug_print(msg.as_str());
+        log::info!("Flash: Offset set to {:#x}", self.write_offset);
 
         if self.write_offset >= STORAGE_OFFSET + STORAGE_SIZE {
              return Err(Error::StorageFull);

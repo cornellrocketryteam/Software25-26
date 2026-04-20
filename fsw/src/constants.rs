@@ -13,8 +13,9 @@ pub const I2C_SCL_PIN: u8 = 1;
 
 // SPI Configuration
 
-/// SPI bus frequency in Hz (1MHz for FRAM)
-pub const SPI_FREQUENCY: u32 = 1_000_000;
+/// SPI bus frequency in Hz
+/// Shared bus limit is the BMP390 altimeter at 10 MHz max — using 8 MHz for margin
+pub const SPI_FREQUENCY: u32 = 8_000_000;
 
 // SPI Pin Assignments
 
@@ -66,7 +67,31 @@ pub const SV_PIN: u8 = 47;
 /// Main loop cycle time in milliseconds
 pub const MAIN_LOOP_DELAY_MS: u64 = 50; // 20 Hz
 
+/// Maximum allowed time for one execute() call before logging an overrun warning
+pub const LOOP_BUDGET_MS: u64 = 100;
+
+/// Hardware watchdog timeout in milliseconds
+/// = LOOP_BUDGET_MS (100) + 20 ms for Embassy I2C/SPI async overhead.
+/// A second feed() after execute() covers the MAIN_LOOP_DELAY_MS sleep,
+/// so the watchdog only ever fires if execute() itself hangs
+pub const WATCHDOG_TIMEOUT_MS: u32 = 120;
+
+/// Stall duration used by test_watchdog to deliberately trigger the watchdog
+/// Must be > WATCHDOG_TIMEOUT_MS so the chip resets during the stall.
+pub const WATCHDOG_TEST_STALL_MS: u64 = 200;
+
 pub const FLASH_LOGGING_PERIOD_MS: u64 = 50; // Log every cycle at 20 Hz
+
+// I²C/SPI timeouts: if a bus transaction hangs (e.g. GPS NACK holds SDA low),
+// bail out instead of blocking the flight loop forever.
+/// Per-cycle sensor read timeout (BMP390, GPS, IMU, ADC).
+pub const SENSOR_READ_TIMEOUT_MS: u64 = 30;
+/// Single FRAM read/write timeout.
+pub const FRAM_TIMEOUT_MS: u64 = 30;
+/// QSPI flash op timeout (erase/program can be legitimately slow).
+pub const FLASH_TIMEOUT_MS: u64 = 200;
+/// One-time driver init timeout (happens once at boot, be generous).
+pub const SENSOR_INIT_TIMEOUT_MS: u64 = 500;
 
 // USB Logger Configuration
 
@@ -90,10 +115,10 @@ pub const MAIN_DEPLOY_ALTITUDE: f32 = 610.0;
 pub const MAIN_LOG_TIMEOUT_MS: u64 = 1_200_000; // 20 minutes
 
 pub const UMBILICAL_TIMEOUT_MS: u64 = 15_000; // 15 seconds
-pub const MAV_OPEN_DURATION_MS: u64 = 7880; // 7.88 seconds 
-pub const LAUNCH_SV_PREVENT_MS: u64 = 2000;
-pub const LAUNCH_POST_MAV_WAIT_MS: u64 = 10000;
-pub const SSA_THRESHOLD_MS: u64 = 3000; // Duration to fire ematch
+pub const MAV_OPEN_DURATION_MS: u64 = 3000; // 3.5 seconds (gives time to advance altitude array past 100m during 1Hz loop)
+pub const LAUNCH_SV_PREVENT_MS: u64 = 5_000;  // 5 s pre-vent before closing SV
+pub const LAUNCH_POST_MAV_WAIT_MS: u64 = 10_000; // 10 s wait after MAV open before final vent
+pub const SSA_THRESHOLD_MS: u64 = 1000; // Duration to fire ematch
 
 // ADS1015 ADC Configuration
 pub const ADS1015_I2C_ADDR: u8 = 0x48;

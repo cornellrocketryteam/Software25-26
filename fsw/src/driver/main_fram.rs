@@ -8,6 +8,8 @@ use embedded_hal_async::spi::{SpiDevice as _, Operation};
 const CMD_WREN: u8 = 0x06; // Write Enable
 const CMD_READ: u8 = 0x03; // Read Memory
 const CMD_WRITE: u8 = 0x02; // Write Memory
+const CMD_RDID: u8 = 0x9F; // Read Device ID (expect 04 7F 48 03)
+const CMD_RDSR: u8 = 0x05; // Read Status Register (bit1 = WEL)
 
 /// MB85RS2 FRAM driver
 pub struct Fram<'a> {
@@ -78,6 +80,28 @@ impl<'a> Fram<'a> {
         }
 
         Ok(())
+    }
+
+    /// Read Device ID — should return [0x04, 0x7F, 0x48, 0x03]
+    pub async fn read_device_id(&mut self) -> Result<[u8; 4], ()> {
+        let mut id = [0u8; 4];
+        let mut ops = [
+            Operation::Write(&[CMD_RDID]),
+            Operation::Read(&mut id),
+        ];
+        self.spi.transaction(&mut ops).await.map_err(|_| ())?;
+        Ok(id)
+    }
+
+    /// Read Status Register — bit 1 is WEL (Write Enable Latch)
+    pub async fn read_status_register(&mut self) -> Result<u8, ()> {
+        let mut sr = [0u8; 1];
+        let mut ops = [
+            Operation::Write(&[CMD_RDSR]),
+            Operation::Read(&mut sr),
+        ];
+        self.spi.transaction(&mut ops).await.map_err(|_| ())?;
+        Ok(sr[0])
     }
 
     /// Reset the FRAM state (clear FlightMode, CycleCount, and Altitude log)

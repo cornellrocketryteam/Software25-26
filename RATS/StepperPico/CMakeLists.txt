@@ -12,61 +12,50 @@ if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 # ====================================================================================
-# StepperPico CMakeLists.txt
+set(PICO_BOARD pico2_w CACHE STRING "Board type")
 
 cmake_minimum_required(VERSION 3.13)
 
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-# Initialise pico_sdk from installed location
-if(WIN32)
-    set(USERHOME $ENV{USERPROFILE})
-else()
-    set(USERHOME $ENV{HOME})
-endif()
-set(sdkVersion 2.2.0)
-set(toolchainVersion 14_2_Rel1)
-set(picotoolVersion 2.2.0-a4)
-set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
-if (EXISTS ${picoVscode})
-    include(${picoVscode})
-endif()
-
-set(PICO_BOARD pico2 CACHE STRING "Board type")
-
-# Pull in Raspberry Pi Pico SDK (use parent directory's import)
-include(${CMAKE_CURRENT_LIST_DIR}/pico_sdk_import.cmake)
+# Initialize the Pico SDK
+include(pico_sdk_import.cmake OPTIONAL)
 
 project(StepperPico C CXX ASM)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 
-# Initialise the Raspberry Pi Pico SDK
-pico_sdk_init()
+# This checks if the SDK is actually installed 
+if (COMMAND pico_sdk_init)
+    pico_sdk_init()
 
-# Add executable
-add_executable(StepperPico 
-    StepperPico.cpp
-)
+    add_executable(StepperPico
+        main.cpp
+        StepperMotor.cpp
+        packet_simulator.cpp
+        KalmanCV.cpp
+        NMEAParser.cpp
+        GeoMath.cpp
+        AccelStepper-1.64.0/src/AccelStepper.cpp
+        AccelStepper-1.64.0/src/MultiStepper.cpp
+    )
 
-pico_set_program_name(StepperPico "StepperPico")
-pico_set_program_version(StepperPico "0.1")
+    # Add the current directory (for our fake Arduino.h) and the AccelStepper source folder
+    target_include_directories(StepperPico PRIVATE 
+        ${CMAKE_CURRENT_LIST_DIR} 
+        ${CMAKE_CURRENT_LIST_DIR}/AccelStepper-1.64.0/src
+    )
 
-# Enable USB output, disable UART output (UART0 used for Radio Pico comms)
-pico_enable_stdio_uart(StepperPico 0)
-pico_enable_stdio_usb(StepperPico 1)
+    # Trick AccelStepper into thinking it's inside a modern Arduino IDE so it includes Arduino.h instead of WProgram.h
+    target_compile_definitions(StepperPico PRIVATE ARDUINO=100)
 
-# Add libraries
-target_link_libraries(StepperPico
-    pico_stdlib
-    hardware_uart
-    pico_multicore
-)
+    # Link the standard Pico SDK hardware libraries we need for GPIO and Timers
+    target_link_libraries(StepperPico pico_stdlib hardware_gpio hardware_timer hardware_uart)
 
-# Include directories
-target_include_directories(StepperPico PRIVATE
-    ${CMAKE_CURRENT_LIST_DIR}
-    ${CMAKE_CURRENT_LIST_DIR}/../Common
-)
+    # Enable stdio over USB and disable over UART (since GPS uses UART0)
+    pico_enable_stdio_usb(StepperPico 1)
+    pico_enable_stdio_uart(StepperPico 0)
 
-pico_add_extra_outputs(StepperPico)
+    # Create the .uf2 file for dragging and dropping onto the Pico!
+    pico_add_extra_outputs(StepperPico)
+else()
+    message(WARNING "Pico SDK not found! Please ensure 'pico_sdk_import.cmake' is present and PICO_SDK_PATH is set.")
+endif()

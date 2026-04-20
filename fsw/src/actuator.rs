@@ -2,6 +2,7 @@ use embassy_rp::gpio::Output;
 use embassy_rp::pwm::Pwm;
 use embassy_time::{Duration, Instant};
 use embedded_hal::pwm::SetDutyCycle;
+
 // 330 Hz servo frequency, 3030 µs period
 // open = 2015 µs, close = 995 µs, neutral = 1520 µs
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -64,57 +65,78 @@ impl<'a> Ssa<'a> {
     }
 }
 
+// ============================================================================
 // Buzzer
+// ============================================================================
+//
+// CFC_ARM_Indicator (GPIO 21): PWM output at 400 Hz driving the buzzer + LED.
+// CFC_ARM (GPIO 41):           Input (Pull::Down) — off-board arming signal.
+
 pub struct Buzzer<'a> {
-    pin: Output<'a>,
+    /// GPIO 21 – CFC_ARM_Indicator, PWM at 400 Hz (50% duty = tone on, 0% = off)
+    pwm: Pwm<'a>,
     remaining_beeps: u32,
     next_toggle_time: Option<Instant>,
     is_on: bool,
 }
 
 impl<'a> Buzzer<'a> {
-    pub fn new(pin: Output<'a>) -> Self {
+    // 4 kHz: clk=150 MHz, divider=6, top=6249
+    // freq = 150_000_000 / (6 * (6249 + 1)) = 4000 Hz
+    const TOP: u16 = 6249;
+
+    /// `pwm` = PWM on GPIO 21 (CFC_ARM_Indicator), configured for 400 Hz in module.rs.
+    pub fn new(pwm: Pwm<'a>) -> Self {
         Self {
-            pin,
+            pwm,
             remaining_beeps: 0,
             next_toggle_time: None,
             is_on: false,
         }
     }
 
-    // Each beep is 100ms on and 100ms off
+    fn set_on(&mut self) {
+        // 50% duty cycle → square wave at 400 Hz
+        let _ = self.pwm.set_duty_cycle_fraction(1, 2);
+    }
+
+    fn set_off(&mut self) {
+        let _ = self.pwm.set_duty_cycle_fraction(0, Self::TOP);
+    }
+
+    /// Request `num` beeps (100 ms on / 100 ms off each).
+    /// Ignored if a beep sequence is already in progress.
     pub fn buzz(&mut self, num: u32) {
         if self.remaining_beeps == 0 {
             self.remaining_beeps = num;
-            self.pin.set_high();
+            self.set_on();
             self.is_on = true;
-            // 100ms on
-            self.next_toggle_time = Some(Instant::now() + embassy_time::Duration::from_millis(100));
+            self.next_toggle_time =
+                Some(Instant::now() + embassy_time::Duration::from_millis(100));
         }
     }
 
-    // Call this every loop cycle
+    /// Call every loop cycle. Manages on/off beep pattern via PWM duty cycle.
     pub fn update(&mut self) {
         if let Some(time) = self.next_toggle_time {
             if Instant::now() >= time {
                 if self.is_on {
-                    // Turn off
-                    self.pin.set_low();
+                    // End of ON phase
+                    self.set_off();
                     self.is_on = false;
                     self.remaining_beeps -= 1;
 
                     if self.remaining_beeps > 0 {
-                        // Wait 100ms before next beep
+                        // Gap before next beep
                         self.next_toggle_time =
                             Some(Instant::now() + embassy_time::Duration::from_millis(100));
                     } else {
-                        // Done
                         self.next_toggle_time = None;
                     }
                 } else {
-                    // Turn on for next beep (if remaining > 0)
+                    // End of gap phase — start next beep
                     if self.remaining_beeps > 0 {
-                        self.pin.set_high();
+                        self.set_on();
                         self.is_on = true;
                         self.next_toggle_time =
                             Some(Instant::now() + embassy_time::Duration::from_millis(100));
@@ -126,6 +148,7 @@ impl<'a> Buzzer<'a> {
         }
     }
 }
+
 
 // MAV
 /// Servo driver for ProModeler DS2685BLHV
@@ -220,6 +243,85 @@ impl<'a> Mav<'a> {
 
     pub fn is_open(&self) -> bool {
         self.state_open
+    }
+}
+
+// ============================================================================
+// AirbrakeActuator
+// ============================================================================
+//
+// Drives the ODrive S1 motor controller via standard RC PWM on GPIO 38.
+// ODrive S1 RC PWM input (G08, isolated IO):
+//   - 50 Hz frame rate (20 ms period)
+//   - 1000 µs pulse → fully retracted (0% deployment)
+//   - 2000 µs pulse → fully deployed  (100% deployment)
+//
+// GPIO 37 = ENABLE output (High = enable ODrive, Low = disable)
+// GPIO 38 = PWM signal to ODrive RC PWM IN
+
+pub struct AirbrakeActuator<'a> {
+    enable: Output<'a>,
+    pwm: Pwm<'a>,
+    current_deployment: f32,
+}
+
+impl<'a> AirbrakeActuator<'a> {
+    // RC PWM standard: 50 Hz, 1000–2000 µs
+    const SERVO_PERIOD_US: u16 = 20_000; // 20 ms period
+    const SERVO_CLOSE_US: u16  = 1_000;  // fully retracted
+    const SERVO_OPEN_US: u16   = 2_000;  // fully deployed
+
+    /// Create a new AirbrakeActuator.
+    /// PWM slice must be configured for 50 Hz in module.rs:
+    ///   top = 59999, divider = 50 (for 150 MHz system clock)
+    pub fn new(enable: Output<'a>, pwm: Pwm<'a>) -> Self {
+        let mut ab = Self {
+            enable,
+            pwm,
+            current_deployment: 0.0,
+        };
+        ab.retract(); // safe starting position
+        ab
+    }
+
+    /// Enable the ODrive (assert ENABLE pin high).
+    pub fn enable(&mut self) {
+        self.enable.set_high();
+    }
+
+    /// Disable the ODrive (assert ENABLE pin low).
+    pub fn disable(&mut self) {
+        self.enable.set_low();
+    }
+
+    /// Set airbrake deployment level.
+    /// `deployment`: 0.0 = fully retracted, 1.0 = fully deployed.
+    /// Outputs a proportional RC PWM pulse between 1000 µs and 2000 µs.
+    pub fn set_deployment(&mut self, deployment: f32) {
+        let dep = deployment.clamp(0.0, 1.0);
+        self.current_deployment = dep;
+
+        let span = (Self::SERVO_OPEN_US - Self::SERVO_CLOSE_US) as f32;
+        let pulse_us = Self::SERVO_CLOSE_US as f32 + span * dep;
+
+        self.set_pulse_width((pulse_us + 0.5) as u16);
+    }
+
+    /// Fully retract the airbrakes (1000 µs pulse).
+    pub fn retract(&mut self) {
+        self.set_deployment(0.0);
+    }
+
+    /// Returns the last commanded deployment level (0.0–1.0).
+    pub fn current_deployment(&self) -> f32 {
+        self.current_deployment
+    }
+
+    fn set_pulse_width(&mut self, pulse_us: u16) {
+        let pulse = pulse_us.clamp(Self::SERVO_CLOSE_US, Self::SERVO_OPEN_US);
+        let _ = self
+            .pwm
+            .set_duty_cycle_fraction(pulse, Self::SERVO_PERIOD_US);
     }
 }
 

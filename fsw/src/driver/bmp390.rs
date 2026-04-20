@@ -66,4 +66,13 @@ impl<'a> Bmp390Sensor<'a> {
     pub fn is_init(&self) -> bool {
         self.altimeter_init
     }
+
+    /// Construct an "unavailable" BMP390 for cases where init timed out or
+    /// the bus is suspect. All reads will return `NotConnected`.
+    pub fn unavailable() -> Self {
+        Self {
+            sensor: None,
+            altimeter_init: false,
+        }
+    }
 }

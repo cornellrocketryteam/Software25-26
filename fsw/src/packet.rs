@@ -5,6 +5,7 @@ pub enum Command {
     N2,
     N3,
     N4,
+    A1,
     ForceMode(u32),
 }
 
