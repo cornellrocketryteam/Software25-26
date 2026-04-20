@@ -481,6 +481,8 @@ impl FlightState {
                 log::error!("ADS1015 ADC read TIMEOUT");
             }
         }
+
+        log::info!("Flight mode: {:?}", self.flight_mode);
     }
 
     pub async fn transmit(&mut self) {

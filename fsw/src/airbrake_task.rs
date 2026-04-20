@@ -101,7 +101,7 @@ pub async fn airbrake_core1_task() {
             input.gyro_y as f32,
             input.accel_x as f32,
             input.accel_y as f32,
-            input.accel_z as f32    ,
+            input.accel_z as f32,
             ctrl_phase,
         );
 

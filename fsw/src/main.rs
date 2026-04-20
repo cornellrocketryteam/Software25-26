@@ -156,7 +156,7 @@ async fn main(spawner: Spawner) {
     log::info!("INIT [8/8]: Entering flight loop...");
 
     // Reset FRAM for testing (COMMENT OUT FOR REAL FLIGHT)
-    //flight_state.reset_fram().await;
+    flight_state.reset_fram().await;
 
     // --- FLIGHT SIMULATIONS --- //
     #[cfg(any(
