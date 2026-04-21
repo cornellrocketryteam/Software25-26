@@ -133,8 +133,9 @@ fn main() -> Result<()> {
         info!("Starting Safety Monitor task...");
         let safety_hw = hardware.clone();
         let safety_counts = active_client_count.clone();
+        let safety_umb_readings = umbilical_readings.clone();
         let safety_umb_tx = umb_cmd_tx.clone();
-        smol::spawn(safety_monitor_task(safety_hw, safety_counts, safety_umb_tx)).detach();
+        smol::spawn(safety_monitor_task(safety_hw, safety_counts, safety_umb_readings, safety_umb_tx)).detach();
 
         // Spawn background ADC monitoring task
         info!("Starting ADC monitoring task at {} Hz...", ADC_SAMPLE_RATE_HZ);
@@ -712,15 +713,21 @@ async fn send_response(
 async fn safety_monitor_task(
     hardware: Arc<Mutex<Hardware>>,
     active_client_count: Arc<AtomicUsize>,
+    umbilical_readings: Arc<Mutex<UmbilicalReadings>>,
     umb_cmd_tx: smol::channel::Sender<String>,
 ) {
     let mut disconnect_start: Option<Instant> = None;
     let mut safety_triggered = false;
     let mut qd_retract_triggered = false;
 
+    let mut umb_disconnect_start: Option<Instant> = None;
+    let mut umb_safety_triggered = false;
+    let mut umb_qd_retract_triggered = false;
+
     loop {
         let count = active_client_count.load(Ordering::SeqCst);
 
+        // Control station disconnect logic
         if count == 0 {
             // If no clients, verify how long we've been disconnected
             if disconnect_start.is_none() {
@@ -758,6 +765,61 @@ async fn safety_monitor_task(
                 disconnect_start = None;
                 safety_triggered = false;
                 qd_retract_triggered = false;
+            }
+        }
+
+        // Umbilical disconnect logic
+        let umb_connected = umbilical_readings.lock().await.connected;
+        if !umb_connected {
+            if umb_disconnect_start.is_none() {
+                info!("Umbilical disconnected. Starting umbilical safety timer.");
+                umb_disconnect_start = Some(Instant::now());
+                umb_safety_triggered = false;
+                umb_qd_retract_triggered = false;
+            }
+
+            if let Some(start) = umb_disconnect_start {
+                let elapsed = start.elapsed();
+
+                if !umb_safety_triggered && elapsed > Duration::from_secs(15) {
+                    warn!("UMBILICAL SAFETY TIMEOUT (15s) - Closing BV, Opening SV1");
+                    #[cfg(any(target_os = "linux", target_os = "android"))]
+                    {
+                        let hw = hardware.lock().await;
+                        // Close Ball Valve
+                        if let Err(e) = hw.ball_valve.close_sequence().await {
+                            error!("Failed to close Ball Valve during umbilical safety: {}", e);
+                        }
+                        // Open SV1
+                        if let Err(e) = hw.sv1.set_open(true).await {
+                            error!("Failed to open SV1 during umbilical safety: {}", e);
+                        }
+                    }
+                    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+                    {
+                        warn!("MOCK UMBILICAL SAFETY (15s) triggered - closing BV, opening SV1");
+                    }
+                    umb_safety_triggered = true;
+                }
+
+                if !umb_qd_retract_triggered && elapsed > Duration::from_secs(20) {
+                    warn!("UMBILICAL SAFETY TIMEOUT (20s) - Retracting QD");
+                    {
+                        use crate::components::qd_stepper::{QD_RETRACT_STEPS, QD_RETRACT_DIRECTION};
+                        let hw = hardware.lock().await;
+                        if let Err(e) = hw.qd_stepper.move_steps(QD_RETRACT_STEPS, QD_RETRACT_DIRECTION).await {
+                            error!("QD retract during umbilical safety timeout failed: {}", e);
+                        }
+                    }
+                    umb_qd_retract_triggered = true;
+                }
+            }
+        } else {
+            if umb_disconnect_start.is_some() {
+                info!("Umbilical reconnected. Umbilical safety timer cancelled.");
+                umb_disconnect_start = None;
+                umb_safety_triggered = false;
+                umb_qd_retract_triggered = false;
             }
         }
 
