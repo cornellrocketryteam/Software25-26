@@ -1,0 +1,28 @@
+[package]
+name = "blims"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "blims"
+path = "src/lib.rs"
+
+[[example]]
+name = "blims_car_test"
+path = "examples/blims_car_test/car_test.rs"
+
+[dependencies]
+embassy-executor   = { git = "https://github.com/embassy-rs/embassy.git", features = ["platform-cortex-m", "executor-thread", "defmt"] }
+embassy-rp         = { git = "https://github.com/embassy-rs/embassy.git", features = ["defmt", "time-driver", "critical-section-impl", "rp235xa", "binary-info"] }
+embassy-time       = { git = "https://github.com/embassy-rs/embassy.git", features = ["defmt"] }
+embassy-usb        = { git = "https://github.com/embassy-rs/embassy.git", features = ["defmt"] }
+embassy-usb-logger = { git = "https://github.com/embassy-rs/embassy.git" }
+cortex-m           = { version = "0.7.7" }
+cortex-m-rt        = "0.7.0"
+fixed              = "1.23"
+defmt              = "0.3"
+defmt-rtt          = "0.4"
+heapless           = "0.8"
+libm               = "0.2"
+log                = { version = "0.4", default-features = false }
+panic-probe        = { version = "0.3", features = ["print-defmt"] }

@@ -1,5 +1,6 @@
 /* hw_config.c
  * Hardware configuration for SD card via SPI
+ * Using no-OS-FatFS-SD-SDIO-SPI-RPi-Pico library
  *
  * SD Card Pinout:
  *   CLK   -> GP10 (SPI1 SCK)
@@ -9,53 +10,42 @@
  *   DET   -> GP22 (Card Detect, active low)
  */
 
-#include <string.h>
 #include "hw_config.h"
-#include "ff.h"
-#include "diskio.h"
 
 // Hardware Configuration of SPI
-static spi_t spis[] = {
-    {
-        .hw_inst = spi1,          // SPI1 component
-        .miso_gpio = 12,          // D0 - Data out from SD card
-        .mosi_gpio = 11,          // CMD - Data in to SD card
-        .sck_gpio = 10,           // CLK - Clock
-        .baud_rate = 12500 * 1000 // 12.5 MHz (start conservatively)
-    }
+static spi_t spi = {
+    .hw_inst = spi1,          // SPI1 component
+    .sck_gpio = 10,           // CLK - Clock
+    .mosi_gpio = 11,          // CMD - Data in to SD card
+    .miso_gpio = 12,          // D0 - Data out from SD card
+    .baud_rate = 12500 * 1000 // 12.5 MHz (conservative, can increase to 25MHz for better performance)
 };
 
-// Hardware Configuration of SD Card
-static sd_card_t sd_cards[] = {
-    {
-        .pcName = "0:",              // Mount as drive 0:
-        .spi = &spis[0],             // Use SPI1
-        .ss_gpio = 13,               // CS pin
-        .use_card_detect = true,
-        .card_detect_gpio = 22,      // Card detect pin
-        .card_detected_true = 0      // Active low (0 = card present)
-    }
+// SPI Interface
+static sd_spi_if_t spi_if = {
+    .spi = &spi,              // Pointer to the SPI driving this card
+    .ss_gpio = 13             // CS pin
 };
 
-// Required functions for the FatFS library
+// Configuration of the SD Card socket object
+static sd_card_t sd_card = {
+    .type = SD_IF_SPI,
+    .spi_if_p = &spi_if,      // Pointer to the SPI interface driving this card
+    .use_card_detect = false, // DISABLED - not reliable on this breakout
+    .card_detect_gpio = 22,   // Card detect pin (not used)
+    .card_detected_true = 1   // Active HIGH (1 = card present) - breakout logic is inverted
+};
+
+/* ********************************************************************** */
+
 size_t sd_get_num() {
-    return count_of(sd_cards);
+    return 1;
 }
 
 sd_card_t *sd_get_by_num(size_t num) {
-    if (num < sd_get_num()) {
-        return &sd_cards[num];
+    if (0 == num) {
+        return &sd_card;
+    } else {
+        return NULL;
     }
-    return NULL;
-}
-
-size_t spi_get_num() {
-    return count_of(spis);
-}
-
-spi_t *spi_get_by_num(size_t num) {
-    if (num < spi_get_num()) {
-        return &spis[num];
-    }
-    return NULL;
 }
