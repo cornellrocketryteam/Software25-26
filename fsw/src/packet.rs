@@ -6,6 +6,8 @@ pub enum Command {
     N3,
     N4,
     A1,
+    A2,
+    A3,
     ForceMode(u32),
 }
 
@@ -40,10 +42,24 @@ pub struct Packet {
     // valve states
     pub sv_open: bool,
     pub mav_open: bool,
+    // event flags (0 = not triggered, 1 = triggered)
+    pub ssa_drogue_deployed: u8,
+    pub ssa_main_deployed: u8,
+    pub cmd_n1: u8,
+    pub cmd_n2: u8,
+    pub cmd_n3: u8,
+    pub cmd_n4: u8,
+    pub cmd_a1: u8,
+    pub cmd_a2: u8,
+    pub cmd_a3: u8,
+    // airbrake state (0 = idle, 1 = deployed, 2 = retracted)
+    pub airbrake_state: u8,
+    // airbrake controller output
+    pub predicted_apogee: f32,
 }
 
 impl Packet {
-    pub const SIZE: usize = 82;
+    pub const SIZE: usize = 96;
 
     pub fn to_bytes(&self) -> [u8; Self::SIZE] {
         let mut data = [0u8; Self::SIZE];
@@ -69,6 +85,17 @@ impl Packet {
         data[76..80].copy_from_slice(&self.rtd.to_le_bytes());
         data[80] = self.sv_open as u8;
         data[81] = self.mav_open as u8;
+        data[82] = self.ssa_drogue_deployed;
+        data[83] = self.ssa_main_deployed;
+        data[84] = self.cmd_n1;
+        data[85] = self.cmd_n2;
+        data[86] = self.cmd_n3;
+        data[87] = self.cmd_n4;
+        data[88] = self.cmd_a1;
+        data[89] = self.cmd_a2;
+        data[90] = self.cmd_a3;
+        data[91] = self.airbrake_state;
+        data[92..96].copy_from_slice(&self.predicted_apogee.to_le_bytes());
         data
     }
 
@@ -100,17 +127,28 @@ impl Packet {
             rtd: f32::from_le_bytes(bytes[76..80].try_into().unwrap()),
             sv_open: bytes[80] != 0,
             mav_open: bytes[81] != 0,
+            ssa_drogue_deployed: bytes[82],
+            ssa_main_deployed: bytes[83],
+            cmd_n1: bytes[84],
+            cmd_n2: bytes[85],
+            cmd_n3: bytes[86],
+            cmd_n4: bytes[87],
+            cmd_a1: bytes[88],
+            cmd_a2: bytes[89],
+            cmd_a3: bytes[90],
+            airbrake_state: bytes[91],
+            predicted_apogee: f32::from_le_bytes(bytes[92..96].try_into().unwrap()),
         }
     }
 
-    pub const CSV_HEADER: &'static str = "flight_mode,pressure,temp,altitude,latitude,longitude,num_satellites,timestamp,mag_x,mag_y,mag_z,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,pt3,pt4,rtd,sv_open,mav_open\n";
+    pub const CSV_HEADER: &'static str = "flight_mode,pressure,temp,altitude,latitude,longitude,num_satellites,timestamp,mag_x,mag_y,mag_z,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,pt3,pt4,rtd,sv_open,mav_open,ssa_drogue_deployed,ssa_main_deployed,cmd_n1,cmd_n2,cmd_n3,cmd_n4,cmd_a1,cmd_a2,cmd_a3,airbrake_state,predicted_apogee\n";
 
     pub fn to_csv(&self, buf: &mut [u8]) -> usize {
         use core::fmt::Write;
         let mut wrapper = WriteWrapper::new(buf);
         let _ = write!(
             wrapper,
-            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
             self.flight_mode,
             self.pressure,
             self.temp,
@@ -132,7 +170,18 @@ impl Packet {
             self.pt4,
             self.rtd,
             self.sv_open as u8,
-            self.mav_open as u8
+            self.mav_open as u8,
+            self.ssa_drogue_deployed,
+            self.ssa_main_deployed,
+            self.cmd_n1,
+            self.cmd_n2,
+            self.cmd_n3,
+            self.cmd_n4,
+            self.cmd_a1,
+            self.cmd_a2,
+            self.cmd_a3,
+            self.airbrake_state,
+            self.predicted_apogee
         );
         wrapper.offset
     }

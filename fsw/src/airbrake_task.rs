@@ -68,11 +68,18 @@ pub static AIRBRAKE_INPUT: Signal<CriticalSectionRawMutex, AirbrakeInput> = Sign
 // 0.0 = fully retracted (safe default before first computation).
 // ---------------------------------------------------------------------------
 static AIRBRAKE_DEPLOYMENT: AtomicU32 = AtomicU32::new(0); // 0.0f32 as bits
+static AIRBRAKE_PREDICTED_APOGEE: AtomicU32 = AtomicU32::new(0); // 0.0f32 as bits
 
 /// Read the latest deployment level (0.0 – 1.0) computed by Core 1.
 /// Non-blocking — returns the last known value immediately.
 pub fn get_deployment() -> f32 {
     f32::from_bits(AIRBRAKE_DEPLOYMENT.load(Ordering::Acquire))
+}
+
+/// Read the latest predicted apogee (metres) computed by Core 1.
+/// Non-blocking — returns the last known value immediately.
+pub fn get_predicted_apogee() -> f32 {
+    f32::from_bits(AIRBRAKE_PREDICTED_APOGEE.load(Ordering::Acquire))
 }
 
 // ---------------------------------------------------------------------------
@@ -106,5 +113,6 @@ pub async fn airbrake_core1_task() {
         );
 
         AIRBRAKE_DEPLOYMENT.store((output.deployment as f32).to_bits(), Ordering::Release);
+        AIRBRAKE_PREDICTED_APOGEE.store((output.predicted_apogee as f32).to_bits(), Ordering::Release);
     }
 }

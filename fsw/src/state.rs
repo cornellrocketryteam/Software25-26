@@ -198,28 +198,26 @@ impl FlightState {
         log::info!("STATE: Radio ready");
 
         // Read stored state from FRAM
-        let (stored_mode, stored_cycle_count) = match with_timeout(fram_to, fram.read_u32(0)).await {
-            Ok(Ok(mode_raw)) => {
-                let mode = FlightMode::from_u32(mode_raw);
+        let mut fram_buf = [0u8; Packet::SIZE];
+        let (stored_mode, stored_cycle_count) = match with_timeout(fram_to, fram.read_bytes(0, &mut fram_buf)).await {
+            Ok(Ok(())) => {
+                let recovered = Packet::from_bytes(&fram_buf);
+                let mode = FlightMode::from_u32(recovered.flight_mode);
                 log::info!("FlightMode read from FRAM: {:?}", mode);
-                match with_timeout(fram_to, fram.read_u32(4)).await {
-                    Ok(Ok(count)) => (mode, count),
-                    Ok(Err(_)) => {
-                        log::warn!("Failed to read CycleCount from FRAM");
-                        (mode, 0)
-                    }
-                    Err(_) => {
-                        log::warn!("FRAM read CycleCount TIMEOUT");
-                        (mode, 0)
-                    }
-                }
+                packet = recovered;
+                let count = match with_timeout(fram_to, fram.read_u32(Packet::SIZE as u32)).await {
+                    Ok(Ok(c)) => c,
+                    Ok(Err(_)) => { log::warn!("Failed to read CycleCount from FRAM"); 0 }
+                    Err(_) => { log::warn!("FRAM read CycleCount TIMEOUT"); 0 }
+                };
+                (mode, count)
             }
             Ok(Err(_)) => {
-                log::warn!("Failed to read FlightMode from FRAM");
+                log::warn!("Failed to read packet from FRAM");
                 (FlightMode::Startup, 0)
             }
             Err(_) => {
-                log::warn!("FRAM read FlightMode TIMEOUT");
+                log::warn!("FRAM read packet TIMEOUT");
                 (FlightMode::Startup, 0)
             }
         };
@@ -341,30 +339,21 @@ impl FlightState {
     pub async fn open_mav(&mut self, duration: u64) {
         log::info!("ACTUATOR: Opening MAV");
         self.mav.open(duration);
-        // Open (1)
-        Self::fram_write_or_warn(&mut self.fram, 20, 1, "MAV state").await;
     }
 
     pub async fn close_mav(&mut self) {
         log::info!("ACTUATOR: Closing MAV");
         self.mav.close();
-        // Closed (0)
-        Self::fram_write_or_warn(&mut self.fram, 20, 0, "MAV state").await;
     }
-
 
     pub async fn open_sv(&mut self, duration: u64) {
         log::info!("ACTUATOR: Opening SV");
         self.sv.open(duration);
-        // Open (1)
-        Self::fram_write_or_warn(&mut self.fram, 24, 1, "SV state").await;
     }
 
     pub async fn close_sv(&mut self) {
          log::info!("ACTUATOR: Closing SV");
          self.sv.close();
-         // Closed (0)
-         Self::fram_write_or_warn(&mut self.fram, 24, 0, "SV state").await;
     }
 
     /// Helper: write to FRAM with a timeout; log on error or timeout.
@@ -393,11 +382,8 @@ impl FlightState {
         self.umbilical_connected = crate::umbilical::is_connected();
         self.cfc_arm_active = self.cfc_arm.is_high();
 
-        // Write state to FRAM
-        self.write_state_to_fram().await;
-        
-        // Write sensor data to FRAM
-        self.write_sensor_data_to_fram().await;
+        // Write latest packet to FRAM
+        self.write_packet_to_fram().await;
 
         let read_to = Duration::from_millis(constants::SENSOR_READ_TIMEOUT_MS);
 
@@ -630,46 +616,61 @@ impl FlightState {
         }
         embassy_time::Timer::after_millis(20).await;
 
-        // Known stored fields
-        let fields: [(&str, u32); 11] = [
-            ("FlightMode", 0),
-            ("CycleCount", 4),
-            ("Pressure",   8),
-            ("Temp",       12),
-            ("Altitude",   16),
-            ("MAV",        20),
-            ("SV",         24),
-            ("PT3",        28),
-            ("PT4",        32),
-            ("RTD",        36),
-            ("AltLog",     100),
-        ];
-
-        for (name, addr) in fields {
-            match with_timeout(fram_to, self.fram.read_u32(addr)).await {
-                Ok(Ok(raw)) => {
-                    let as_f32 = f32::from_bits(raw);
+        // Read full stored packet
+        let mut buf = [0u8; Packet::SIZE];
+        match with_timeout(fram_to, self.fram.read_bytes(0, &mut buf)).await {
+            Ok(Ok(())) => {
+                let p = Packet::from_bytes(&buf);
+                let fields: [(&str, f32); 10] = [
+                    ("FlightMode", p.flight_mode as f32),
+                    ("Pressure",   p.pressure),
+                    ("Temp",       p.temp),
+                    ("Altitude",   p.altitude),
+                    ("Latitude",   p.latitude),
+                    ("Longitude",  p.longitude),
+                    ("PT3",        p.pt3),
+                    ("PT4",        p.pt4),
+                    ("RTD",        p.rtd),
+                    ("MAVOpen",    p.mav_open as u32 as f32),
+                ];
+                for (name, val) in fields {
                     let mut msg = heapless::String::<128>::new();
-                    let _ = core::fmt::write(
-                        &mut msg,
-                        format_args!("  [{:>3}] {:<12} raw=0x{:08X}  f32={:.3}\n", addr, name, raw, as_f32),
-                    );
+                    let _ = core::fmt::write(&mut msg, format_args!("  {:<12} = {:.4}\n", name, val));
                     log::info!("{}", msg.as_str());
                     crate::umbilical::print_str(msg.as_str());
-                }
-                Ok(Err(_)) | Err(_) => {
-                    let mut msg = heapless::String::<64>::new();
-                    let _ = core::fmt::write(&mut msg, format_args!("  [{:>3}] {} READ FAILED/TIMEOUT\n", addr, name));
-                    log::warn!("{}", msg.as_str());
-                    crate::umbilical::print_str(msg.as_str());
+                    embassy_time::Timer::after_millis(5).await;
                 }
             }
-            embassy_time::Timer::after_millis(10).await;
+            Ok(Err(_)) | Err(_) => {
+                crate::umbilical::print_str("FRAM: read packet FAILED/TIMEOUT\n");
+            }
+        }
+
+        // CycleCount (stored immediately after packet)
+        match with_timeout(fram_to, self.fram.read_u32(Packet::SIZE as u32)).await {
+            Ok(Ok(count)) => {
+                let mut msg = heapless::String::<64>::new();
+                let _ = core::fmt::write(&mut msg, format_args!("  CycleCount   = {}\n", count));
+                log::info!("{}", msg.as_str());
+                crate::umbilical::print_str(msg.as_str());
+            }
+            Ok(Err(_)) | Err(_) => crate::umbilical::print_str("  CycleCount READ FAILED\n"),
+        }
+
+        // Altitude log (separate fallback slot)
+        match with_timeout(fram_to, self.fram.read_u32(100)).await {
+            Ok(Ok(raw)) => {
+                let mut msg = heapless::String::<64>::new();
+                let _ = core::fmt::write(&mut msg, format_args!("  AltLog       = {:.3}\n", f32::from_bits(raw)));
+                log::info!("{}", msg.as_str());
+                crate::umbilical::print_str(msg.as_str());
+            }
+            Ok(Err(_)) | Err(_) => crate::umbilical::print_str("  AltLog READ FAILED\n"),
         }
         crate::umbilical::print_str("--- END FRAM DUMP ---\n");
     }
 
-    // Reset FRAM state (FlightMode, CycleCount, Altitude log)
+    // Reset FRAM state (full packet area, CycleCount, AltLog)
     pub async fn reset_fram(&mut self) {
         let to = Duration::from_millis(constants::FRAM_TIMEOUT_MS);
         match with_timeout(to, self.fram.reset()).await {
@@ -683,27 +684,16 @@ impl FlightState {
         }
     }
 
-    // Write critical state variables (Mode, CycleCount) to FRAM
-    pub async fn write_state_to_fram(&mut self) {
-        Self::fram_write_or_warn(&mut self.fram, 0, self.flight_mode as u32, "FlightMode").await;
-        Self::fram_write_or_warn(&mut self.fram, 4, self.cycle_count, "CycleCount").await;
-    }
-
-    // Write latest sensor data (Pressure, Temp, Altitude, ADC) to FRAM
-    pub async fn write_sensor_data_to_fram(&mut self) {
-        let press_bits = self.packet.pressure.to_bits();
-        let temp_bits = self.packet.temp.to_bits();
-        let alt_bits = self.packet.altitude.to_bits();
-        let pt3_bits = self.packet.pt3.to_bits();
-        let pt4_bits = self.packet.pt4.to_bits();
-        let rtd_bits = self.packet.rtd.to_bits();
-
-        Self::fram_write_or_warn(&mut self.fram, 8,  press_bits, "Pressure").await;
-        Self::fram_write_or_warn(&mut self.fram, 12, temp_bits,  "Temp").await;
-        Self::fram_write_or_warn(&mut self.fram, 16, alt_bits,   "Altitude").await;
-        Self::fram_write_or_warn(&mut self.fram, 28, pt3_bits,   "PT3").await;
-        Self::fram_write_or_warn(&mut self.fram, 32, pt4_bits,   "PT4").await;
-        Self::fram_write_or_warn(&mut self.fram, 36, rtd_bits,   "RTD").await;
+    // Write the full packet + cycle count to FRAM in one transaction
+    pub async fn write_packet_to_fram(&mut self) {
+        let packet_bytes = self.packet.to_bytes();
+        let to = Duration::from_millis(constants::FRAM_TIMEOUT_MS);
+        match with_timeout(to, self.fram.write_bytes(0, &packet_bytes)).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(_)) => log::warn!("FRAM: write packet failed"),
+            Err(_) => log::warn!("FRAM: write packet TIMEOUT"),
+        }
+        Self::fram_write_or_warn(&mut self.fram, Packet::SIZE as u32, self.cycle_count, "CycleCount").await;
     }
 
     /// Reads all stored CSV data from flash and prints it to the log

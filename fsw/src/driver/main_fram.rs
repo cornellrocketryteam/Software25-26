@@ -29,6 +29,37 @@ impl<'a> Fram<'a> {
         result.map_err(|_| ())
     }
 
+    /// Read N bytes starting at addr into buf (single SPI transaction)
+    pub async fn read_bytes(&mut self, addr: u32, buf: &mut [u8]) -> Result<(), ()> {
+        let addr_bytes = [
+            ((addr >> 16) & 0x03) as u8,
+            ((addr >> 8) & 0xFF) as u8,
+            (addr & 0xFF) as u8,
+        ];
+        let mut ops = [
+            Operation::Write(&[CMD_READ]),
+            Operation::Write(&addr_bytes),
+            Operation::Read(buf),
+        ];
+        self.spi.transaction(&mut ops).await.map_err(|_| ())
+    }
+
+    /// Write data bytes starting at addr (single WREN + WRITE transaction)
+    pub async fn write_bytes(&mut self, addr: u32, data: &[u8]) -> Result<(), ()> {
+        self.write_enable().await?;
+        let addr_bytes = [
+            ((addr >> 16) & 0x03) as u8,
+            ((addr >> 8) & 0xFF) as u8,
+            (addr & 0xFF) as u8,
+        ];
+        let mut ops = [
+            Operation::Write(&[CMD_WRITE]),
+            Operation::Write(&addr_bytes),
+            Operation::Write(data),
+        ];
+        self.spi.transaction(&mut ops).await.map_err(|_| ())
+    }
+
     /// Read a u32 value from the specified address
     pub async fn read_u32(&mut self, addr: u32) -> Result<u32, ()> {
         // Address is 18 bits for MB85RS2 (256KB)
@@ -104,20 +135,14 @@ impl<'a> Fram<'a> {
         Ok(sr[0])
     }
 
-    /// Reset the FRAM state (clear FlightMode, CycleCount, and Altitude log)
+    /// Reset the FRAM state — zeros all addresses written by state.rs
     pub async fn reset(&mut self) -> Result<(), ()> {
-        // Reset FlightMode (Address 0) to 0 (Startup)
-        if self.write_u32(0, 0).await.is_err() {
-            return Err(());
-        }
-        // Reset CycleCount (Address 4) to 0
-        if self.write_u32(4, 0).await.is_err() {
-            return Err(());
-        }
-        // Reset Altitude Log (Address 100) to 0
-        if self.write_u32(100, 0).await.is_err() {
-            return Err(());
-        }
+        // Addresses 0–39: FlightMode, CycleCount, Pressure, Temp, Altitude,
+        // MAV state, SV state, PT3, PT4, RTD (10 × u32)
+        let zeros = [0u8; 40];
+        self.write_bytes(0, &zeros).await?;
+        // Address 100: fallback altitude log
+        self.write_u32(100, 0).await?;
         Ok(())
     }
 }

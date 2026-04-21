@@ -215,25 +215,40 @@ impl FlightLoop {
                     ) {
                         let _ = self.flight_state.payload_uart.write(b"N1\n").await;
                         log::info!("PAYLOAD: Sent N1 (Camera Deploy)");
+                        self.flight_state.packet.cmd_n1 = 1;
                     }
                 }
                 Command::N2 => {
                     let _ = self.flight_state.payload_uart.write(b"N2\n").await;
                     log::info!("PAYLOAD: Sent N2");
+                    self.flight_state.packet.cmd_n2 = 1;
                 }
                 Command::N3 => {
                     let _ = self.flight_state.payload_uart.write(b"N3\n").await;
                     log::info!("PAYLOAD: Sent N3");
                     self.n3_sent = true;
+                    self.flight_state.packet.cmd_n3 = 1;
                 }
                 Command::N4 => {
                     let _ = self.flight_state.payload_uart.write(b"N4\n").await;
                     log::info!("PAYLOAD: Sent N4");
                     self.n4_sent = true;
+                    self.flight_state.packet.cmd_n4 = 1;
                 }
                 Command::A1 => {
                     log::warn!("A1");
                     let _ = self.flight_state.payload_uart.write(b"A1\n").await;
+                    self.flight_state.packet.cmd_a1 = 1;
+                }
+                Command::A2 => {
+                    log::warn!("A2");
+                    let _ = self.flight_state.payload_uart.write(b"A2\n").await;
+                    self.flight_state.packet.cmd_a2 = 1;
+                }
+                Command::A3 => {
+                    log::warn!("A3");
+                    let _ = self.flight_state.payload_uart.write(b"A3\n").await;
+                    self.flight_state.packet.cmd_a3 = 1;
                 }
                 Command::ForceMode(mode_val) => {
                     log::warn!("CMD: Force Flight Mode {}", mode_val);
@@ -251,7 +266,7 @@ impl FlightLoop {
                     self.set_launch_command(true);
                 }
                 UmbilicalCommand::OpenMav => {
-                    // CHANGE THIS TO MAV DELAY LATER FOR WET DRESS
+                    // TODO: CHANGE THIS TO MAV DELAY LATER FOR WET DRESS
                     log::warn!("UMBILICAL CMD: Open MAV");
                     self.flight_state.open_mav(0).await; // 0 = no auto-close timer (manual close only)
                     self.mav_open = true;
@@ -316,21 +331,25 @@ impl FlightLoop {
                     ) {
                         let _ = self.flight_state.payload_uart.write(b"N1\n").await;
                         log::info!("UMBILICAL: Sent N1 (Camera Deploy)");
+                        self.flight_state.packet.cmd_n1 = 1;
                     }
                 }
                 UmbilicalCommand::PayloadN2 => {
                     let _ = self.flight_state.payload_uart.write(b"N2\n").await;
                     log::info!("UMBILICAL: Sent N2");
+                    self.flight_state.packet.cmd_n2 = 1;
                 }
                 UmbilicalCommand::PayloadN3 => {
                     let _ = self.flight_state.payload_uart.write(b"N3\n").await;
                     log::info!("UMBILICAL: Sent N3");
                     self.n3_sent = true;
+                    self.flight_state.packet.cmd_n3 = 1;
                 }
                 UmbilicalCommand::PayloadN4 => {
                     let _ = self.flight_state.payload_uart.write(b"N4\n").await;
                     log::info!("UMBILICAL: Sent N4");
                     self.n4_sent = true;
+                    self.flight_state.packet.cmd_n4 = 1;
                 }
             }
         }
@@ -388,15 +407,13 @@ impl FlightLoop {
                     }
                 }
                 self.umbilical_prev = self.flight_state.umbilical_connected;
-
                 if self.flight_state.altimeter_state == crate::state::SensorState::INVALID {
                     self.alt_armed = false;
                     self.flight_state.flight_mode = FlightMode::Fault;
-                    // self.flight_state.write_state_to_fram().await; // Note: cannot await inside check_transitions easily if not mut
+                    // self.flight_state.write_packet_to_fram().await; // Note: cannot await inside check_transitions easily if not mut
                     log::error!("Altimeter invalid at Startup; transitioning to Fault");
                     return;
                 }
-
                 if self.key_armed && self.flight_state.umbilical_connected {
                     if self.flight_state.altimeter_state == crate::state::SensorState::VALID {
                         // Record arming altitude (TODO: implement into storage)
@@ -420,7 +437,7 @@ impl FlightLoop {
                     // altimeter is not working
                     self.alt_armed = false;
                     self.flight_state.flight_mode = FlightMode::Fault;
-                    self.flight_state.write_state_to_fram().await;
+                    self.flight_state.write_packet_to_fram().await;
                     log::error!("Altimeter invalid at Standby; transitioning to Fault");
                     return;
                 }
@@ -495,7 +512,7 @@ impl FlightLoop {
                     // altimeter is not working
                     self.alt_armed = false;
                     self.flight_state.flight_mode = FlightMode::Fault;
-                    self.flight_state.write_state_to_fram().await;
+                    self.flight_state.write_packet_to_fram().await;
                     log::error!("Altimeter invalid at Ascent; transitioning to Fault");
                     return;
                 }
@@ -525,7 +542,7 @@ impl FlightLoop {
                     // altimeter is not working
                     self.alt_armed = false;
                     self.flight_state.flight_mode = FlightMode::Fault;
-                    self.flight_state.write_state_to_fram().await;
+                    self.flight_state.write_packet_to_fram().await;
                     log::error!("Altimeter invalid at Coast; transitioning to Fault");
                     return;
                 }
@@ -549,7 +566,11 @@ impl FlightLoop {
                     // and drive the ODrive RC PWM servo.
                     let deployment = crate::airbrake_task::get_deployment();
                     self.flight_state.airbrake_system.set_deployment(deployment);
+                    self.flight_state.packet.predicted_apogee = crate::airbrake_task::get_predicted_apogee();
                     log::info!("Airbrake deployment: {:.1}%", deployment * 100.0);
+                    if deployment > 0.0 && self.flight_state.packet.airbrake_state == 0 {
+                        self.flight_state.packet.airbrake_state = 1;
+                    }
 
                     // N2: vertical speed < 30 m/s for 0.5s
                     let vert_speed = (current_alt - self.last_alt) * 20.0;
@@ -560,6 +581,7 @@ impl FlightLoop {
                             let _ = self.flight_state.payload_uart.write(b"N2\n").await;
                             log::info!("PAYLOAD: Sent N2");
                             self.n2_sent = true;
+                            self.flight_state.packet.cmd_n2 = 1;
                         }
                     } else if vert_speed >= 30.0 {
                         self.n2_low_speed_time = None;
@@ -582,12 +604,14 @@ impl FlightLoop {
                         // Coast signals so it will hold at 0.0 deployment
                         self.flight_state.airbrake_system.retract();
                         self.airbrakes_init = false;
+                        self.flight_state.packet.airbrake_state = 2;
                         log::info!("Airbrakes retracted");
                         log::info!("Cameras deployed");
                         log::info!("Apogee reached at {:.2} m", self.filtered_alt[1]);
 
                         // Deploy Drogue
                         self.flight_state.trigger_drogue().await;
+                        self.flight_state.packet.ssa_drogue_deployed = 1;
 
                         // Override: Open SV on apogee if still in PostWait
                         if self.launch_sequence_stage == LaunchStage::PostWait {
@@ -610,7 +634,7 @@ impl FlightLoop {
                     // altimeter is not working
                     self.alt_armed = false;
                     self.flight_state.flight_mode = FlightMode::Fault;
-                    self.flight_state.write_state_to_fram().await;
+                    self.flight_state.write_packet_to_fram().await;
                     log::error!("Altimeter invalid at DrogueDeployed; transitioning to Fault");
                     return;
                 }
@@ -623,6 +647,7 @@ impl FlightLoop {
                         let _ = self.flight_state.payload_uart.write(b"N3\n").await;
                         log::info!("PAYLOAD: Sent N3");
                         self.n3_sent = true;
+                        self.flight_state.packet.cmd_n3 = 1;
                     }
                 } else if self.flight_state.packet.altitude >= 76.2 {
                     self.low_alt_time = None;
@@ -637,6 +662,7 @@ impl FlightLoop {
                         let _ = self.flight_state.payload_uart.write(b"N4\n").await;
                         log::info!("PAYLOAD: Sent N4");
                         self.n4_sent = true;
+                        self.flight_state.packet.cmd_n4 = 1;
                     }
                 }
 
@@ -646,6 +672,7 @@ impl FlightLoop {
                         if self.flight_state.read_altimeter() < constants::MAIN_DEPLOY_ALTITUDE {
                             // Deploy Main
                             self.flight_state.trigger_main().await;
+                            self.flight_state.packet.ssa_main_deployed = 1;
 
                             self.main_chutes_deployed = true;
                             log::info!("Main deployed");
@@ -661,7 +688,7 @@ impl FlightLoop {
                     // altimeter is not working
                     self.alt_armed = false;
                     self.flight_state.flight_mode = FlightMode::Fault;
-                    self.flight_state.write_state_to_fram().await;
+                    self.flight_state.write_packet_to_fram().await;
                     log::error!("Altimeter invalid at MainDeployed; transitioning to Fault");
                     return;
                 }
@@ -674,6 +701,7 @@ impl FlightLoop {
                         let _ = self.flight_state.payload_uart.write(b"N3\n").await;
                         log::info!("PAYLOAD: Sent N3");
                         self.n3_sent = true;
+                        self.flight_state.packet.cmd_n3 = 1;
                     }
                 } else if self.flight_state.packet.altitude >= 76.2 {
                     self.low_alt_time = None;
@@ -688,6 +716,7 @@ impl FlightLoop {
                         let _ = self.flight_state.payload_uart.write(b"N4\n").await;
                         log::info!("PAYLOAD: Sent N4");
                         self.n4_sent = true;
+                        self.flight_state.packet.cmd_n4 = 1;
                     }
                 }
 
@@ -713,7 +742,10 @@ impl FlightLoop {
                 if !self.fault_signal_sent {
                     if self.drogue_deployed {
                         match self.flight_state.payload_uart.write(b"A3\n").await {
-                            Ok(_) => log::warn!("A3 — fault after apogee"),
+                            Ok(_) => {
+                                log::warn!("A3 — fault after apogee");
+                                self.flight_state.packet.cmd_a3 = 1;
+                            }
                             Err(e) => log::error!("PAYLOAD UART write A3 failed: {:?}", e),
                         }
                     } else {
@@ -722,7 +754,10 @@ impl FlightLoop {
                         let mut buf = heapless::String::<32>::new();
                         let _ = core::fmt::write(&mut buf, format_args!("A2,{:.1},{:.1}\n", alt, vel));
                         match self.flight_state.payload_uart.write(buf.as_bytes()).await {
-                            Ok(_) => log::warn!("A2 — fault before apogee"),
+                            Ok(_) => {
+                                log::warn!("A2 — fault before apogee");
+                                self.flight_state.packet.cmd_a2 = 1;
+                            }
                             Err(e) => log::error!("PAYLOAD UART write A2 failed: {:?}", e),
                         }
                     }
