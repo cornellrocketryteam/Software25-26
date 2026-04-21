@@ -114,6 +114,10 @@ pub const MAIN_DEPLOY_ALTITUDE: f32 = 610.0;
 
 pub const MAIN_LOG_TIMEOUT_MS: u64 = 1_200_000; // 20 minutes
 
+/// Minimum altitude (m AGL) the rocket must exceed before the N2 velocity
+/// check is armed. Prevents false triggers during early coast.
+pub const N2_ARM_ALTITUDE_M: f32 = 500.0;
+
 pub const UMBILICAL_TIMEOUT_MS: u64 = 15_000; // 15 seconds
 pub const MAV_OPEN_DURATION_MS: u64 = 4000; // 4 seconds for L3 CHANGE FOR LV (7.88 seconds for LV)
 pub const LAUNCH_SV_PREVENT_MS: u64 = 5_000;  // 5 s pre-vent before closing SV

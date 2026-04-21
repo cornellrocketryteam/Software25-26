@@ -69,7 +69,7 @@ pub struct FlightLoop {
 
     // Payload Commands tracking
     low_alt_time: Option<Instant>,
-    n2_low_speed_time: Option<Instant>,
+    n2_low_speed_count: u8,
     n2_sent: bool,
     n3_sent: bool,
     n4_sent: bool,
@@ -118,7 +118,7 @@ impl FlightLoop {
             launch_sequence_stage: LaunchStage::None,
             launch_stage_start_time: None,
             low_alt_time: None,
-            n2_low_speed_time: None,
+            n2_low_speed_count: 0,
             n2_sent: false,
             n3_sent: false,
             n4_sent: false,
@@ -560,8 +560,10 @@ impl FlightLoop {
                 }
 
                 if self.flight_state.altimeter_state == SensorState::VALID && self.alt_armed {
+                    // Capture oldest value (≈0.5 s ago at 20 Hz) before overwrite
+                    let alt_half_sec_ago = self.alt_buffer[self.alt_index];
                     // Remove old value from sum
-                    self.alt_sum -= self.alt_buffer[self.alt_index];
+                    self.alt_sum -= alt_half_sec_ago;
                     // Read new value
                     let current_alt = self.flight_state.read_altimeter();
                     self.alt_buffer[self.alt_index] = current_alt;
@@ -574,8 +576,8 @@ impl FlightLoop {
                     }
                     let avg_alt = self.alt_sum / 10.0;
 
-                    // Read latest airbrake deployment from Core 1 (non-blocking)
-                    // and drive the ODrive RC PWM servo.
+                    // Read latest airbrake deployment from Core 1
+                    // and drive the ODrive RC PWM servo
                     let deployment = crate::airbrake_task::get_deployment();
                     self.flight_state.airbrake_system.set_deployment(deployment);
                     self.flight_state.packet.predicted_apogee = crate::airbrake_task::get_predicted_apogee();
@@ -584,19 +586,21 @@ impl FlightLoop {
                         self.flight_state.packet.airbrake_state = 1;
                     }
 
-                    // N2: vertical speed < 30 m/s for 0.5s
-                    let vert_speed = (current_alt - self.last_alt) * 20.0;
-                    if vert_speed < 30.0 && !self.n2_sent {
-                        if self.n2_low_speed_time.is_none() {
-                            self.n2_low_speed_time = Some(Instant::now());
-                        } else if self.n2_low_speed_time.unwrap().elapsed().as_millis() >= 500 {
-                            let _ = self.flight_state.payload_uart.write(b"N2\n").await;
-                            log::info!("PAYLOAD: Sent N2");
-                            self.n2_sent = true;
-                            self.flight_state.packet.cmd_n2 = 1;
+                    // N2: vertical speed < 50 ft/s for 5 consecutive loops, only above arming altitude
+                    // Slope over 0.5 s (10 loops) smooths altimeter noise vs. frame-to-frame diff
+                    let vert_speed_ft_s = (current_alt - alt_half_sec_ago) * 2.0 * 3.28084;
+                    if current_alt > constants::N2_ARM_ALTITUDE_M && !self.n2_sent {
+                        if vert_speed_ft_s < 50.0 {
+                            self.n2_low_speed_count += 1;
+                            if self.n2_low_speed_count >= 5 {
+                                let _ = self.flight_state.payload_uart.write(b"N2\n").await;
+                                log::info!("PAYLOAD: Sent N2 (vert={:.1} ft/s)", vert_speed_ft_s);
+                                self.n2_sent = true;
+                                self.flight_state.packet.cmd_n2 = 1;
+                            }
+                        } else {
+                            self.n2_low_speed_count = 0;
                         }
-                    } else if vert_speed >= 30.0 {
-                        self.n2_low_speed_time = None;
                     }
 
                     // Apogee detection
