@@ -63,12 +63,16 @@ pub struct BlimsDataIn {
 /// Control outputs returned from Blims::execute() every cycle.
 #[derive(Clone, Copy, Default, Debug)]
 pub struct BlimsDataOut {
-    pub motor_position: f32, // 0.3–0.7; 0.5 = neutral
+    pub motor_position: f32,    // 0.3–0.7; 0.5 = neutral
     pub pid_p: f32,
     pub pid_i: f32,
-    pub bearing: f32,    // bearing to target, degrees [0, 360)
-    pub phase_id: i8,    // Phase as integer (0–6)
-    pub loiter_step: i8, // LoiterStep as integer (0–3); 0 outside Loiter
+    pub bearing: f32,           // bearing to target, degrees [0, 360)
+    pub phase_id: i8,           // Phase as integer (0–6)
+    pub loiter_step: i8,        // LoiterStep as integer (0–3); 0 outside Loiter
+    pub heading_des: f32,       // desired heading, degrees [0, 360)
+    pub heading_error: f32,     // error in (−180, 180]
+    pub error_integral: f32,    // PI integral accumulator
+    pub dist_to_target_m: f32,  // distance to landing target, metres
 }
 
 // ============================================================================

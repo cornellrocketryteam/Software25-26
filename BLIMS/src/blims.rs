@@ -92,6 +92,8 @@ pub struct Blims<'d> {
     error_integral: f32,
     pid_p: f32,
     pid_i: f32,
+    heading_des:   f32,
+    heading_error: f32,
 
     // ── Phase / motor state ──────────────────────────────────────────────────
     last_phase:     Phase,
@@ -141,6 +143,8 @@ impl<'d> Blims<'d> {
             error_integral: 0.0,
             pid_p: 0.0,
             pid_i: 0.0,
+            heading_des:   0.0,
+            heading_error: 0.0,
             last_phase:     Phase::Held,
             bearing:        0.0,
             motor_position: NEUTRAL_POS,
@@ -242,6 +246,8 @@ impl<'d> Blims<'d> {
                 );
                 // headMot is degrees × 1e5 → convert to degrees
                 let current_heading = self.head_mot as f32 * 1e-5;
+                self.heading_des = desired;
+                self.heading_error = Self::compute_heading_error(desired, current_heading);
                 self.execute_pi_control(desired, current_heading, dt);
             }
         }
@@ -254,12 +260,16 @@ impl<'d> Blims<'d> {
             .unwrap_or(0);
 
         BlimsDataOut {
-            motor_position: self.motor_position,
-            pid_p:          self.pid_p,
-            pid_i:          self.pid_i,
-            bearing:        self.bearing,
-            phase_id:       current_phase as i8,
-            loiter_step:    loiter_step_id,
+            motor_position:   self.motor_position,
+            pid_p:            self.pid_p,
+            pid_i:            self.pid_i,
+            bearing:          self.bearing,
+            phase_id:         current_phase as i8,
+            loiter_step:      loiter_step_id,
+            heading_des:      self.heading_des,
+            heading_error:    self.heading_error,
+            error_integral:   self.error_integral,
+            dist_to_target_m: self.calculate_distance_to_target(),
         }
     }
 
