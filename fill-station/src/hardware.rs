@@ -59,9 +59,9 @@ impl Hardware {
 
         // QD Stepper (STEP via GPIO bit-bang, DIR/ENA via GPIO)
         let qd_stepper = QdStepper::new(
-            &chip1, 64,   // STEP: gpiochip2, line 64 (GPIO1_64, No Pull)
+            &chip1, 58,   // STEP: gpiochip2, line 64 (GPIO1_64, No Pull)
             &chip1, 43,   // DIR:  gpiochip2, line 43 (GPIO1_43, Pull Down)
-            &chip1, 58,   // ENA:  gpiochip2, line 58 (GPIO1_58, Pull Down)
+            &chip1, 64,   // ENA:  gpiochip2, line 58 (GPIO1_58, Pull Down)
             "QD"
         ).await?;
 
