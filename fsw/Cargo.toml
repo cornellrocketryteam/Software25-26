@@ -28,6 +28,7 @@ embedded-hal-bus = { version = "0.2", features = ["async"] }
 bmp390-rs = { version = "0.4.0", features = ["uom"] }
 libm = "0.2.16"
 controller_in_rust = { path = "../air-brake-controls/controller_in_rust_v2", default-features = false }
+blims = { path = "../BLIMS", default-features = false }
 
 [features]
 default = []

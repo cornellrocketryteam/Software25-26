@@ -158,6 +158,9 @@ async fn main(spawner: Spawner) {
     // Reset FRAM for testing (COMMENT OUT FOR REAL FLIGHT)
     //flight_state.reset_fram().await;
 
+    // BLiMS: GPIO 34 = enable, GPIO 35 = PWM (PWM_SLICE5B, 50 Hz)
+    let blims = module::init_blims(p.PIN_34, p.PWM_SLICE9, p.PIN_35);
+
     // --- FLIGHT SIMULATIONS --- //
     #[cfg(any(
         feature = "sim_simple",
@@ -696,6 +699,7 @@ async fn main(spawner: Spawner) {
     )))]
     {
         let mut flight_loop = flight_loop::FlightLoop::new(flight_state);
+        flight_loop.set_blims(blims);
         log::info!("FLIGHT LOOP: FlightLoop created, starting watchdog...");
         let mut watchdog = Watchdog::new(p.WATCHDOG);
         watchdog.start(Duration::from_millis(constants::WATCHDOG_TIMEOUT_MS as u64));

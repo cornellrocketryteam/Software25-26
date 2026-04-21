@@ -1,6 +1,8 @@
 use core::f32;
 use embassy_time::Instant;
 
+use blims::blims_state::BlimsDataIn;
+
 use crate::airbrake_task::{AirbrakeInput, AirbrakePhase, AIRBRAKE_INPUT};
 use crate::constants;
 use crate::state::SensorState;
@@ -35,6 +37,9 @@ pub struct FlightLoop {
     pub main_chutes_deployed: bool,
     pub blims_armed: bool,
     pub log_armed: bool,
+
+    // BLiMS parafoil guidance system (None until hardware is wired)
+    blims: Option<blims::Blims<'static>>,
 
     // Internal state tracking
     alt_buffer: [f32; 10],
@@ -88,6 +93,7 @@ impl FlightLoop {
             main_chutes_deployed: false,
             blims_armed: false,
             log_armed: false,
+            blims: None,
 
             // Initialize internal state
             alt_buffer: [0.0; 10],
@@ -653,19 +659,6 @@ impl FlightLoop {
                     self.low_alt_time = None;
                 }
 
-                // N4: any accel axis > 30 m/s²
-                if !self.n4_sent {
-                    let ax = self.flight_state.packet.accel_x;
-                    let ay = self.flight_state.packet.accel_y;
-                    let az = self.flight_state.packet.accel_z;
-                    if ax.abs() > 30.0 || ay.abs() > 30.0 || az.abs() > 30.0 {
-                        let _ = self.flight_state.payload_uart.write(b"N4\n").await;
-                        log::info!("PAYLOAD: Sent N4");
-                        self.n4_sent = true;
-                        self.flight_state.packet.cmd_n4 = 1;
-                    }
-                }
-
                 // Get time since entry
                 if let Some(entry_time) = self.drogue_entry_time {
                     if entry_time.elapsed().as_millis() >= constants::MAIN_DEPLOY_DELAY_MS {
@@ -707,12 +700,12 @@ impl FlightLoop {
                     self.low_alt_time = None;
                 }
 
-                // N4: any accel axis > 30 m/s²
+                // N4: any accel axis > 50 m/s²
                 if !self.n4_sent {
                     let ax = self.flight_state.packet.accel_x;
                     let ay = self.flight_state.packet.accel_y;
                     let az = self.flight_state.packet.accel_z;
-                    if ax.abs() > 30.0 || ay.abs() > 30.0 || az.abs() > 30.0 {
+                    if ax.abs() > 50.0 || ay.abs() > 50.0 || az.abs() > 50.0 {
                         let _ = self.flight_state.payload_uart.write(b"N4\n").await;
                         log::info!("PAYLOAD: Sent N4");
                         self.n4_sent = true;
@@ -731,11 +724,47 @@ impl FlightLoop {
                     }
                 }
 
-                // TODO: Initiate BLiMS
-                if !self.blims_armed {
-                    // blims.initiate();
-                    self.blims_armed = true;
-                    log::info!("BLiMS initiated");
+                // BLiMS
+                if let Some(blims) = &mut self.blims {
+                    // One-time target set on first entry to MainDeployed
+                    if !self.blims_armed {
+                        blims.set_target(
+                            // TODO: replace with actual landing-zone latitude
+                            42.696969_f32,
+                            // TODO: replace with actual landing-zone longitude
+                            -42.696969_f32,
+                        );
+                        self.blims_armed = true;
+                        log::info!("BLiMS: target set, guidance active");
+                    }
+
+                    // Build sensor input from the current telemetry packet
+                    let data_in = BlimsDataIn {
+                        // GPS lat/lon from gps
+                        lat: (self.flight_state.packet.latitude * 1e7_f32) as i32,
+                        lon: (self.flight_state.packet.longitude * 1e7_f32) as i32,
+
+                        // Barometric altitude converted to feet
+                        altitude_ft: self.flight_state.packet.altitude * 3.28084_f32,
+
+                        // GPS validity: assume 3D fix when satellites are visible
+                        // TODO: parse fix_type directly from gps
+                        fix_type: if self.flight_state.packet.num_satellites > 0 { 3 } else { 0 },
+                        gps_state: self.flight_state.packet.num_satellites > 0,
+
+                        // TODO: parse the following fields from gps
+                        head_mot: 0,  // heading of motion
+                        vel_n:    0,  // north velocity (m/s)
+                        vel_e:    0,  // east  velocity (m/s)
+                        vel_d:    0,  // down  velocity (m/s, positive = descending)
+                        g_speed:  0,  // ground speed   (m/s)
+                        h_acc:    0,  // horizontal acceleration (m/s²)
+                        v_acc:    0,  // vertical acceleration (m/s²) ?
+                        s_acc:    0,  // speed acceleration (m/s²) ?
+                        head_acc: 0,  // heading acceleration (m/s²) ?
+                    };
+
+                    let _out = blims.execute(&data_in);
                 }
             }
             FlightMode::Fault => {
@@ -794,6 +823,14 @@ impl FlightLoop {
 
     pub fn set_altimeter_state(&mut self, state: SensorState) {
         self.flight_state.altimeter_state = state;
+    }
+
+    /// Call this once after creating FlightLoop, once the BLiMS hardware is wired up.
+    /// Example (in main.rs):
+    ///   let blims = module::init_blims(p.PIN_XX, p.PWM_SLICEXX, p.PIN_XX);
+    ///   flight_loop.set_blims(blims);
+    pub fn set_blims(&mut self, blims: blims::Blims<'static>) {
+        self.blims = Some(blims);
     }
 
     pub fn set_airbrakes(&mut self, armed: bool) {
