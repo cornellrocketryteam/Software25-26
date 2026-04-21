@@ -134,6 +134,49 @@ impl FlightState {
         let fram_to = Duration::from_millis(constants::FRAM_TIMEOUT_MS);
         let flash_to = Duration::from_millis(constants::FLASH_TIMEOUT_MS);
 
+        // Initialize flash FIRST on a clean SPI/DMA bus. BMP390 init runs many
+        // DMA transactions (calibration reads, soft reset, config writes) that
+        // can leave the SPI/DMA engine in a state where 256-byte page reads hang.
+        // Running the flash binary-search scan before BMP390 avoids this.
+        let flash_ok = match with_timeout(
+            Duration::from_millis(constants::SENSOR_INIT_TIMEOUT_MS),
+            flash.initialize_logging(),
+        ).await {
+            Ok(Ok(_)) => {
+                log::info!("QSPI Flash logging initialized.");
+                true
+            }
+            Ok(Err(e)) => {
+                log::error!("Failed to initialize QSPI Flash logging: {:?}", e);
+                false
+            }
+            Err(_) => {
+                log::error!("QSPI Flash init TIMEOUT");
+                false
+            }
+        };
+        flash.flash_ok = flash_ok;
+
+        // Attempt to read the last packet state from Onboard QSPI Flash
+        if flash_ok {
+            match with_timeout(flash_to, flash.read_packet()).await {
+                Ok(Ok(recovered_packet)) => {
+                    if recovered_packet.flight_mode <= (FlightMode::Fault as u32) {
+                        log::info!("Successfully recovered previous packet from QSPI Flash.");
+                        packet = recovered_packet;
+                    } else {
+                        log::info!("QSPI Flash data appears uninitialized or invalid.");
+                    }
+                }
+                Ok(Err(_)) => {
+                    log::warn!("Failed to recover packet from QSPI Flash.");
+                }
+                Err(_) => {
+                    log::warn!("QSPI Flash recover-packet TIMEOUT");
+                }
+            }
+        }
+
         log::info!("STATE: Initializing altimeter (BMP390)...");
         let altimeter = match with_timeout(init_to, Bmp390Sensor::new(spi_bus, altimeter_cs)).await {
             Ok(s) => s,
@@ -149,11 +192,7 @@ impl FlightState {
             log::error!("STATE: Altimeter FAILED — flight will fault");
             SensorState::INVALID
         };
-        // Give the SPI DMA engine time to settle after BMP390 init. When the
-        // BMP390 is present, new_spi() runs many DMA transactions (calibration
-        // reads, config writes, soft reset). Without this delay, the subsequent
-        // flash binary-search page reads (256 bytes via DMA) can hang.
-        embassy_time::Timer::after_millis(20).await;
+
         log::info!("STATE: Initializing FRAM...");
         let mut fram = Fram::new(spi_bus, fram_cs);
         log::info!("STATE: FRAM ready");
@@ -231,45 +270,6 @@ impl FlightState {
                 (FlightMode::Startup, 0)
             }
         };
-
-        let flash_ok = match with_timeout(
-            Duration::from_millis(constants::SENSOR_INIT_TIMEOUT_MS),
-            flash.initialize_logging(),
-        ).await {
-            Ok(Ok(_)) => {
-                log::info!("QSPI Flash logging initialized.");
-                true
-            }
-            Ok(Err(e)) => {
-                log::error!("Failed to initialize QSPI Flash logging: {:?}", e);
-                false
-            }
-            Err(_) => {
-                log::error!("QSPI Flash init TIMEOUT");
-                false
-            }
-        };
-        flash.flash_ok = flash_ok;
-
-        // Attempt to read the last packet state from Onboard QSPI Flash
-        if flash_ok {
-            match with_timeout(flash_to, flash.read_packet()).await {
-                Ok(Ok(recovered_packet)) => {
-                    if recovered_packet.flight_mode <= (FlightMode::Fault as u32) {
-                        log::info!("Successfully recovered previous packet from QSPI Flash.");
-                        packet = recovered_packet;
-                    } else {
-                        log::info!("QSPI Flash data appears uninitialized or invalid.");
-                    }
-                }
-                Ok(Err(_)) => {
-                    log::warn!("Failed to recover packet from QSPI Flash.");
-                }
-                Err(_) => {
-                    log::warn!("QSPI Flash recover-packet TIMEOUT");
-                }
-            }
-        }
 
         Self {
             packet: packet,
