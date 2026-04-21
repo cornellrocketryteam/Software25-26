@@ -56,10 +56,38 @@ pub struct Packet {
     pub airbrake_state: u8,
     // airbrake controller output
     pub predicted_apogee: f32,
+    pub h_acc: u32,    // horizontal accuracy (mm)
+    pub v_acc: u32,    // vertical accuracy (mm)
+    pub vel_n: f64,    // north velocity (m/s)
+    pub vel_e: f64,    // east  velocity (m/s)
+    pub vel_d: f64,    // down  velocity (m/s, positive = descending)
+    pub g_speed: f64,  // ground speed (m/s)
+    pub s_acc: u32,    // speed accuracy (mm/s)
+    pub head_acc: u32, // heading accuracy (deg*1e5)
+    pub fix_type: u8,  // 0=none, 2=2D, 3=3D, 4=3D+DGPS
+    pub head_mot: i32, // heading of motion (deg*1e5)
+    // BLiMS outputs
+    pub blims_motor_position: f32,
+    pub blims_phase_id: i8,
+    pub blims_pid_p: f32,
+    pub blims_pid_i: f32,
+    pub blims_bearing: f32,
+    pub blims_loiter_step: i8,
+    pub blims_heading_des: f32,
+    pub blims_heading_error: f32,
+    pub blims_error_integral: f32,
+    pub blims_dist_to_target_m: f32,
+    // BLiMS config
+    pub blims_target_lat: f32,
+    pub blims_target_lon: f32,
+    pub blims_wind_from_deg: f32,
 }
 
 impl Packet {
-    pub const SIZE: usize = 96;
+    // 149 GPS fields + 4(motor_pos) + 1(phase_id) + 4(pid_p) + 4(pid_i) + 4(bearing)
+    //               + 1(loiter_step) + 4(heading_des) + 4(heading_error) + 4(error_integral)
+    //               + 4(dist_to_target) + 4(target_lat) + 4(target_lon) + 4(wind_from_deg) = 195
+    pub const SIZE: usize = 195;
 
     pub fn to_bytes(&self) -> [u8; Self::SIZE] {
         let mut data = [0u8; Self::SIZE];
@@ -96,6 +124,29 @@ impl Packet {
         data[90] = self.cmd_a3;
         data[91] = self.airbrake_state;
         data[92..96].copy_from_slice(&self.predicted_apogee.to_le_bytes());
+        data[96..100].copy_from_slice(&self.h_acc.to_le_bytes());
+        data[100..104].copy_from_slice(&self.v_acc.to_le_bytes());
+        data[104..112].copy_from_slice(&self.vel_n.to_le_bytes());
+        data[112..120].copy_from_slice(&self.vel_e.to_le_bytes());
+        data[120..128].copy_from_slice(&self.vel_d.to_le_bytes());
+        data[128..136].copy_from_slice(&self.g_speed.to_le_bytes());
+        data[136..140].copy_from_slice(&self.s_acc.to_le_bytes());
+        data[140..144].copy_from_slice(&self.head_acc.to_le_bytes());
+        data[144] = self.fix_type;
+        data[145..149].copy_from_slice(&self.head_mot.to_le_bytes());
+        data[149..153].copy_from_slice(&self.blims_motor_position.to_le_bytes());
+        data[153] = self.blims_phase_id as u8;
+        data[154..158].copy_from_slice(&self.blims_pid_p.to_le_bytes());
+        data[158..162].copy_from_slice(&self.blims_pid_i.to_le_bytes());
+        data[162..166].copy_from_slice(&self.blims_bearing.to_le_bytes());
+        data[166] = self.blims_loiter_step as u8;
+        data[167..171].copy_from_slice(&self.blims_heading_des.to_le_bytes());
+        data[171..175].copy_from_slice(&self.blims_heading_error.to_le_bytes());
+        data[175..179].copy_from_slice(&self.blims_error_integral.to_le_bytes());
+        data[179..183].copy_from_slice(&self.blims_dist_to_target_m.to_le_bytes());
+        data[183..187].copy_from_slice(&self.blims_target_lat.to_le_bytes());
+        data[187..191].copy_from_slice(&self.blims_target_lon.to_le_bytes());
+        data[191..195].copy_from_slice(&self.blims_wind_from_deg.to_le_bytes());
         data
     }
 
@@ -138,17 +189,40 @@ impl Packet {
             cmd_a3: bytes[90],
             airbrake_state: bytes[91],
             predicted_apogee: f32::from_le_bytes(bytes[92..96].try_into().unwrap()),
+            h_acc:     u32::from_le_bytes(bytes[96..100].try_into().unwrap()),
+            v_acc:     u32::from_le_bytes(bytes[100..104].try_into().unwrap()),
+            vel_n:     f64::from_le_bytes(bytes[104..112].try_into().unwrap()),
+            vel_e:     f64::from_le_bytes(bytes[112..120].try_into().unwrap()),
+            vel_d:     f64::from_le_bytes(bytes[120..128].try_into().unwrap()),
+            g_speed:   f64::from_le_bytes(bytes[128..136].try_into().unwrap()),
+            s_acc:     u32::from_le_bytes(bytes[136..140].try_into().unwrap()),
+            head_acc:  u32::from_le_bytes(bytes[140..144].try_into().unwrap()),
+            fix_type:  bytes[144],
+            head_mot:  i32::from_le_bytes(bytes[145..149].try_into().unwrap()),
+            blims_motor_position:   f32::from_le_bytes(bytes[149..153].try_into().unwrap()),
+            blims_phase_id:         bytes[153] as i8,
+            blims_pid_p:            f32::from_le_bytes(bytes[154..158].try_into().unwrap()),
+            blims_pid_i:            f32::from_le_bytes(bytes[158..162].try_into().unwrap()),
+            blims_bearing:          f32::from_le_bytes(bytes[162..166].try_into().unwrap()),
+            blims_loiter_step:      bytes[166] as i8,
+            blims_heading_des:      f32::from_le_bytes(bytes[167..171].try_into().unwrap()),
+            blims_heading_error:    f32::from_le_bytes(bytes[171..175].try_into().unwrap()),
+            blims_error_integral:   f32::from_le_bytes(bytes[175..179].try_into().unwrap()),
+            blims_dist_to_target_m: f32::from_le_bytes(bytes[179..183].try_into().unwrap()),
+            blims_target_lat:       f32::from_le_bytes(bytes[183..187].try_into().unwrap()),
+            blims_target_lon:       f32::from_le_bytes(bytes[187..191].try_into().unwrap()),
+            blims_wind_from_deg:    f32::from_le_bytes(bytes[191..195].try_into().unwrap()),
         }
     }
 
-    pub const CSV_HEADER: &'static str = "flight_mode,pressure,temp,altitude,latitude,longitude,num_satellites,timestamp,mag_x,mag_y,mag_z,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,pt3,pt4,rtd,sv_open,mav_open,ssa_drogue_deployed,ssa_main_deployed,cmd_n1,cmd_n2,cmd_n3,cmd_n4,cmd_a1,cmd_a2,cmd_a3,airbrake_state,predicted_apogee\n";
+    pub const CSV_HEADER: &'static str = "flight_mode,pressure,temp,altitude,latitude,longitude,num_satellites,timestamp,mag_x,mag_y,mag_z,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,pt3,pt4,rtd,sv_open,mav_open,ssa_drogue_deployed,ssa_main_deployed,cmd_n1,cmd_n2,cmd_n3,cmd_n4,cmd_a1,cmd_a2,cmd_a3,airbrake_state,predicted_apogee,h_acc,v_acc,vel_n,vel_e,vel_d,g_speed,s_acc,head_acc,fix_type,head_mot,blims_motor_position,blims_phase_id,blims_pid_p,blims_pid_i,blims_bearing,blims_loiter_step,blims_heading_des,blims_heading_error,blims_error_integral,blims_dist_to_target_m,blims_target_lat,blims_target_lon,blims_wind_from_deg\n";
 
     pub fn to_csv(&self, buf: &mut [u8]) -> usize {
         use core::fmt::Write;
         let mut wrapper = WriteWrapper::new(buf);
         let _ = write!(
             wrapper,
-            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
             self.flight_mode,
             self.pressure,
             self.temp,
@@ -181,7 +255,30 @@ impl Packet {
             self.cmd_a2,
             self.cmd_a3,
             self.airbrake_state,
-            self.predicted_apogee
+            self.predicted_apogee,
+            self.h_acc,
+            self.v_acc,
+            self.vel_n,
+            self.vel_e,
+            self.vel_d,
+            self.g_speed,
+            self.s_acc,
+            self.head_acc,
+            self.fix_type,
+            self.head_mot,
+            self.blims_motor_position,
+            self.blims_phase_id,
+            self.blims_pid_p,
+            self.blims_pid_i,
+            self.blims_bearing,
+            self.blims_loiter_step,
+            self.blims_heading_des,
+            self.blims_heading_error,
+            self.blims_error_integral,
+            self.blims_dist_to_target_m,
+            self.blims_target_lat,
+            self.blims_target_lon,
+            self.blims_wind_from_deg,
         );
         wrapper.offset
     }

@@ -230,6 +230,17 @@ where
                                 + (pvt.sec() as f32);
 
                             found_packet = true;
+                            packet.h_acc     = pvt.horiz_accuracy();
+                            packet.v_acc     = pvt.vert_accuracy();
+                            packet.vel_n     = pvt.vel_north();
+                            packet.vel_e     = pvt.vel_east();
+                            packet.vel_d     = pvt.vel_down();
+                            packet.g_speed   = pvt.ground_speed() as f64;
+                            packet.s_acc     = pvt.speed_accuracy_estimate() as u32;
+                            packet.head_acc  = pvt.heading_accuracy_estimate() as u32;
+                            packet.fix_type  = pvt.fix_type() as u8;
+                            // heading of motion: ublox gives degrees, BlimsDataIn wants deg*1e5
+                            packet.head_mot  = (pvt.heading_degrees() * 1e5) as i32;
                         }
                         _ => {
                             // Ignore other packet types

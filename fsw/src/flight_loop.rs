@@ -40,6 +40,9 @@ pub struct FlightLoop {
 
     // BLiMS parafoil guidance system (None until hardware is wired)
     blims: Option<blims::Blims<'static>>,
+    blims_target_lat: f32,
+    blims_target_lon: f32,
+    blims_wind_from_deg: f32,
 
     // Internal state tracking
     alt_buffer: [f32; 10],
@@ -94,6 +97,9 @@ impl FlightLoop {
             blims_armed: false,
             log_armed: false,
             blims: None,
+            blims_target_lat: 0.0,
+            blims_target_lon: 0.0,
+            blims_wind_from_deg: 0.0,
 
             // Initialize internal state
             alt_buffer: [0.0; 10],
@@ -734,37 +740,45 @@ impl FlightLoop {
                             // TODO: replace with actual landing-zone longitude
                             -42.696969_f32,
                         );
+                        self.blims_target_lat = 42.696969_f32;
+                        self.blims_target_lon = -42.696969_f32;
                         self.blims_armed = true;
                         log::info!("BLiMS: target set, guidance active");
                     }
 
-                    // Build sensor input from the current telemetry packet
+                    let p = &self.flight_state.packet;
                     let data_in = BlimsDataIn {
-                        // GPS lat/lon from gps
-                        lat: (self.flight_state.packet.latitude * 1e7_f32) as i32,
-                        lon: (self.flight_state.packet.longitude * 1e7_f32) as i32,
-
-                        // Barometric altitude converted to feet
-                        altitude_ft: self.flight_state.packet.altitude * 3.28084_f32,
-
-                        // GPS validity: assume 3D fix when satellites are visible
-                        // TODO: parse fix_type directly from gps
-                        fix_type: if self.flight_state.packet.num_satellites > 0 { 3 } else { 0 },
-                        gps_state: self.flight_state.packet.num_satellites > 0,
-
-                        // TODO: parse the following fields from gps
-                        head_mot: 0,  // heading of motion
-                        vel_n:    0,  // north velocity (m/s)
-                        vel_e:    0,  // east  velocity (m/s)
-                        vel_d:    0,  // down  velocity (m/s, positive = descending)
-                        g_speed:  0,  // ground speed   (m/s)
-                        h_acc:    0,  // horizontal acceleration (m/s²)
-                        v_acc:    0,  // vertical acceleration (m/s²) ?
-                        s_acc:    0,  // speed acceleration (m/s²) ?
-                        head_acc: 0,  // heading acceleration (m/s²) ?
+                        lat:         (p.latitude  * 1e7_f32) as i32,
+                        lon:         (p.longitude * 1e7_f32) as i32,
+                        altitude_ft:  p.altitude * 3.28084_f32,
+                        fix_type:     p.fix_type,
+                        gps_state:    p.num_satellites > 0,
+                        head_mot:     p.head_mot,
+                        vel_n:        p.vel_n as i32,
+                        vel_e:        p.vel_e as i32,
+                        vel_d:        p.vel_d as i32,
+                        g_speed:      p.g_speed as i32,
+                        h_acc:        p.h_acc,
+                        v_acc:        p.v_acc,
+                        s_acc:        p.s_acc,
+                        head_acc:     p.head_acc,
                     };
 
-                    let _out = blims.execute(&data_in);
+                    let out = blims.execute(&data_in);
+                    let p = &mut self.flight_state.packet;
+                    p.blims_motor_position   = out.motor_position;
+                    p.blims_phase_id         = out.phase_id;
+                    p.blims_pid_p            = out.pid_p;
+                    p.blims_pid_i            = out.pid_i;
+                    p.blims_bearing          = out.bearing;
+                    p.blims_loiter_step      = out.loiter_step;
+                    p.blims_heading_des      = out.heading_des;
+                    p.blims_heading_error    = out.heading_error;
+                    p.blims_error_integral   = out.error_integral;
+                    p.blims_dist_to_target_m = out.dist_to_target_m;
+                    p.blims_target_lat       = self.blims_target_lat;
+                    p.blims_target_lon       = self.blims_target_lon;
+                    p.blims_wind_from_deg    = self.blims_wind_from_deg;
                 }
             }
             FlightMode::Fault => {
@@ -825,10 +839,6 @@ impl FlightLoop {
         self.flight_state.altimeter_state = state;
     }
 
-    /// Call this once after creating FlightLoop, once the BLiMS hardware is wired up.
-    /// Example (in main.rs):
-    ///   let blims = module::init_blims(p.PIN_XX, p.PWM_SLICEXX, p.PIN_XX);
-    ///   flight_loop.set_blims(blims);
     pub fn set_blims(&mut self, blims: blims::Blims<'static>) {
         self.blims = Some(blims);
     }
