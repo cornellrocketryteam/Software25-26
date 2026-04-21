@@ -57,6 +57,7 @@ pub enum UmbilicalCommand {
     PayloadN2,
     PayloadN3,
     PayloadN4,
+    FaultMode,
 }
 
 /// Command channel: receiver task pushes commands, flight loop polls them.
@@ -328,6 +329,7 @@ async fn usb_receiver_task(mut receiver: Receiver<'static, UsbDriver>) -> ! {
                 b"<2>" => Some(UmbilicalCommand::PayloadN2),
                 b"<3>" => Some(UmbilicalCommand::PayloadN3),
                 b"<4>" => Some(UmbilicalCommand::PayloadN4),
+                b"<X>" => Some(UmbilicalCommand::FaultMode),
                 _ => None,
             };
 

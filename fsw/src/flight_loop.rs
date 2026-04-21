@@ -363,6 +363,10 @@ impl FlightLoop {
                     self.n4_sent = true;
                     self.flight_state.packet.cmd_n4 = 1;
                 }
+                UmbilicalCommand::FaultMode => {
+                    log::warn!("UMBILICAL CMD: Force Fault Mode");
+                    self.flight_state.trigger_fault().await;
+                }
             }
         }
     }

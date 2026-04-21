@@ -149,6 +149,11 @@ impl FlightState {
             log::error!("STATE: Altimeter FAILED — flight will fault");
             SensorState::INVALID
         };
+        // Give the SPI DMA engine time to settle after BMP390 init. When the
+        // BMP390 is present, new_spi() runs many DMA transactions (calibration
+        // reads, config writes, soft reset). Without this delay, the subsequent
+        // flash binary-search page reads (256 bytes via DMA) can hang.
+        embassy_time::Timer::after_millis(20).await;
         log::info!("STATE: Initializing FRAM...");
         let mut fram = Fram::new(spi_bus, fram_cs);
         log::info!("STATE: FRAM ready");
@@ -168,31 +173,26 @@ impl FlightState {
             }
         };
 
-        // Only init I2C sensors if GPS succeeded — a GPS NACK can leave SDA stuck low,
-        // hanging all subsequent I2C transactions indefinitely.
-        let (imu, adc) = if gps_ok {
-            log::info!("STATE: Initializing IMU (LSM6DSOX)...");
-            let imu = match with_timeout(init_to, Lsm6dsoxSensor::new(i2c_bus)).await {
-                Ok(s) => s,
-                Err(_) => {
-                    log::error!("STATE: IMU init TIMEOUT — marking unavailable");
-                    Lsm6dsoxSensor::unavailable(i2c_bus)
-                }
-            };
-            log::info!("STATE: Initializing ADC (ADS1015)...");
-            let adc = match with_timeout(init_to, Ads1015Sensor::new(i2c_bus)).await {
-                Ok(s) => s,
-                Err(_) => {
-                    log::error!("STATE: ADC init TIMEOUT — marking unavailable");
-                    Ads1015Sensor::unavailable(i2c_bus)
-                }
-            };
-            log::info!("STATE: IMU and ADC init complete");
-            (imu, adc)
-        } else {
-            log::warn!("STATE: Skipping IMU/ADC — GPS failure may have left I2C bus locked");
-            (Lsm6dsoxSensor::unavailable(i2c_bus), Ads1015Sensor::unavailable(i2c_bus))
+        // Always attempt IMU/ADC init regardless of GPS result. Each is wrapped
+        // in a timeout so a locked I2C bus (SDA stuck low) at worst adds 500ms
+        // per sensor — it will not hang. GPS failure does not affect flight logic.
+        log::info!("STATE: Initializing IMU (LSM6DSOX)...");
+        let imu = match with_timeout(init_to, Lsm6dsoxSensor::new(i2c_bus)).await {
+            Ok(s) => s,
+            Err(_) => {
+                log::error!("STATE: IMU init TIMEOUT — marking unavailable");
+                Lsm6dsoxSensor::unavailable(i2c_bus)
+            }
         };
+        log::info!("STATE: Initializing ADC (ADS1015)...");
+        let adc = match with_timeout(init_to, Ads1015Sensor::new(i2c_bus)).await {
+            Ok(s) => s,
+            Err(_) => {
+                log::error!("STATE: ADC init TIMEOUT — marking unavailable");
+                Ads1015Sensor::unavailable(i2c_bus)
+            }
+        };
+        log::info!("STATE: IMU and ADC init complete");
         log::info!("STATE: Initializing radio (RFD900x)...");
         let radio = Rfd900x::new(uart);
         log::info!("STATE: Radio ready");
@@ -204,7 +204,17 @@ impl FlightState {
                 let recovered = Packet::from_bytes(&fram_buf);
                 let mode = FlightMode::from_u32(recovered.flight_mode);
                 log::info!("FlightMode read from FRAM: {:?}", mode);
-                packet = recovered;
+                // If FRAM has Fault mode, reset it to Startup so the next boot
+                // doesn't immediately start in Fault. A Fault from a live flight
+                // is preserved long enough to read; on the next cold boot we want
+                // a clean slate.  Comment this block out to keep Fault across boots.
+                let mode = if mode == FlightMode::Fault {
+                    log::warn!("FRAM had Fault mode — resetting to Startup for next boot");
+                    FlightMode::Startup
+                } else {
+                    packet = recovered;
+                    mode
+                };
                 let count = match with_timeout(fram_to, fram.read_u32(Packet::SIZE as u32)).await {
                     Ok(Ok(c)) => c,
                     Ok(Err(_)) => { log::warn!("Failed to read CycleCount from FRAM"); 0 }
@@ -682,6 +692,12 @@ impl FlightState {
             Ok(Err(_)) => log::error!("Failed to reset FRAM"),
             Err(_) => log::error!("FRAM reset TIMEOUT"),
         }
+    }
+
+    // Force FlightMode to Fault
+    pub async fn trigger_fault(&mut self) {
+        self.flight_mode = FlightMode::Fault;
+        self.write_packet_to_fram().await;
     }
 
     // Write the full packet + cycle count to FRAM in one transaction

@@ -96,7 +96,7 @@ pub const SENSOR_INIT_TIMEOUT_MS: u64 = 500;
 // USB Logger Configuration
 
 /// USB logger ring buffer size in bytes
-pub const USB_LOGGER_BUFFER_SIZE: usize = 1024;
+pub const USB_LOGGER_BUFFER_SIZE: usize = 4096;
 
 // Flight Logic Thresholds
 pub const ARMING_ALTITUDE: f32 = 100.0; // Altitude in meters to arm parachutes (Placeholder)
