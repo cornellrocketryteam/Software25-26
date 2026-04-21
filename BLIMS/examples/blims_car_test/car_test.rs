@@ -241,7 +241,7 @@ async fn main(spawner: Spawner) {
     // ── USB logger (runs as a background task) ────────────────────────────────
     // All log::info!() calls are routed through this over USB CDC-ACM.
     // Open the Pico's USB serial port in any terminal to see output.
-    spawner.spawn(logger_task(Driver::new(p.USB, Irqs))).unwrap();
+    spawner.spawn(logger_task(Driver::new(p.USB, Irqs)).unwrap());
 
     // Wait for the host to enumerate the USB device (~2 s is enough)
     Timer::after_millis(2000).await;
