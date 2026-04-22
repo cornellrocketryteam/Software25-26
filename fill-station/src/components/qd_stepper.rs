@@ -6,15 +6,18 @@ use tracing::info;
 use async_gpiod::{Chip, LineId, Lines, Options, Output};
 
 // Stepping Configuration
-const STEP_FREQUENCY_HZ: u32 = 134; // 134 Hz step rate (~5 seconds for 670 steps)
-const HALF_PERIOD_US: u64 = 3731; // 3731 us HIGH + 3731 us LOW = 134 Hz
-const ENABLE_WAKE_MS: u64 = 2; // Wait after enable before pulsing (spec: 1 ms min)
+const STEP_FREQUENCY_HZ: u32 = 134; // Cruise step rate (~5 seconds for 670 steps)
+const ENABLE_WAKE_MS: u64 = 30; // Wait after enable for coil current to establish (spec min 1 ms)
 const DIR_SETUP_MS: u64 = 5; // DIR must be stable before first STEP rising edge
+
+// Acceleration ramp configuration
+const RAMP_START_HZ: u32 = 40;  // Initial step rate at rest
+const RAMP_STEPS: u32 = 50;     // Number of steps to ramp up (and down)
 
 // Preset step counts and directions
 // CW (true) = retract, CCW (false) = extend
-pub const QD_RETRACT_STEPS: u32 = 670;
-pub const QD_EXTEND_STEPS: u32 = 670;
+pub const QD_RETRACT_STEPS: u32 = 600;
+pub const QD_EXTEND_STEPS: u32 = 600;
 pub const QD_RETRACT_DIRECTION: bool = true;
 pub const QD_EXTEND_DIRECTION: bool = false;
 
@@ -120,9 +123,24 @@ impl QdStepper {
                 .context("Failed to set ENA GPIO")?;
             smol::Timer::after(Duration::from_millis(ENABLE_WAKE_MS)).await;
 
-            // Bit-bang step pulses
-            let half_period = Duration::from_micros(HALF_PERIOD_US);
-            for _ in 0..steps {
+            // Bit-bang step pulses with trapezoidal acceleration ramp.
+            // If total steps are fewer than 2 * RAMP_STEPS, clamp ramp length to steps/2.
+            let ramp_len = RAMP_STEPS.min(steps / 2);
+            for i in 0..steps {
+                let freq_hz = if i < ramp_len {
+                    // Ramp up: linear from RAMP_START_HZ to STEP_FREQUENCY_HZ
+                    RAMP_START_HZ
+                        + (STEP_FREQUENCY_HZ - RAMP_START_HZ) * i / ramp_len.max(1)
+                } else if i >= steps - ramp_len {
+                    // Ramp down: linear from STEP_FREQUENCY_HZ back to RAMP_START_HZ
+                    let j = steps - 1 - i;
+                    RAMP_START_HZ
+                        + (STEP_FREQUENCY_HZ - RAMP_START_HZ) * j / ramp_len.max(1)
+                } else {
+                    STEP_FREQUENCY_HZ
+                };
+                let half_period = Duration::from_micros(500_000 / freq_hz as u64);
+
                 self.step_line.set_values([true]).await
                     .context("Failed to set STEP HIGH")?;
                 smol::Timer::after(half_period).await;
