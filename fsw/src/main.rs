@@ -119,7 +119,7 @@ async fn main(spawner: Spawner) {
     log::info!("INIT [4/8]: Initializing actuators and GPIO...");
     let flash_cs = Output::new(p.PIN_6, embassy_rp::gpio::Level::High);
     let flash = module::init_onboard_flash(spi_bus, flash_cs);
-    let airbrake_system = module::init_airbrake(p.PIN_13, p.PWM_SLICE7, p.PIN_14);
+    let airbrake_system = module::init_airbrake(p.PIN_37, p.PWM_SLICE11, p.PIN_38);
     log::info!("INIT [4/8]: Actuators and GPIO ready");
 
     log::info!("INIT [5/8]: Spawning Core 1 (airbrake controller)...");
