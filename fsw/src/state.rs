@@ -64,9 +64,6 @@ pub struct FlightState {
     altimeter: Bmp390Sensor<'static>,
     pub altimeter_state: SensorState,
     pub reference_pressure: f32,
-    
-    // storage status
-    pub sd_logging_enabled: bool,
 
     // fram
     fram: Fram<'static>,
@@ -247,7 +244,6 @@ impl FlightState {
             umbilical_connected: false,
             altimeter: altimeter,
             altimeter_state: altimeter_init,
-            sd_logging_enabled: false,
             fram: fram,
             gps: gps,
             gps_ok,
@@ -281,10 +277,6 @@ impl FlightState {
 
     pub fn read_barometer(&mut self) -> f32{
         return self.packet.pressure;
-    }
-
-    pub async fn check_subsystem_health(&mut self) {
-        // TODO: Implement actual payload command checks
     }
 
     pub async fn update_actuators(&mut self) {

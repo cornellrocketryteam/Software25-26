@@ -77,6 +77,10 @@ pub struct FlightLoop {
     // Fault signaling
     fault_signal_sent: bool,
     last_alt: f32,
+
+    /// Sim only: if Some, overrides altitude + forces altimeter VALID after read_sensors().
+    /// Set to None in normal flight — zero cost.
+    pub sim_altitude_override: Option<f32>,
 }
 
 impl FlightLoop {
@@ -124,6 +128,7 @@ impl FlightLoop {
             n4_sent: false,
             fault_signal_sent: false,
             last_alt: 0.0,
+            sim_altitude_override: None,
         }
     }
 
@@ -148,6 +153,13 @@ impl FlightLoop {
 
         // 2. Read sensor data
         self.flight_state.read_sensors().await;
+
+        // 2a. Sim override: replace altitude + force altimeter VALID.
+        //     None in normal flight — zero cost path.
+        if let Some(alt_m) = self.sim_altitude_override {
+            self.flight_state.packet.altitude = alt_m;
+            self.flight_state.altimeter_state = crate::state::SensorState::VALID;
+        }
 
         // 2b. Forward latest sensor data to the airbrake controller on Core 1.
         // Signal::signal() is non-blocking and always delivers the most recent
@@ -430,6 +442,7 @@ impl FlightLoop {
                     log::error!("Altimeter invalid at Startup; transitioning to Fault");
                     return;
                 }
+                self.key_armed = true; // update with mission control box?
                 if self.key_armed && self.flight_state.umbilical_connected {
                     if self.flight_state.altimeter_state == crate::state::SensorState::VALID {
                         // Record arming altitude (TODO: implement into storage)
@@ -489,9 +502,6 @@ impl FlightLoop {
 
                 // Check altimeter for launch with umbilical
                 if self.umbilical_launch && self.flight_state.umbilical_connected {
-                    // TODO: Send command for launch to payload
-                    // send_launch_command();                    log::info!("Payload launch command sent");
-
                     // START LAUNCH SEQUENCE
                     log::warn!("LAUNCH INITIATED: Starting actuator sequence.");
                     self.launch_sequence_stage = LaunchStage::PreVent;
@@ -545,12 +555,7 @@ impl FlightLoop {
                     );
                 }
                 // Fallback logging if SD card is not ready
-                if !self.flight_state.sd_logging_enabled {
-                    self.flight_state.log_to_fram().await;
-                }
-
-                // --- Launch Sequence State Machine ---
-                if !self.flight_state.sd_logging_enabled {}
+                self.flight_state.log_to_fram().await;
             }
 
             FlightMode::Coast => {
@@ -831,7 +836,7 @@ impl FlightLoop {
 
     pub fn set_key_switch(&mut self, armed: bool) {
         self.flight_state.key_armed = armed;
-        self.key_armed = armed;
+        //self.key_armed = armed;
     }
 
     pub fn set_umbilical(&mut self, connected: bool) {
@@ -849,6 +854,17 @@ impl FlightLoop {
 
     pub fn set_blims(&mut self, blims: blims::Blims<'static>) {
         self.blims = Some(blims);
+    }
+
+    /// Set BLiMS landing-zone target and mark it armed so check_transitions
+    /// won't overwrite it with the TODO placeholder on first MainDeployed entry.
+    pub fn set_blims_target(&mut self, lat: f32, lon: f32) {
+        self.blims_target_lat = lat;
+        self.blims_target_lon = lon;
+        if let Some(b) = &mut self.blims {
+            b.set_target(lat, lon);
+            self.blims_armed = true;
+        }
     }
 
     pub fn set_airbrakes(&mut self, armed: bool) {

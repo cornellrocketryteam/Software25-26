@@ -23,7 +23,8 @@ mod flight_loop;
     feature = "sim_stability",
     feature = "sim_extra",
     feature = "sim_flash",
-    feature = "sim_hsim",
+    feature = "sim_real_flight",
+    feature = "sim_blims",
     feature = "sim_launch",
     feature = "sim_payload"
 ))]
@@ -169,7 +170,8 @@ async fn main(spawner: Spawner) {
         feature = "sim_extra",
         feature = "sim_flash",
         feature = "sim_launch",
-        feature = "sim_hsim",
+        feature = "sim_real_flight",
+        feature = "sim_blims",
         feature = "sim_payload"
     ))]
     let mut flight_state = {
@@ -213,10 +215,21 @@ async fn main(spawner: Spawner) {
             log::info!("Simulation Complete.");
         }
 
-        #[cfg(feature = "sim_hsim")]
+        #[cfg(feature = "sim_real_flight")]
         {
-            log::info!("Starting Hardware-in-the-Loop Flight Simulation (HSIM)...");
-            flight_sim::simulate_flight_hsim(&mut flight_loop).await;
+            log::info!("Starting Real Flight Simulation...");
+            flight_sim::simulate_real_flight(&mut flight_loop).await;
+            log::info!("Simulation Complete.");
+        }
+
+        #[cfg(feature = "sim_blims")]
+        {
+            log::info!("Starting BLiMS Descent Simulation...");
+            // Wire up the motor controller and set the test landing-zone target.
+            // TODO: replace with real landing-zone coordinates before flight.
+            flight_loop.set_blims(blims);
+            flight_loop.set_blims_target(42.446610, -76.461304);
+            flight_sim::simulate_blims_descent(&mut flight_loop).await;
             log::info!("Simulation Complete.");
         }
 
@@ -694,7 +707,8 @@ async fn main(spawner: Spawner) {
         feature = "sim_extra",
         feature = "sim_flash",
         feature = "sim_launch",
-        feature = "sim_hsim",
+        feature = "sim_real_flight",
+        feature = "sim_blims",
         feature = "sim_payload"
     )))]
     {
