@@ -416,4 +416,4 @@ Data received back from the Flight software, pushed to clients when `start_fsw_s
 
 * `connected`: True if the background task can communicate with the serial device.
 * `flight_mode`: Human readable string.
-* `telemetry`: The full 82-byte `FswTelemetry` packet parsed into JSON variables.
+* `telemetry`: The `FswTelemetry` packet (parsed from a `$TELEM,<22 fields>\n` CSV line emitted by the FSW over the umbilical) exposed as JSON variables.

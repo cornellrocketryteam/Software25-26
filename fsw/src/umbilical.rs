@@ -6,35 +6,35 @@ use embassy_usb::class::cdc_acm::{Receiver, Sender};
 use embassy_usb::{UsbDevice, driver::EndpointError};
 
 use crate::module::{self, UsbDriver};
-use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-/// Sync header prepended to every binary telemetry frame so the receiver can
-/// locate packet boundaries in the byte stream. Total frame = 2 + 82 = 84 bytes.
-pub const SYNC_HEADER: [u8; 2] = [0xAA, 0x55];
-const FRAME_SIZE: usize = SYNC_HEADER.len() + crate::packet::Packet::SIZE;
+/// Number of comma-separated fields the FSW emits after the `$TELEM,` prefix.
+/// Host-side parsers must match this exactly.
+pub const TELEM_FIELD_COUNT: usize = 22;
 
 /// Global software umbilical connection tracked by embassy-usb.
 static IS_CONNECTED: AtomicBool = AtomicBool::new(false);
 
-/// Single-slot atomic telemetry buffer. Flight loop writes, sender task reads;
-/// both non-blocking. Overwritten in place if the sender hasn't drained the
-/// previous frame yet.
-struct TelemetryBuffer {
-    data: UnsafeCell<[u8; crate::packet::Packet::SIZE]>,
-    ready: AtomicBool,
-}
-
-unsafe impl Sync for TelemetryBuffer {}
-
-static TELEMETRY_BUF: TelemetryBuffer = TelemetryBuffer {
-    data: UnsafeCell::new([0; crate::packet::Packet::SIZE]),
-    ready: AtomicBool::new(false),
-};
+/// While true, `emit_telemetry` is a no-op so a long flash/FRAM dump on the
+/// shared text channel isn't interleaved with `$TELEM,` lines (which would
+/// confuse the host line parser) and doesn't get throttled behind queued
+/// telemetry.
+static DUMP_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
 /// Returns whether the ground station umbilical is actively connected via USB.
 pub fn is_connected() -> bool {
     IS_CONNECTED.load(Ordering::Relaxed)
+}
+
+/// Call before a flash/FRAM dump begins. Suppresses telemetry emission until
+/// `end_dump()` is called.
+pub fn begin_dump() {
+    DUMP_IN_PROGRESS.store(true, Ordering::Release);
+}
+
+/// Call after a dump completes (or on error) to resume telemetry emission.
+pub fn end_dump() {
+    DUMP_IN_PROGRESS.store(false, Ordering::Release);
 }
 
 /// Commands that can be received from the ground station via USB umbilical.
@@ -103,24 +103,47 @@ pub async fn print_bytes_async(data: &[u8]) {
     }
 }
 
-/// Publish a telemetry packet for the sender task. Non-blocking: writes the
-/// 82-byte LE serialization into the atomic buffer and marks it ready,
-/// overwriting any prior frame the sender hasn't drained yet.
-///
-/// Release builds only. In debug builds this is a no-op, keeping the USB
-/// serial stream pure text (logs) so a human-readable serial monitor is
-/// usable for bring-up without binary frames getting mixed in.
-#[cfg(not(debug_assertions))]
+/// Emit a telemetry line in parseable CSV format.
+/// Format: `$TELEM,<flight_mode>,<pressure>,...,<sv_open>,<mav_open>\n`
+/// Suppressed while a dump is in progress (see `begin_dump`/`end_dump`).
 pub fn emit_telemetry(packet: &crate::packet::Packet) {
-    let bytes = packet.to_bytes();
-    unsafe {
-        (*TELEMETRY_BUF.data.get()).copy_from_slice(&bytes);
+    if DUMP_IN_PROGRESS.load(Ordering::Acquire) {
+        return;
     }
-    TELEMETRY_BUF.ready.store(true, Ordering::Release);
+    let mut buf = [0u8; 512];
+    let len = {
+        use core::fmt::Write;
+        let mut w = BufWriter::new(&mut buf);
+        let _ = write!(
+            w,
+            "$TELEM,{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
+            packet.flight_mode,
+            packet.pressure,
+            packet.temp,
+            packet.altitude,
+            packet.latitude,
+            packet.longitude,
+            packet.num_satellites,
+            packet.timestamp,
+            packet.mag_x,
+            packet.mag_y,
+            packet.mag_z,
+            packet.accel_x,
+            packet.accel_y,
+            packet.accel_z,
+            packet.gyro_x,
+            packet.gyro_y,
+            packet.gyro_z,
+            packet.pt3,
+            packet.pt4,
+            packet.rtd,
+            packet.sv_open as u8,
+            packet.mav_open as u8,
+        );
+        w.offset
+    };
+    send_bytes(&buf[..len]);
 }
-
-#[cfg(debug_assertions)]
-pub fn emit_telemetry(_packet: &crate::packet::Packet) {}
 
 /// Called by the flight loop each cycle to poll for incoming umbilical commands.
 /// Returns `None` if no command is pending.
@@ -135,15 +158,12 @@ pub fn push_command(cmd: UmbilicalCommand) {
 
 /// Initialize USB subsystem: CdcAcmClass for bidirectional text communication.
 /// Logs go out as text (readable in any serial monitor), commands come in as `<X>` tokens.
+/// In release builds the logger is compiled out so the wire carries only
+/// telemetry + explicit `print_str`/`print_bytes` output.
 pub fn setup(spawner: &Spawner, usb_driver: UsbDriver) {
     let (usb_device, usb_class) = module::init_usb_device(usb_driver);
     let (sender, receiver) = usb_class.split();
 
-    // Register our USB serial logger only in debug builds. In release we
-    // leave the global logger as the no-op default, so `log::info!` etc.
-    // compile to nothing visible on the wire — only binary telemetry and
-    // explicit print_str/print_bytes output (flash/FRAM dumps, status
-    // strings) are transmitted.
     #[cfg(debug_assertions)]
     init_logger();
 
@@ -232,11 +252,7 @@ async fn usb_task(mut usb_device: UsbDevice<'static, UsbDriver>) -> ! {
     usb_device.run().await
 }
 
-/// Drains two sources onto the USB sender:
-///   1. `RAW_OUTBOUND` — text chunks from logs, FRAM dump, flash dump.
-///   2. `TELEMETRY_BUF` — latest binary telemetry frame, sent as
-///      [SYNC_HEADER || 82-byte LE packet] in two USB packets (64 + 20).
-/// Text is given priority so logs/dumps don't starve behind telemetry.
+/// Reads text chunks from the outbound channel and writes them to the USB sender.
 #[embassy_executor::task]
 async fn usb_sender_task(mut sender: Sender<'static, UsbDriver>) -> ! {
     loop {
@@ -244,46 +260,15 @@ async fn usb_sender_task(mut sender: Sender<'static, UsbDriver>) -> ! {
         IS_CONNECTED.store(true, Ordering::Relaxed);
 
         loop {
-            // Priority 1: drain any queued text bytes.
-            while let Ok(msg) = RAW_OUTBOUND.try_receive() {
-                match sender.write_packet(&msg).await {
-                    Ok(_) => {}
-                    Err(EndpointError::Disabled) => {
-                        IS_CONNECTED.store(false, Ordering::Relaxed);
-                        break;
-                    }
-                    Err(_) => break,
+            let msg = RAW_OUTBOUND.receive().await;
+            match sender.write_packet(&msg).await {
+                Ok(_) => {}
+                Err(EndpointError::Disabled) => {
+                    IS_CONNECTED.store(false, Ordering::Relaxed);
+                    break;
                 }
+                Err(_) => break,
             }
-
-            // Priority 2: send a telemetry frame if one is ready.
-            if TELEMETRY_BUF.ready.load(Ordering::Acquire) {
-                let data = unsafe { *TELEMETRY_BUF.data.get() };
-                TELEMETRY_BUF.ready.store(false, Ordering::Release);
-
-                let mut frame = [0u8; FRAME_SIZE];
-                frame[0..2].copy_from_slice(&SYNC_HEADER);
-                frame[2..FRAME_SIZE].copy_from_slice(&data);
-
-                match sender.write_packet(&frame[0..64]).await {
-                    Ok(_) => {}
-                    Err(EndpointError::Disabled) => {
-                        IS_CONNECTED.store(false, Ordering::Relaxed);
-                        break;
-                    }
-                    Err(_) => break,
-                }
-                match sender.write_packet(&frame[64..FRAME_SIZE]).await {
-                    Ok(_) => {}
-                    Err(EndpointError::Disabled) => {
-                        IS_CONNECTED.store(false, Ordering::Relaxed);
-                        break;
-                    }
-                    Err(_) => break,
-                }
-            }
-
-            Timer::after_millis(50).await;
         }
     }
 }

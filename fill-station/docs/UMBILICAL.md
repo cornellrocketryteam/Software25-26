@@ -16,7 +16,7 @@ WebSocket Client
 fill-station (Umbilical background task)
    |   ^
    |   |
-serial commands & 80-byte binary telemetry packets
+serial commands & `$TELEM,<22 fields>\n` CSV telemetry lines
    |   |
    V   |
 Flight Software (FSW)
@@ -24,12 +24,15 @@ Flight Software (FSW)
 
 ## Features
 
-- **Telemetry Parsing**: 80-byte binary Packets (`FswTelemetry`) are read via serial, validated, and broadcast over WebSocket to connected clients.
-- **FSW Command Translation**: JSON commands received via WebSocket are forwarded over the umbilical as single-character commands to the FSW.
+- **Telemetry Parsing**: The FSW emits one telemetry record per line as `$TELEM,<22 comma-separated fields>\n`. The umbilical task line-buffers the serial stream, parses each `$TELEM,` line via `FswTelemetry::from_csv` (strict 22-field match — see `TELEM_FIELD_COUNT`), and broadcasts the result over WebSocket. Non-`$TELEM` lines are forwarded to debug logs.
+- **Sync on (re)connect**: The first two newline-terminated chunks after opening the serial port are discarded so a partial line picked up mid-stream cannot produce a garbage frame.
+- **Line buffer cap**: If `\n` never arrives (FSW hung mid-line), the line buffer is cleared with a warning at 8 KB.
+- **Dump suppression**: While the FSW is mid-flash-dump it sets an internal `DUMP_IN_PROGRESS` flag and stops emitting `$TELEM` lines. Telemetry pauses for the duration of the dump and resumes automatically afterward.
+- **FSW Command Translation**: JSON commands received via WebSocket are forwarded over the umbilical as `<X>`-style ASCII tokens to the FSW.
 
 ### FSW Telemetry Data Structure
 
-The 80-byte binary structure `FswTelemetry` from the FSW is parsed inside `src/components/umbilical.rs`. The properties available to clients are:
+`FswTelemetry` is parsed from the 22 CSV fields of each `$TELEM,` line in `src/components/umbilical.rs`. The fields, in order, are:
 
 | Field | Type | Unit | Description |
 |-------|------|------|-------------|
@@ -46,6 +49,8 @@ The 80-byte binary structure `FswTelemetry` from the FSW is parsed inside `src/c
 | `gyro_x/y/z` | `f32` | deg/s | Gyroscope readings |
 | `pt3/pt4` | `f32` | counts | Additional pressure transducer readings on the vehicle |
 | `rtd` | `f32` | counts | Resistance Temperature Detector reading |
+| `sv_open` | `bool` | — | Separation Valve actuation state |
+| `mav_open` | `bool` | — | MAV actuation state |
 
 ## WebSocket API Extentions
 
@@ -64,7 +69,9 @@ Commands sent over the WebSocket that get parsed and sent across the serial conn
 - `fsw_close_sv`: Close the vehicle Solenoid Valve (`<s>`).
 - `fsw_safe`: Safe all FSW actuators (`<V>`).
 - `fsw_reset_fram`: Clear the FSW's FRAM data (`<F>`).
+- `fsw_dump_fram`: Dump FRAM contents over the umbilical (`<f>`).
 - `fsw_reset_card`: Reset the FSW's SD card writer (`<D>`).
+- `fsw_fault_mode`: Force the FSW into Fault flight mode (`<X>`).
 - `fsw_reboot`: Force a software reboot on FSW (`<R>`).
 - `fsw_dump_flash`: Dump flash memory contents (`<G>`).
 - `fsw_wipe_flash`: Wipe flash memory (`<W>`).

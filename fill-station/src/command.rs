@@ -60,6 +60,10 @@ pub enum Command {
     FswSafe,
     /// Reset FRAM on FSW
     FswResetFram,
+    /// Dump FRAM contents on FSW
+    FswDumpFram,
+    /// Force FSW into Fault flight mode
+    FswFaultMode,
     /// Reset SD card on FSW
     FswResetCard,
     /// Reboot FSW

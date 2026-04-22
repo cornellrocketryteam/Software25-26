@@ -557,6 +557,10 @@ impl FlightState {
     /// Reads all stored CSV data from flash and prints it to the log
     pub async fn print_flash_dump(&mut self) {
         log::info!("--- BEGIN FLASH CSV DUMP ---");
+        // Suppress telemetry while the dump is on the wire so $TELEM lines
+        // can't interleave with raw flash bytes and so telemetry doesn't
+        // back-pressure the dump.
+        crate::umbilical::begin_dump();
         crate::umbilical::print_str("--- BEGIN FLASH CSV DUMP ---\n");
         let start = self.flash.get_storage_offset();
         let end = self.flash.get_write_offset();
@@ -585,6 +589,7 @@ impl FlightState {
         }
         log::info!("--- END FLASH CSV DUMP ---");
         crate::umbilical::print_str("--- END FLASH CSV DUMP ---\n");
+        crate::umbilical::end_dump();
     }
 
     /// Erases all stored CSV data in the flash storage region

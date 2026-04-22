@@ -1,8 +1,18 @@
 # Umbilical System — Feature Reference
 
-**Last updated:** 2026-02-20
-**Branch:** `fsw-spring26`
+**Last updated:** 2026-04-22
+**Branch:** `fsw-spring26-csv-umbilical`
 **Files changed:** `umbilical.rs`, `main.rs`, `state.rs`, `flight_loop.rs`
+
+> **Wire format note (2026-04-22):** This branch reverts the umbilical wire
+> format from binary (`[0xAA,0x55] || 82-byte LE Packet`) back to CSV text
+> (`$TELEM,<22 fields>\n`) shared on the same channel as logs. The binary
+> single-slot atomic buffer is gone; telemetry is now queued through
+> `RAW_OUTBOUND` like every other text payload. To prevent log/dump bytes
+> from interleaving with `$TELEM` lines (and to keep dumps from being
+> back-pressured behind queued telemetry), `umbilical::begin_dump()` /
+> `end_dump()` set a `DUMP_IN_PROGRESS` flag that suppresses
+> `emit_telemetry` for the duration of a flash/FRAM dump.
 
 ---
 
@@ -18,56 +28,61 @@ The system has two independent sensing layers:
 
 ## 2. Build Mode Switching
 
-The RP2350 has a single USB peripheral. It can either run the debug logger **or** the umbilical, not both. This is handled automatically by `umbilical::setup()`:
+A single USB CDC-ACM endpoint carries the umbilical in **both** build modes. The only difference is whether `log::*!` macros emit text to the same wire:
 
-| Build | Command | USB Used For |
-|-------|---------|--------------|
-| **Debug** | `cargo build` / `cargo run` | USB logger (log output via `embassy-usb-logger`) |
-| **Release** | `cargo build --release` / `cargo run --release` | Umbilical (telemetry + commands via CDC-ACM) |
+| Build | Command | What goes on the wire |
+|-------|---------|------------------------|
+| **Debug** | `cargo build` / `cargo run` | `$TELEM,…` lines + `[INFO] …` log lines + explicit `print_str`/`print_bytes` (logger active). |
+| **Release** | `cargo build --release` / `cargo run --release` | `$TELEM,…` lines + explicit `print_str`/`print_bytes` only (logger compiled out, no `log::*` output reaches the wire). |
 
-In debug mode, a 5-second delay is added at boot to allow the logger host to attach. In release mode, this delay is skipped.
+In both modes, commands `<X>` flow back from the host. In debug mode a 5-second boot delay lets the host attach to the serial port before output begins.
 
 ---
 
 ## 3. Telemetry: What the Umbilical Sends
 
-The umbilical sends the **exact same 80-byte packet** that is transmitted over the RFD900x radio each flight loop cycle (1 Hz). The data is the full serialized `Packet` struct from `state.rs`:
+Each flight loop cycle (1 Hz) the FSW emits **one CSV line** containing the same fields as the radio packet:
 
-| Byte Offset | Field | Type | Unit |
-|-------------|-------|------|------|
-| `0x00–0x03` | `flight_mode` | u32 | Enum (0=Startup, 1=Standby, 2=Ascent, 3=Coast, 4=DrogueDeployed, 5=MainDeployed, 6=Fault) |
-| `0x04–0x07` | `pressure` | f32 | Pa |
-| `0x08–0x0B` | `temp` | f32 | C |
-| `0x0C–0x0F` | `altitude` | f32 | m |
-| `0x10–0x13` | `latitude` | f32 | degrees |
-| `0x14–0x17` | `longitude` | f32 | degrees |
-| `0x18–0x1B` | `num_satellites` | u32 | count |
-| `0x1C–0x1F` | `timestamp` | f32 | s |
-| `0x20–0x23` | `mag_x` | f32 | uT |
-| `0x24–0x27` | `mag_y` | f32 | uT |
-| `0x28–0x2B` | `mag_z` | f32 | uT |
-| `0x2C–0x2F` | `accel_x` | f32 | m/s^2 |
-| `0x30–0x33` | `accel_y` | f32 | m/s^2 |
-| `0x34–0x37` | `accel_z` | f32 | m/s^2 |
-| `0x38–0x3B` | `gyro_x` | f32 | deg/s |
-| `0x3C–0x3F` | `gyro_y` | f32 | deg/s |
-| `0x40–0x43` | `gyro_z` | f32 | deg/s |
-| `0x44–0x47` | `pt3` | f32 | raw ADC counts |
-| `0x48–0x4B` | `pt4` | f32 | raw ADC counts |
-| `0x4C–0x4F` | `rtd` | f32 | raw ADC counts |
+```
+$TELEM,<flight_mode>,<pressure>,<temp>,<altitude>,<latitude>,<longitude>,<num_satellites>,<timestamp>,<mag_x>,<mag_y>,<mag_z>,<accel_x>,<accel_y>,<accel_z>,<gyro_x>,<gyro_y>,<gyro_z>,<pt3>,<pt4>,<rtd>,<sv_open>,<mav_open>\n
+```
 
-**All values are little-endian.** Total: 80 bytes per packet, sent once per flight loop cycle (1 Hz).
+22 comma-separated fields after the `$TELEM,` prefix, terminated by `\n`. Field count is exposed as `pub const TELEM_FIELD_COUNT: usize = 22;` and the host-side parser (`fill-station/src/components/umbilical.rs`) imports the same constant — both sides must move together when fields are added.
+
+| # | Field | Type | Unit |
+|---|-------|------|------|
+| 0  | `flight_mode` | u32 | Enum (0=Startup, 1=Standby, 2=Ascent, 3=Coast, 4=DrogueDeployed, 5=MainDeployed, 6=Fault) |
+| 1  | `pressure` | f32 | Pa |
+| 2  | `temp` | f32 | C |
+| 3  | `altitude` | f32 | m |
+| 4  | `latitude` | f32 | degrees |
+| 5  | `longitude` | f32 | degrees |
+| 6  | `num_satellites` | u32 | count |
+| 7  | `timestamp` | f32 | s |
+| 8–10  | `mag_x/y/z` | f32 | uT |
+| 11–13 | `accel_x/y/z` | f32 | m/s^2 |
+| 14–16 | `gyro_x/y/z` | f32 | deg/s |
+| 17 | `pt3` | f32 | raw ADC counts |
+| 18 | `pt4` | f32 | raw ADC counts |
+| 19 | `rtd` | f32 | raw ADC counts |
+| 20 | `sv_open` | `0`/`1` | — |
+| 21 | `mav_open` | `0`/`1` | — |
 
 ### Timing behavior
 
-The sender task blocks (via `Signal::wait()`) until the flight loop provides a fresh packet. This means:
-- Exactly one packet per flight loop cycle (no stale re-sends).
-- If the USB cable is not connected, the sender suspends at `wait_connection()` and does zero work.
-- If the flight loop stalls, no packets are sent (fail-safe).
+`emit_telemetry()` is called once per flight loop cycle from `FlightState::transmit()`. The line is formatted into a 512 B stack buffer and pushed into `RAW_OUTBOUND` (32 × 64 B chunks) via non-blocking `try_send` — if the channel is full (e.g. during heavy log output), the chunk is dropped. The sender task drains `RAW_OUTBOUND` FIFO and writes 64-byte USB packets. If the USB cable is not connected, the sender suspends at `wait_connection()`.
+
+### Dump-vs-telemetry interlock
+
+When `umbilical::begin_dump()` is called (currently from `state.rs::print_flash_dump`), `emit_telemetry` becomes a no-op until `end_dump()` is called. This:
+1. Keeps the host line parser sane — raw flash bytes will not be interleaved with `$TELEM` lines.
+2. Stops telemetry from competing with `print_bytes_async` for `RAW_OUTBOUND` slots, so the dump finishes faster.
+
+Telemetry resumes automatically once the dump completes.
 
 ### Data source
 
-The packet is serialized in `FlightState::transmit()` (`state.rs`). After being sent over the radio, the same `[u8; 80]` buffer is passed to `umbilical::update_telemetry()`, which signals the sender task.
+The packet is serialized in `FlightState::transmit()` (`state.rs`). After being sent over the radio, the same `Packet` struct is passed to `umbilical::emit_telemetry(&packet)`, which formats the CSV line.
 
 ---
 
@@ -86,7 +101,13 @@ Commands are sent from the ground station as ASCII byte strings over the USB ser
 | `<s>` | **Close SV** | Closes the Separation Valve. Clears `sv_open` flag. SV state is persisted to FRAM. |
 | `<V>` | **Safe Vehicle** | Emergency safe: closes both MAV and SV, clears all valve flags and timers. |
 | `<F>` | **Reset FRAM** | Wipes FRAM state (FlightMode, CycleCount, altitude log). Resets FSW to `Startup` mode with cycle count 0. |
+| `<f>` | **Dump FRAM** | Streams FRAM contents over the umbilical (currently a no-op print while FRAM is disabled). |
 | `<R>` | **Reboot** | Triggers a full system reset via `cortex_m::peripheral::SCB::sys_reset()`. The Pico 2 restarts from scratch. |
+| `<G>` | **Dump Flash** | Streams the QSPI CSV flash storage region over the umbilical via `print_bytes_async`. Telemetry is suppressed for the duration via `begin_dump`/`end_dump`. |
+| `<W>` | **Wipe Flash** | Erases the QSPI flash storage region. |
+| `<I>` | **Flash Info** | Prints flash usage (used / total KB and percent). |
+| `<1>`–`<4>` | **Payload N1–N4** | Trigger payload events. |
+| `<X>` | **Fault Mode** | Forces the FSW state machine into `FlightMode::Fault`. |
 
 ### Parsed but Not Yet Implemented
 
@@ -128,20 +149,22 @@ The 15-second disconnect timeout (`UMBILICAL_TIMEOUT_MS = 15000`) is designed as
 
 ## 6. Architecture: How It All Fits Together
 
-### Task structure (release mode)
+### Task structure
 
-Three embassy async tasks are spawned at boot:
+Three embassy async tasks are spawned at boot from `umbilical::setup()`:
 
 1. **`usb_task`** — Runs the low-level USB peripheral protocol (enumeration, endpoint management). Must be running for the other two tasks to work.
-2. **`umbilical_sender_task`** — Waits for fresh telemetry from the `TELEMETRY` Signal, then writes the 80-byte packet to the USB endpoint. Suspends when no cable is connected.
-3. **`umbilical_receiver_task`** — Reads USB packets, parses command tokens, and pushes `UmbilicalCommand` variants into the `COMMANDS` Channel.
+2. **`usb_sender_task`** — `RAW_OUTBOUND.receive().await` → `sender.write_packet()` in a tight loop. Drains telemetry lines, log lines, and dump bytes uniformly. Suspends at `wait_connection()` when no cable is attached.
+3. **`usb_receiver_task`** — Reads USB packets, matches command tokens (`<L>`, `<f>`, `<X>`, …), and pushes `UmbilicalCommand` variants into the `COMMANDS` Channel. On `BufferOverflow` the packet is dropped with a `warn!` rather than a panic.
 
 ### Shared state between tasks and flight loop
 
 | Static | Type | Writer | Reader | Purpose |
 |--------|------|--------|--------|---------|
-| `TELEMETRY` | `Signal<CriticalSectionRawMutex, [u8; 80]>` | `FlightState::transmit()` via `update_telemetry()` | `umbilical_sender_task` | Latest telemetry packet |
-| `COMMANDS` | `Channel<CriticalSectionRawMutex, UmbilicalCommand, 4>` | `umbilical_receiver_task` | `FlightLoop::check_umbilical_commands()` via `try_recv_command()` | Pending commands |
+| `RAW_OUTBOUND` | `Channel<CriticalSectionRawMutex, heapless::Vec<u8, 64>, 32>` | `send_bytes` (telemetry, logs), `print_bytes_async` (dumps) | `usb_sender_task` | All outbound bytes |
+| `COMMANDS` | `Channel<CriticalSectionRawMutex, UmbilicalCommand, 4>` | `usb_receiver_task` | `FlightLoop::check_umbilical_commands()` via `try_recv_command()` | Pending commands |
+| `IS_CONNECTED` | `AtomicBool` | sender/receiver tasks | `is_connected()` | USB-level connection state |
+| `DUMP_IN_PROGRESS` | `AtomicBool` | `begin_dump` / `end_dump` | `emit_telemetry` | Telemetry suppression during flash/FRAM dump |
 
 ### Data flow diagram
 
@@ -153,11 +176,11 @@ Three embassy async tasks are spawned at boot:
                     [commands down]   [telemetry up]
                               |           |
                               v           |
-                    umbilical_receiver  umbilical_sender
-                         task              task
+                    usb_receiver_task   usb_sender_task
                               |           ^
-                    COMMANDS Channel   TELEMETRY Signal
-                              |           |
+                    COMMANDS Channel   RAW_OUTBOUND Channel
+                              |           |  (telemetry CSV
+                              |           |   + logs + dumps)
                               v           |
                     FlightLoop          FlightState
                   .check_umbilical    .transmit()
@@ -166,8 +189,12 @@ Three embassy async tasks are spawned at boot:
                          v                 |
                    [actuate valves,        v
                     set flags,        RFD900x Radio
-                    reset FRAM,       (same 80-byte packet)
-                    reboot, etc.]
+                    reset FRAM,       (same Packet)
+                    reboot, etc.]          |
+                                           v
+                                   emit_telemetry()
+                                  → "$TELEM,…\n" into
+                                     RAW_OUTBOUND
 ```
 
 ### Execution order within each flight loop cycle
@@ -185,10 +212,10 @@ Three embassy async tasks are spawned at boot:
 
 | File | Change |
 |------|--------|
-| `umbilical.rs` | Complete rewrite. Now contains: `setup()`, `UmbilicalCommand` enum, `TELEMETRY` Signal, `COMMANDS` Channel, `update_telemetry()`, `try_recv_command()`, `logger_task`, `usb_task`, `umbilical_sender_task`, `umbilical_receiver_task`. |
-| `main.rs` | Replaced logger init + spawn with single `umbilical::setup()` call. Removed `logger_task` (moved to `umbilical.rs`). Debug-mode delay is now conditional. |
-| `state.rs` | Added `crate::umbilical::update_telemetry(&data)` call at the end of `transmit()` to share the serialized packet with the umbilical sender task. |
-| `flight_loop.rs` | Replaced placeholder `check_umbilical_commands()` with real implementation that polls `umbilical::try_recv_command()` and handles all 9 command variants. Added `use crate::umbilical`. |
+| `umbilical.rs` | Provides `setup()`, `UmbilicalCommand` enum (18 variants incl. `DumpFram`/`FaultMode`), `RAW_OUTBOUND` + `COMMANDS` channels, `emit_telemetry()` (CSV format, gated by `DUMP_IN_PROGRESS`), `print_str` / `print_bytes` / `print_bytes_async`, `begin_dump` / `end_dump`, `try_recv_command()`, debug-only USB serial logger, `usb_task`, `usb_sender_task`, `usb_receiver_task`. |
+| `main.rs` | Single `umbilical::setup()` call. Debug-mode boot delay. |
+| `state.rs` | `transmit()` calls `umbilical::emit_telemetry(&self.packet)` to push a `$TELEM,…\n` line. `print_flash_dump` brackets the dump with `umbilical::begin_dump()` / `end_dump()`. |
+| `flight_loop.rs` | Drains `umbilical::try_recv_command()` each cycle and dispatches all 18 command variants. |
 
 ---
 

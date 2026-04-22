@@ -4,6 +4,7 @@ on:
     branches:
       - main
       - leaktest_ready
+      - fsw-spring26-csv-umbilical
 jobs:
   # Build the MixOS configuration for FillStation and push it to FlakeHub Cache
   build-publish:

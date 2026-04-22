@@ -25,7 +25,7 @@ use crate::command::{AdcReadings, Command, CommandResponse, UmbilicalReadings};
 use crate::command::ChannelReading;
 use crate::hardware::Hardware;
 #[cfg(any(target_os = "linux", target_os = "android"))]
-use crate::components::umbilical::{FswTelemetry, SYNC_HEADER};
+use crate::components::umbilical::FswTelemetry;
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use crate::components::ads1015::{Channel, Gain, DataRate};
@@ -620,6 +620,20 @@ async fn execute_command(
                 Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
             }
         }
+        Command::FswDumpFram => {
+            info!("Sending FSW Dump FRAM command via umbilical");
+            match umb_cmd_tx.try_send("<f>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswFaultMode => {
+            info!("Sending FSW Fault Mode command via umbilical");
+            match umb_cmd_tx.try_send("<X>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
         Command::FswResetCard => {
             info!("Sending FSW Reset Card command via umbilical");
             match umb_cmd_tx.try_send("<D>".into()) {
@@ -1044,18 +1058,15 @@ async fn umbilical_task(
             umb.connected = true;
         }
 
-        // Sync-scanning state machine: finds [0xAA, 0x55] header before
-        // accumulating 82 payload bytes. This allows the receiver to
-        // re-synchronise if it connects mid-stream or if log text is
-        // interleaved on the wire.
-        enum ReaderState {
-            Syncing,
-            Reading(usize), // offset into payload_buf
-        }
-
-        let mut state = ReaderState::Syncing;
-        let mut prev_byte: u8 = 0;
-        let mut payload_buf = [0u8; FswTelemetry::SIZE];
+        // CSV line-buffered reader. The FSW emits one telemetry record per
+        // line as `$TELEM,<22 fields>\n`; all other lines are FSW log output
+        // and are forwarded to debug logs.
+        let mut line_buf = String::with_capacity(1024);
+        // S4a: discard everything until the second `\n` after a fresh
+        // (re)connect so the first line we parse can't be a truncated frame.
+        let mut newlines_seen: u8 = 0;
+        // Cap line_buf growth in case the FSW hangs mid-line (S5).
+        const LINE_BUF_MAX: usize = 8 * 1024;
 
         loop {
             // Check for pending commands to send
@@ -1085,43 +1096,53 @@ async fn umbilical_task(
 
             match read_result {
                 Ok((data, bytes_read)) => {
-                    // Process each byte through the sync state machine. Any
-                    // bytes outside a valid frame (e.g. interleaved FSW log
-                    // text) are silently discarded until the next sync header.
-                    for &byte in &data[..bytes_read] {
-                        match state {
-                            ReaderState::Syncing => {
-                                if prev_byte == SYNC_HEADER[0] && byte == SYNC_HEADER[1] {
-                                    state = ReaderState::Reading(0);
-                                    prev_byte = 0;
-                                    continue;
-                                }
-                                prev_byte = byte;
-                            }
-                            ReaderState::Reading(offset) => {
-                                payload_buf[offset] = byte;
-                                let next = offset + 1;
-                                if next >= FswTelemetry::SIZE {
-                                    let telemetry = FswTelemetry::from_bytes(&payload_buf);
-                                    let timestamp_ms = SystemTime::now()
-                                        .duration_since(UNIX_EPOCH)
-                                        .unwrap()
-                                        .as_millis() as u64;
+                    // Append received bytes as text (lossy — non-UTF8 bytes
+                    // become replacement chars; affected frames will fail to
+                    // parse and be warn-logged below).
+                    let text = String::from_utf8_lossy(&data[..bytes_read]);
+                    line_buf.push_str(&text);
 
-                                    {
-                                        let mut umb = umbilical_readings.lock().await;
-                                        umb.timestamp_ms = timestamp_ms;
-                                        umb.connected = true;
-                                        umb.telemetry = telemetry;
-                                    }
+                    if line_buf.len() > LINE_BUF_MAX {
+                        warn!("umbilical line buffer overflow ({} bytes), resetting", line_buf.len());
+                        line_buf.clear();
+                        newlines_seen = 0;
+                        continue;
+                    }
 
-                                    debug!("FSW telemetry received: mode={}", telemetry.flight_mode_name());
-                                    state = ReaderState::Syncing;
-                                    prev_byte = 0;
-                                } else {
-                                    state = ReaderState::Reading(next);
+                    while let Some(newline_pos) = line_buf.find('\n') {
+                        let line: String = line_buf.drain(..=newline_pos).collect();
+                        let line = line.trim();
+
+                        // S4a: skip the first two newline-terminated chunks
+                        // after connect — the first is almost certainly a
+                        // partial line, the second may also be truncated if
+                        // we opened the port mid-record.
+                        if newlines_seen < 2 {
+                            newlines_seen += 1;
+                            continue;
+                        }
+
+                        if let Some(csv) = line.strip_prefix("$TELEM,") {
+                            let fields: Vec<&str> = csv.split(',').collect();
+                            if let Some(telemetry) = FswTelemetry::from_csv(&fields) {
+                                let timestamp_ms = SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_millis() as u64;
+
+                                {
+                                    let mut umb = umbilical_readings.lock().await;
+                                    umb.timestamp_ms = timestamp_ms;
+                                    umb.connected = true;
+                                    umb.telemetry = telemetry;
                                 }
+
+                                debug!("FSW telemetry received: mode={}", telemetry.flight_mode_name());
+                            } else {
+                                warn!("Failed to parse FSW telemetry CSV: {}", line);
                             }
+                        } else if !line.is_empty() {
+                            debug!("FSW: {}", line);
                         }
                     }
                 }
