@@ -591,10 +591,15 @@ pub async fn simulate_real_flight(flight_loop: &mut FlightLoop) {
     flight_loop.sim_altitude_override = None;
 }
 
-// Runs BLiMS parafoil guidance against real GPS hardware with the L3 Launch 4
-// real descent altitude profile (2000 ft → 58 ft AGL, 3072 samples at 20 Hz).
-// Forces MainDeployed so check_transitions calls blims.execute() every cycle,
-// exactly as it would during an actual flight.
+// Runs BLiMS parafoil guidance hardware against real GPS with the L3 Launch 4
+// real descent altitude profile (~2000 ft → ~58 ft AGL, 3072 samples at 20 Hz).
+//
+// Each cycle explicitly:
+//   1. Reads live sensors (real GPS lat/lon/heading, IMU)
+//   2. Injects descent altitude directly into the packet (no execute() indirection)
+//   3. Calls check_transitions() — this is where blims.execute() is called in
+//      the MainDeployed branch, which sets the ODrive PWM and moves the motor
+//   4. Transmits telemetry and logs to flash
 //
 // Prerequisites before calling:
 //   flight_loop.set_blims(blims);
@@ -606,19 +611,29 @@ pub async fn simulate_blims_descent(flight_loop: &mut FlightLoop) {
 
     log::info!("\n--- STARTING BLiMS DESCENT SIMULATION ---");
     log::info!("Real GPS + L3 Launch 4 descent profile ({} samples @ 20 Hz)", DESCENT_DATA_SIZE);
-    log::info!("BLiMS active ~2000 ft → ~58 ft AGL");
+    log::info!("BLiMS motor active ~2000 ft → ~58 ft AGL");
 
-    // Lock into MainDeployed so BLiMS runs every cycle.
+    // Force into MainDeployed for the whole run so check_transitions always
+    // reaches the BLiMS branch.
     flight_loop.set_flight_mode(FlightMode::MainDeployed);
     flight_loop.main_chutes_deployed = true;
 
     for (i, &alt_ft) in DESCENT_ALT_FT.iter().enumerate() {
-        // Feet → meters for the flight loop altitude field.
-        flight_loop.sim_altitude_override = Some(alt_ft / 3.28084_f32);
+        // 1. Read real hardware: GPS provides live lat/lon/heading/velocity for BLiMS.
+        flight_loop.flight_state.read_sensors().await;
 
-        // execute(): reads real GPS/IMU, applies alt override, runs
-        // check_transitions (calls blims.execute()), transmits, logs to flash.
-        flight_loop.execute().await;
+        // 2. Inject simulated altitude directly — feet → meters, force VALID so
+        //    check_transitions doesn't abort to Fault on a missing barometer.
+        flight_loop.flight_state.packet.altitude = alt_ft / 3.28084_f32;
+        flight_loop.flight_state.altimeter_state = SensorState::VALID;
+
+        // 3. Run check_transitions. In MainDeployed mode this calls blims.execute()
+        //    which computes the motor command and writes it to the ODrive PWM pin.
+        flight_loop.check_transitions().await;
+
+        // 4. Transmit telemetry over radio + USB and write to flash.
+        flight_loop.flight_state.transmit().await;
+        flight_loop.flight_state.save_packet_to_flash().await;
 
         if i % 20 == 0 {
             let p = &flight_loop.flight_state.packet;
@@ -636,7 +651,6 @@ pub async fn simulate_blims_descent(flight_loop: &mut FlightLoop) {
         Timer::after_millis(constants::MAIN_LOOP_DELAY_MS).await;
     }
 
-    flight_loop.sim_altitude_override = None;
     log::info!("\n--- BLiMS DESCENT SIMULATION COMPLETE ({} cycles) ---", DESCENT_DATA_SIZE);
 }
 
