@@ -4,7 +4,6 @@ use crate::module::*;
 use crate::packet::Packet;
 
 use crate::driver::bmp390::Bmp390Sensor;
-use crate::driver::main_fram::Fram;
 use crate::driver::lsm6dsox::Lsm6dsoxSensor;
 use crate::driver::rfd900x::Rfd900x;
 use crate::driver::ublox_max_m10s::UbloxMaxM10s;
@@ -13,7 +12,7 @@ use crate::driver::onboard_flash::OnboardFlash;
 
 use embassy_rp::gpio::{Input, Output};
 use embassy_rp::uart::{Async, Uart, UartTx};
-use embassy_time::{Duration, with_timeout};
+use embassy_time::{Duration, Instant, with_timeout};
 
 use crate::actuator::{Ssa, Buzzer, Mav, SV, Chute, AirbrakeActuator};
 
@@ -65,9 +64,6 @@ pub struct FlightState {
     pub altimeter_state: SensorState,
     pub reference_pressure: f32,
 
-    // fram
-    fram: Fram<'static>,
-
     // gps
     gps: UbloxMaxM10s<'static, I2cDevice<'static>>,
     gps_ok: bool,
@@ -101,6 +97,9 @@ pub struct FlightState {
     // QSPI Flash
     flash: OnboardFlash<'static>,
 
+    // Snapshot-ring throttle (replaces FRAM periodic logging at 1 Hz)
+    last_snapshot_log: Instant,
+
     // External Comms
     pub payload_uart: UartTx<'static, Async>,
 
@@ -112,7 +111,6 @@ impl FlightState {
     pub async fn new(
         i2c_bus: &'static SharedI2c,
         spi_bus: &'static SharedSpi,
-        fram_cs: Output<'static>,
         altimeter_cs: Output<'static>,
         arming_switch: Input<'static>,
         umbilical_sense: Input<'static>,
@@ -128,7 +126,6 @@ impl FlightState {
     ) -> Self {
         let mut packet = Packet::default();
         let init_to = Duration::from_millis(constants::SENSOR_INIT_TIMEOUT_MS);
-        // let fram_to = Duration::from_millis(constants::FRAM_TIMEOUT_MS); // FRAM disabled
         let flash_to = Duration::from_millis(constants::FLASH_TIMEOUT_MS);
 
         // Initialize flash FIRST on a clean SPI/DMA bus. BMP390 init runs many
@@ -153,6 +150,29 @@ impl FlightState {
             }
         };
         flash.flash_ok = flash_ok;
+
+        // Initialize the snapshot ring (replaces FRAM for crash recovery).
+        let mut stored_mode = FlightMode::Startup;
+        let mut stored_cycle_count = 0u32;
+        if flash_ok {
+            match with_timeout(flash_to, flash.initialize_snapshot_ring()).await {
+                Ok(Ok(_)) => match with_timeout(flash_to, flash.read_latest_snapshot()).await {
+                    Ok(Ok(Some(snap))) => {
+                        stored_mode = FlightMode::from_u32(snap.flight_mode);
+                        stored_cycle_count = snap.cycle_count;
+                        log::info!(
+                            "Snapshot recovered: mode={:?} cycle={} alt={:.2}",
+                            stored_mode, stored_cycle_count, snap.altitude
+                        );
+                    }
+                    Ok(Ok(None)) => log::info!("Snapshot ring empty — starting fresh."),
+                    Ok(Err(e)) => log::warn!("Snapshot read failed: {:?}", e),
+                    Err(_) => log::warn!("Snapshot read TIMEOUT"),
+                },
+                Ok(Err(e)) => log::warn!("Snapshot ring init failed: {:?}", e),
+                Err(_) => log::warn!("Snapshot ring init TIMEOUT"),
+            }
+        }
 
         // Attempt to read the last packet state from Onboard QSPI Flash
         if flash_ok {
@@ -190,8 +210,6 @@ impl FlightState {
             SensorState::INVALID
         };
 
-        // FRAM disabled — struct kept so field types compile, no SPI transactions
-        let fram = Fram::new(spi_bus, fram_cs);
         log::info!("STATE: Initializing GPS (uBlox MAX-M10S)...");
         let mut gps = UbloxMaxM10s::new(i2c_bus);
 
@@ -232,10 +250,6 @@ impl FlightState {
         let radio = Rfd900x::new(uart);
         log::info!("STATE: Radio ready");
 
-        // FRAM reads disabled
-        let stored_mode = FlightMode::Startup;
-        let stored_cycle_count = 0u32;
-
         Self {
             packet: packet,
             flight_mode: stored_mode,
@@ -244,7 +258,6 @@ impl FlightState {
             umbilical_connected: false,
             altimeter: altimeter,
             altimeter_state: altimeter_init,
-            fram: fram,
             gps: gps,
             gps_ok,
             imu: imu,
@@ -264,6 +277,7 @@ impl FlightState {
             sv,
             airbrake_system,
             flash,
+            last_snapshot_log: Instant::now(),
             payload_uart,
 
             #[cfg(feature = "sim_payload")]
@@ -326,14 +340,6 @@ impl FlightState {
          self.sv.close();
     }
 
-    // FRAM disabled — no-op stub
-    async fn fram_write_or_warn(
-        _fram: &mut Fram<'static>,
-        _addr: u32,
-        _value: u32,
-        _label: &str,
-    ) {}
-
     pub async fn read_sensors(&mut self) {
         self.update_actuators().await;
 
@@ -344,9 +350,6 @@ impl FlightState {
         self.key_armed = self.arming_switch.is_high();
         self.umbilical_connected = crate::umbilical::is_connected();
         self.cfc_arm_active = self.cfc_arm.is_high();
-
-        // FRAM write disabled
-        // self.write_packet_to_fram().await;
 
         let read_to = Duration::from_millis(constants::SENSOR_READ_TIMEOUT_MS);
 
@@ -534,25 +537,88 @@ impl FlightState {
         }
     }
 
-    // FRAM disabled — no-op
-    pub async fn log_to_fram(&mut self) {}
-
-    // FRAM disabled — no-op
-    pub async fn dump_fram(&mut self) {
-        crate::umbilical::print_str("FRAM disabled\n");
+    /// Periodic snapshot, throttled to 1 Hz. Replaces FRAM periodic logging.
+    /// Flash can't absorb 100 Hz writes — erase stalls would block the loop.
+    pub async fn log_to_fram(&mut self) {
+        let now = Instant::now();
+        if now.duration_since(self.last_snapshot_log) < Duration::from_millis(1000) {
+            return;
+        }
+        self.last_snapshot_log = now;
+        self.write_packet_to_fram().await;
     }
 
-    // FRAM disabled — no-op
-    pub async fn reset_fram(&mut self) {}
+    /// Dump the latest snapshot over the umbilical.
+    pub async fn dump_fram(&mut self) {
+        if !self.flash.flash_ok {
+            crate::umbilical::print_str("Snapshot: flash not available\n");
+            return;
+        }
+        let to = Duration::from_millis(constants::FLASH_TIMEOUT_MS);
+        match with_timeout(to, self.flash.read_latest_snapshot()).await {
+            Ok(Ok(Some(s))) => {
+                let mut msg = heapless::String::<160>::new();
+                let _ = core::fmt::write(
+                    &mut msg,
+                    format_args!(
+                        "SNAP seq={} mode={} cyc={} p={:.1} t={:.2} alt={:.2} mav={} sv={} pt3={:.1} pt4={:.1} rtd={:.1}\n",
+                        s.seq, s.flight_mode, s.cycle_count,
+                        s.pressure, s.temp, s.altitude,
+                        s.mav_open, s.sv_open, s.pt3, s.pt4, s.rtd
+                    ),
+                );
+                crate::umbilical::print_str(msg.as_str());
+            }
+            Ok(Ok(None)) => crate::umbilical::print_str("Snapshot: ring empty\n"),
+            Ok(Err(e)) => log::warn!("Snapshot dump read failed: {:?}", e),
+            Err(_) => log::warn!("Snapshot dump TIMEOUT"),
+        }
+    }
+
+    /// Erase the snapshot ring.
+    pub async fn reset_fram(&mut self) {
+        if !self.flash.flash_ok {
+            return;
+        }
+        let to = Duration::from_millis(constants::FLASH_TIMEOUT_MS);
+        match with_timeout(to, self.flash.reset_snapshot_ring()).await {
+            Ok(Ok(_)) => log::info!("Snapshot ring reset."),
+            Ok(Err(e)) => log::warn!("Snapshot reset failed: {:?}", e),
+            Err(_) => log::warn!("Snapshot reset TIMEOUT"),
+        }
+    }
 
     // Force FlightMode to Fault
     pub async fn trigger_fault(&mut self) {
         self.flight_mode = FlightMode::Fault;
-        // self.write_packet_to_fram().await; // FRAM disabled
+        self.write_packet_to_fram().await;
     }
 
-    // FRAM disabled — no-op
-    pub async fn write_packet_to_fram(&mut self) {}
+    /// Append the current packet/state to the snapshot ring.
+    pub async fn write_packet_to_fram(&mut self) {
+        if !self.flash.flash_ok {
+            return;
+        }
+        let mut snap = crate::driver::onboard_flash::Snapshot {
+            seq: 0,
+            flight_mode: self.flight_mode as u32,
+            cycle_count: self.cycle_count,
+            pressure: self.packet.pressure,
+            temp: self.packet.temp,
+            altitude: self.packet.altitude,
+            mav_open: self.packet.mav_open as u32,
+            sv_open: self.packet.sv_open as u32,
+            pt3: self.packet.pt3,
+            pt4: self.packet.pt4,
+            rtd: self.packet.rtd,
+        };
+        let to = Duration::from_millis(constants::FLASH_TIMEOUT_MS);
+        match with_timeout(to, self.flash.write_snapshot(&mut snap)).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => log::warn!("Snapshot write failed: {:?}", e),
+            Err(_) => log::warn!("Snapshot write TIMEOUT"),
+        }
+    }
 
     /// Reads all stored CSV data from flash and prints it to the log
     pub async fn print_flash_dump(&mut self) {
@@ -584,6 +650,9 @@ impl FlightState {
 
             // Async send — back-pressures to USB speed so no data is dropped
             crate::umbilical::print_bytes_async(&buffer[..chunk_size]).await;
+            // Keep the watchdog fed; a full-flash dump at USB-CDC speeds can
+            // easily exceed the flight loop timeout.
+            crate::watchdog::feed();
 
             offset += chunk_size as u32;
         }

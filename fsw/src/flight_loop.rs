@@ -217,6 +217,9 @@ impl FlightLoop {
             self.last_flash_log = Some(now);
         }
 
+        // Snapshot ring: throttled to 1 Hz internally, runs in every mode.
+        self.flight_state.log_to_fram().await;
+
         // Track previous altitude for fault velocity estimate (A2 payload signal)
         self.last_alt = self.flight_state.packet.altitude;
     }
@@ -554,8 +557,6 @@ impl FlightLoop {
                         self.flight_state.read_altimeter()
                     );
                 }
-                // Fallback logging if SD card is not ready
-                self.flight_state.log_to_fram().await;
             }
 
             FlightMode::Coast => {

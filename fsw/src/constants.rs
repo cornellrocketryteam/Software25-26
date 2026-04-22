@@ -22,9 +22,6 @@ pub const SPI_FREQUENCY: u32 = 8_000_000;
 /// SPI0 MISO (Master In, Slave Out) pin
 pub const SPI_MISO_PIN: u8 = 4;
 
-/// SPI0 CS (Chip Select) pin for FRAM
-pub const SPI_CS_PIN: u8 = 17;
-
 /// SPI0 CS (Chip Select) pin for Altimeter
 pub const ALTIMETER_CS_PIN: u8 = 7;
 
@@ -86,8 +83,6 @@ pub const FLASH_LOGGING_PERIOD_MS: u64 = 50; // Log every cycle at 20 Hz
 // bail out instead of blocking the flight loop forever.
 /// Per-cycle sensor read timeout (BMP390, GPS, IMU, ADC).
 pub const SENSOR_READ_TIMEOUT_MS: u64 = 30;
-/// Single FRAM read/write timeout.
-pub const FRAM_TIMEOUT_MS: u64 = 30;
 /// QSPI flash op timeout (erase/program can be legitimately slow).
 pub const FLASH_TIMEOUT_MS: u64 = 200;
 /// One-time driver init timeout (happens once at boot, be generous).

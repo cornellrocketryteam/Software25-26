@@ -34,6 +34,7 @@ mod module;
 mod packet;
 mod state;
 pub mod umbilical;
+mod watchdog;
 
 // Stack and executor for Core 1 (airbrake controller)
 static CORE1_STACK: StaticCell<Stack<8192>> = StaticCell::new();
@@ -94,7 +95,6 @@ async fn main(spawner: Spawner) {
     #[cfg(not(feature = "test_payload_uart"))]
     drop(payload_rx); // not needed in flight
 
-    let fram_cs = Output::new(p.PIN_17, Level::High);
     let altimeter_cs = Output::new(p.PIN_7, Level::High);
 
     // Onboard LED
@@ -133,11 +133,10 @@ async fn main(spawner: Spawner) {
     });
     log::info!("INIT [5/8]: Core 1 spawned — airbrake task starting on Core 1");
 
-    log::info!("INIT [6/8]: Initializing Flight State (sensors, flash, FRAM)...");
+    log::info!("INIT [6/8]: Initializing Flight State (sensors, flash)...");
     let mut flight_state = state::FlightState::new(
         i2c_bus,
         spi_bus,
-        fram_cs,
         altimeter_cs,
         arming_switch,
         umbilical_sense,
@@ -153,10 +152,10 @@ async fn main(spawner: Spawner) {
     )
     .await;
     log::info!("INIT [6/8]: Flight State initialized — all sensors probed");
-    log::info!("INIT [7/8]: Skipping FRAM reset (flight mode)");
+    log::info!("INIT [7/8]: Skipping snapshot ring reset (flight mode)");
     log::info!("INIT [8/8]: Entering flight loop...");
 
-    // Reset FRAM for testing (COMMENT OUT FOR REAL FLIGHT)
+    // Reset snapshot ring for testing (COMMENT OUT FOR REAL FLIGHT)
     //flight_state.reset_fram().await;
 
     // BLiMS: GPIO 34 = enable, GPIO 35 = PWM (PWM_SLICE5B, 50 Hz)
@@ -715,8 +714,7 @@ async fn main(spawner: Spawner) {
         let mut flight_loop = flight_loop::FlightLoop::new(flight_state);
         flight_loop.set_blims(blims);
         log::info!("FLIGHT LOOP: FlightLoop created, starting watchdog...");
-        let mut watchdog = Watchdog::new(p.WATCHDOG);
-        watchdog.start(Duration::from_millis(constants::WATCHDOG_TIMEOUT_MS as u64));
+        crate::watchdog::init(Watchdog::new(p.WATCHDOG));
         log::info!("FLIGHT LOOP: Watchdog started ({} ms timeout). Loop running.", constants::WATCHDOG_TIMEOUT_MS);
 
         loop {
@@ -727,7 +725,7 @@ async fn main(spawner: Spawner) {
 
             // feed before execute() and starts the countdown
             // If execute() hangs for > WATCHDOG_TIMEOUT_MS, chip resets
-            watchdog.feed(Duration::from_millis(constants::WATCHDOG_TIMEOUT_MS as u64));
+            crate::watchdog::feed();
             let start = Instant::now();
 
             flight_loop.execute().await;
@@ -736,7 +734,7 @@ async fn main(spawner: Spawner) {
 
             // Feed again immediately after execute() before sleep
             // This prevents the 50 ms Timer delay from counting toward the timeout
-            watchdog.feed(Duration::from_millis(constants::WATCHDOG_TIMEOUT_MS as u64));
+            crate::watchdog::feed();
 
             if flight_loop.flight_state.cycle_count <= 3 {
                 log::info!("FLIGHT LOOP: Cycle {} complete in {} ms", flight_loop.flight_state.cycle_count, elapsed);
