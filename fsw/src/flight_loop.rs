@@ -78,6 +78,12 @@ pub struct FlightLoop {
     fault_signal_sent: bool,
     last_alt: f32,
 
+    // Overpressure latch — once PT3 has been above the threshold for 3
+    // consecutive cycles we open SV and fault. Single-sample noise spikes
+    // won't trigger.
+    overpressure_triggered: bool,
+    overpressure_count: u8,
+
     /// Sim only: if Some, overrides altitude + forces altimeter VALID after read_sensors().
     /// Set to None in normal flight — zero cost.
     pub sim_altitude_override: Option<f32>,
@@ -128,6 +134,8 @@ impl FlightLoop {
             n4_sent: false,
             fault_signal_sent: false,
             last_alt: 0.0,
+            overpressure_triggered: false,
+            overpressure_count: 0,
             sim_altitude_override: None,
         }
     }
@@ -182,6 +190,11 @@ impl FlightLoop {
                 phase,
             });
         }
+
+        // 2c. Overpressure latch: if PT3 exceeds the threshold, open SV and
+        // force Fault. Checked every cycle regardless of flight mode so tank
+        // overpressure before launch is handled the same as during flight.
+        self.check_overpressure().await;
 
         // 3. Process logic and transitions
         self.check_transitions().await;
@@ -383,6 +396,40 @@ impl FlightLoop {
                     self.flight_state.trigger_standby().await;
                 }
             }
+        }
+    }
+
+    /// If PT3 (scaled PSI) exceeds `PT3_OVERPRESSURE_THRESHOLD` for 3
+    /// consecutive cycles, latch SV open and force Fault. One-shot: once
+    /// fired, further calls are a no-op so sensor noise can't re-issue
+    /// commands or overwrite mode decisions.
+    pub async fn check_overpressure(&mut self) {
+        if self.overpressure_triggered {
+            return;
+        }
+        let pt3 = self.flight_state.packet.pt3;
+        if pt3 > constants::PT3_OVERPRESSURE_THRESHOLD {
+            self.overpressure_count = self.overpressure_count.saturating_add(1);
+            log::warn!(
+                "OVERPRESSURE: PT3 = {:.1} > {:.1} (count {}/3)",
+                pt3,
+                constants::PT3_OVERPRESSURE_THRESHOLD,
+                self.overpressure_count,
+            );
+            if self.overpressure_count >= 3 {
+                log::error!(
+                    "OVERPRESSURE LATCHED: opening SV and transitioning to Fault"
+                );
+                // Open SV with no auto-close — it stays open for the rest of the flight.
+                self.flight_state.open_sv(0).await;
+                self.sv_open = true;
+                self.flight_state.flight_mode = FlightMode::Fault;
+                self.flight_state.write_packet_to_fram().await;
+                self.overpressure_triggered = true;
+            }
+        } else {
+            // Reset on any in-range sample so the three spikes must be consecutive.
+            self.overpressure_count = 0;
         }
     }
 

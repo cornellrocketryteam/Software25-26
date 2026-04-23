@@ -131,6 +131,10 @@ pub const ADS1015_I2C_ADDR: u8 = 0x48;
 // PT3 (channel 3)
 pub const ADS1015_PT3_SCALE_M: f32 = 0.905422;
 pub const ADS1015_PT3_SCALE_B: f32 = -13.27332;
+
+/// Overpressure threshold on PT3 (scaled units, PSI). Above this, FSW latches
+/// SV open and transitions to Fault mode. One-shot — only fires once per boot.
+pub const PT3_OVERPRESSURE_THRESHOLD: f32 = 1000.0;
 // PT4 (channel 2)
 pub const ADS1015_PT4_SCALE_M: f32 = 0.905422;
 pub const ADS1015_PT4_SCALE_B: f32 = -13.27332;
