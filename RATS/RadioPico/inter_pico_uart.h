@@ -15,9 +15,8 @@ public:
     // RadioPico uses GP4 (TX) to send to StepperPico
     static void init();
 
-    // Send tracking data packet with sync word
-    // Returns true if sent successfully
-    static bool sendTrackingData(int32_t latitude_udeg, int32_t longitude_udeg, float altitude);
+    // Send tracking data to the Stepper Pico
+    static bool sendTrackingData(uint32_t flight_mode, int32_t latitude_udeg, int32_t longitude_udeg, float altitude);
 
     // Get statistics
     static void getStats(uint32_t& packets_sent, uint32_t& bytes_sent);

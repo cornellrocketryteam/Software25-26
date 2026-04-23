@@ -34,7 +34,7 @@
 #define SYNC_WORD 0x3E5D5967
 
 // Telemetry rates
-#define EXPECTED_PACKET_RATE_HZ 10
+#define EXPECTED_PACKET_RATE_HZ 20
 #define PACKET_INTERVAL_MS (1000 / EXPECTED_PACKET_RATE_HZ)
 
 // Link loss detection
@@ -57,7 +57,7 @@
 
 // Buffer sizes
 #define RFD_RX_BUFFER_SIZE 512
-#define RADIO_PACKET_SIZE 107  // Full Radio Packet structure per RATS specification
+#define RADIO_PACKET_SIZE 199  // Full Radio Packet structure per RATS specification
 #define TRACKING_DATA_SIZE 12
 
 // SD card logging

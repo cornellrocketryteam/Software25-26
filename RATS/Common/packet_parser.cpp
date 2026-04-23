@@ -13,111 +13,84 @@ T PacketParser::readValue(const uint8_t* buffer, size_t& offset) {
 }
 
 bool PacketParser::parseRadioPacket(const uint8_t* buffer, size_t length, RadioPacket& packet) {
-    // Full 107-byte Radio Packet per RATS specification
-    if (length < 107) return false;
+    // Full 199-byte Radio Packet
+    if (length < 199) return false;
 
-    size_t offset = 0;
-
-    // Byte 0-3: Sync word
-    packet.sync_word = readValue<uint32_t>(buffer, offset);
-
-    // Byte 4-5: Metadata
-    packet.metadata = readValue<uint16_t>(buffer, offset);
-
-    // Byte 6-9: Milliseconds since boot
-    packet.ms_since_boot = readValue<uint32_t>(buffer, offset);
-
-    // Byte 10-13: Events
-    packet.events = readValue<uint32_t>(buffer, offset);
-
-    // Byte 14-21: Altimeter data
-    packet.altitude = readValue<float>(buffer, offset);
-    packet.temperature = readValue<float>(buffer, offset);
-
-    // Byte 22-38: GPS data
-    packet.latitude = readValue<int32_t>(buffer, offset);
-    packet.longitude = readValue<int32_t>(buffer, offset);
-    packet.num_satellites = readValue<uint8_t>(buffer, offset);
-    packet.gps_unix_time = readValue<uint32_t>(buffer, offset);
-    packet.gps_horizontal_accuracy = readValue<uint32_t>(buffer, offset);
-
-    // Byte 39-74: IMU data
-    packet.imu_accel_x = readValue<float>(buffer, offset);
-    packet.imu_accel_y = readValue<float>(buffer, offset);
-    packet.imu_accel_z = readValue<float>(buffer, offset);
-    packet.imu_gyro_x = readValue<float>(buffer, offset);
-    packet.imu_gyro_y = readValue<float>(buffer, offset);
-    packet.imu_gyro_z = readValue<float>(buffer, offset);
-    packet.imu_orient_x = readValue<float>(buffer, offset);
-    packet.imu_orient_y = readValue<float>(buffer, offset);
-    packet.imu_orient_z = readValue<float>(buffer, offset);
-
-    // Byte 75-86: Accelerometer data
-    packet.accel_x = readValue<float>(buffer, offset);
-    packet.accel_y = readValue<float>(buffer, offset);
-    packet.accel_z = readValue<float>(buffer, offset);
-
-    // Byte 87-106: ADC and BLiMS data
-    packet.battery_voltage = readValue<float>(buffer, offset);
-    packet.pt3_pressure = readValue<float>(buffer, offset);
-    packet.pt4_pressure = readValue<float>(buffer, offset);
-    packet.rtd_temperature = readValue<float>(buffer, offset);
-    packet.blims_motor_state = readValue<float>(buffer, offset);
+    // Since both Raspberry Pi Pico (ARM Cortex-M0+) and the Rust packet serialization
+    // use little-endian, and the struct is packed, we can directly copy the memory.
+    memcpy(&packet, buffer, sizeof(RadioPacket));
 
     return true;
 }
 
 void PacketParser::radioPacketToJSON(const RadioPacket& packet, char* json_buffer, size_t buffer_size) {
-    // Full JSON output for complete Radio Packet structure
-    // Extract flight mode from metadata (bits 13-15)
-    uint8_t flight_mode = (packet.metadata >> 13) & 0x07;
-
-    // Convert GPS coordinates from micro-degrees to decimal degrees
-    float lat_deg = packet.latitude / 1000000.0f;
-    float lon_deg = packet.longitude / 1000000.0f;
-
+    // Generate JSON matching the telemetry_data DB schema
     snprintf(json_buffer, buffer_size,
         "{"
-        "\"metadata\":%u,"
+        "\"sync_word\":%u,"
         "\"flight_mode\":%u,"
-        "\"ms_since_boot\":%u,"
-        "\"events\":%u,"
-        "\"altitude\":%.2f,"
-        "\"temperature\":%.2f,"
+        "\"pressure\":%.4f,"
+        "\"temp\":%.4f,"
+        "\"altitude\":%.4f,"
         "\"latitude\":%.6f,"
         "\"longitude\":%.6f,"
         "\"num_satellites\":%u,"
-        "\"gps_unix_time\":%u,"
-        "\"gps_h_accuracy\":%u,"
-        "\"imu_accel\":[%.3f,%.3f,%.3f],"
-        "\"imu_gyro\":[%.3f,%.3f,%.3f],"
-        "\"imu_orient\":[%.3f,%.3f,%.3f],"
-        "\"accel\":[%.3f,%.3f,%.3f],"
-        "\"battery_voltage\":%.2f,"
-        "\"pt3_pressure\":%.2f,"
-        "\"pt4_pressure\":%.2f,"
-        "\"rtd_temp\":%.2f,"
-        "\"blims_motor\":%.2f"
+        "\"timestamp\":%.4f,"
+        "\"mag_x\":%.4f,\"mag_y\":%.4f,\"mag_z\":%.4f,"
+        "\"accel_x\":%.4f,\"accel_y\":%.4f,\"accel_z\":%.4f,"
+        "\"gyro_x\":%.4f,\"gyro_y\":%.4f,\"gyro_z\":%.4f,"
+        "\"pt3\":%.4f,\"pt4\":%.4f,\"rtd\":%.4f,"
+        "\"sv_2_open\":%s,"
+        "\"mav_open\":%s,"
+        "\"ssa_drogue_deployed\":%u,"
+        "\"ssa_main_deployed\":%u,"
+        "\"cmd_n1\":%u,\"cmd_n2\":%u,\"cmd_n3\":%u,\"cmd_n4\":%u,"
+        "\"cmd_a1\":%u,\"cmd_a2\":%u,\"cmd_a3\":%u,"
+        "\"airbrake_state\":%u,"
+        "\"predicted_apogee\":%.4f,"
+        "\"h_acc\":%u,\"v_acc\":%u,"
+        "\"vel_n\":%.4f,\"vel_e\":%.4f,\"vel_d\":%.4f,\"g_speed\":%.4f,"
+        "\"s_acc\":%u,\"head_acc\":%u,"
+        "\"fix_type\":%u,"
+        "\"head_mot\":%d,"
+        "\"blims_motor_position\":%.4f,"
+        "\"blims_phase_id\":%d,"
+        "\"blims_pid_p\":%.4f,\"blims_pid_i\":%.4f,"
+        "\"blims_bearing\":%.4f,"
+        "\"blims_loiter_step\":%d,"
+        "\"blims_heading_des\":%.4f,"
+        "\"blims_heading_error\":%.4f,"
+        "\"blims_error_integral\":%.4f,"
+        "\"blims_dist_to_target_m\":%.4f,"
+        "\"blims_target_lat\":%.6f,"
+        "\"blims_target_lon\":%.6f,"
+        "\"blims_wind_from_deg\":%.4f"
         "}",
-        packet.metadata,
-        flight_mode,
-        packet.ms_since_boot,
-        packet.events,
-        packet.altitude,
-        packet.temperature,
-        lat_deg,
-        lon_deg,
-        packet.num_satellites,
-        packet.gps_unix_time,
-        packet.gps_horizontal_accuracy,
-        packet.imu_accel_x, packet.imu_accel_y, packet.imu_accel_z,
-        packet.imu_gyro_x, packet.imu_gyro_y, packet.imu_gyro_z,
-        packet.imu_orient_x, packet.imu_orient_y, packet.imu_orient_z,
+        packet.sync_word,
+        packet.flight_mode,
+        packet.pressure, packet.temp, packet.altitude,
+        packet.latitude, packet.longitude,
+        packet.num_satellites, packet.timestamp,
+        packet.mag_x, packet.mag_y, packet.mag_z,
         packet.accel_x, packet.accel_y, packet.accel_z,
-        packet.battery_voltage,
-        packet.pt3_pressure,
-        packet.pt4_pressure,
-        packet.rtd_temperature,
-        packet.blims_motor_state
+        packet.gyro_x, packet.gyro_y, packet.gyro_z,
+        packet.pt3, packet.pt4, packet.rtd,
+        packet.sv_open ? "true" : "false",
+        packet.mav_open ? "true" : "false",
+        packet.ssa_drogue_deployed, packet.ssa_main_deployed,
+        packet.cmd_n1, packet.cmd_n2, packet.cmd_n3, packet.cmd_n4,
+        packet.cmd_a1, packet.cmd_a2, packet.cmd_a3,
+        packet.airbrake_state, packet.predicted_apogee,
+        packet.h_acc, packet.v_acc,
+        packet.vel_n, packet.vel_e, packet.vel_d, packet.g_speed,
+        packet.s_acc, packet.head_acc, packet.fix_type,
+        packet.head_mot,
+        packet.blims_motor_position, packet.blims_phase_id,
+        packet.blims_pid_p, packet.blims_pid_i, packet.blims_bearing,
+        packet.blims_loiter_step,
+        packet.blims_heading_des, packet.blims_heading_error,
+        packet.blims_error_integral, packet.blims_dist_to_target_m,
+        packet.blims_target_lat, packet.blims_target_lon,
+        packet.blims_wind_from_deg
     );
 }

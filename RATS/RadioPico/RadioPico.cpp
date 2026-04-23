@@ -134,7 +134,7 @@ int main() {
     // Test mode: create simulator for generating packets
     PacketSimulator simulator;
     uint32_t last_transmit_time = 0;
-    printf("Starting loopback packet transmission at 10Hz...\n\n");
+    printf("Starting loopback packet transmission at 20Hz...\n\n");
 
 #elif DUAL_RADIO_TEST_MODE
     printf("*** DUAL RFD900x TEST MODE ***\n");
@@ -146,7 +146,7 @@ int main() {
     printf("  Pin 1,2 (GND) -> Pico GND\n");
     printf("  Pin 4 (Vcc) -> 5V supply\n");
     printf("  Pin 9 (TX) -> Pico GP1 (UART0 RX)\n\n");
-    printf("Simulating rocket telemetry at 10Hz\n");
+    printf("Simulating rocket telemetry at 20Hz\n");
     printf("Both radios must have Network ID = 217\n\n");
 
     // Test mode: create simulator for generating packets
@@ -175,25 +175,25 @@ int main() {
     printf("[Core 0] Ready for packets\n\n");
     
     // Core 0 main loop - FAST I/O ONLY
-    // Full 107-byte Radio Packet buffer
-    uint8_t radio_buffer[107];
+    // Full 199-byte Radio Packet buffer
+    uint8_t radio_buffer[199];
     RadioPacket parsed_packet;
     uint32_t packet_count = 0;
     uint32_t last_stats_time = 0;
     
     while (true) {
 #if DUAL_RADIO_TEST_MODE || LOOPBACK_TEST_MODE
-        // Transmit a test packet every 100ms (10Hz)
+        // Transmit a test packet every 50ms (20Hz)
         uint32_t now = to_ms_since_boot(get_absolute_time());
-        if (now - last_transmit_time >= 100) {
+        if (now - last_transmit_time >= 50) {
             last_transmit_time = now;
 
-            // Generate full 107-byte Radio Packet
+            // Generate full 199-byte Radio Packet
             RadioPacket sim_packet;
             simulator.generateRadioPacket(sim_packet);
 
-            // Serialize to bytes (107 bytes full structure)
-            uint8_t tx_buffer[107];
+            // Serialize to bytes (199 bytes full structure)
+            uint8_t tx_buffer[199];
             PacketSimulator::serializeRadioPacket(sim_packet, tx_buffer);
 
             // Transmit over UART0 to RFD900x #1 (or loopback to GP1 via GP0)
@@ -202,9 +202,8 @@ int main() {
             // Debug: confirm transmission
             static uint32_t tx_count = 0;
             if (++tx_count % 10 == 0) {
-                uint8_t flight_mode = (sim_packet.metadata >> 13) & 0x07;
                 printf("[TX] Sent %u packets (Sync: 0x%08X, Mode: %u, Alt: %.1fm)\n",
-                       tx_count, sim_packet.sync_word, flight_mode, sim_packet.altitude);
+                       tx_count, sim_packet.sync_word, sim_packet.flight_mode, sim_packet.altitude);
             }
         }
 #endif
@@ -224,8 +223,9 @@ int main() {
 
                         // Send tracking data to Stepper Pico via UART1
                         InterPicoUART::sendTrackingData(
-                            parsed_packet.latitude,
-                            parsed_packet.longitude,
+                            parsed_packet.flight_mode,
+                            degrees_to_udeg(parsed_packet.latitude),
+                            degrees_to_udeg(parsed_packet.longitude),
                             parsed_packet.altitude
                         );
 

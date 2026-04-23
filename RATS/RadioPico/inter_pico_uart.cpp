@@ -8,9 +8,7 @@
 #define INTER_PICO_RX_PIN 5    // RadioPico GP5 <- StepperPico GP4 (not used for TX-only)
 #define INTER_PICO_BAUD 115200
 
-// Sync word for packet start detection
-// Using unique pattern unlikely to appear in GPS/altitude data
-#define TRACKING_SYNC_WORD 0x54524B21  // "TRK!" in ASCII
+// Sync word for packet start detection is defined in serial_protocol.h
 
 // Statistics
 uint32_t InterPicoUART::packets_sent = 0;
@@ -36,9 +34,9 @@ void InterPicoUART::init() {
            INTER_PICO_TX_PIN, INTER_PICO_BAUD);
 }
 
-bool InterPicoUART::sendTrackingData(int32_t latitude_udeg, int32_t longitude_udeg, float altitude) {
+bool InterPicoUART::sendTrackingData(uint32_t flight_mode, int32_t latitude_udeg, int32_t longitude_udeg, float altitude) {
     // Build packet with sync word prefix
-    uint8_t packet_buffer[16];  // 4 bytes sync + 12 bytes data
+    uint8_t packet_buffer[20];  // 4 bytes sync + 16 bytes data
     uint32_t offset = 0;
 
     // Add sync word (4 bytes)
@@ -46,8 +44,9 @@ bool InterPicoUART::sendTrackingData(int32_t latitude_udeg, int32_t longitude_ud
     memcpy(packet_buffer + offset, &sync_word, sizeof(uint32_t));
     offset += sizeof(uint32_t);
 
-    // Add tracking data (12 bytes)
+    // Add tracking data (16 bytes)
     TrackingData data;
+    data.flight_mode = flight_mode;
     data.latitude_udeg = latitude_udeg;
     data.longitude_udeg = longitude_udeg;
     data.altitude = altitude;
