@@ -1,19 +1,24 @@
 use embassy_executor::Spawner;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
-use embassy_time::Timer;
+use embassy_time::{Instant, Timer};
 use embassy_usb::class::cdc_acm::{Receiver, Sender};
 use embassy_usb::{UsbDevice, driver::EndpointError};
 
+use crate::constants::HEARTBEAT_TIMEOUT_MS;
 use crate::module::{self, UsbDriver};
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 /// Number of comma-separated fields the FSW emits after the `$TELEM,` prefix.
 /// Host-side parsers must match this exactly.
 pub const TELEM_FIELD_COUNT: usize = 56;
 
-/// Global software umbilical connection tracked by embassy-usb.
-static IS_CONNECTED: AtomicBool = AtomicBool::new(false);
+/// Whether any heartbeat has ever been received. Separates the "never seen"
+/// state from the wrapping `LAST_HEARTBEAT_MS` value (RP2040 lacks AtomicU64,
+/// so we truncate millis to u32 and rely on wrapping subtraction for freshness
+/// — valid for diffs well under 2^31 ms).
+static HEARTBEAT_EVER: AtomicBool = AtomicBool::new(false);
+static LAST_HEARTBEAT_MS: AtomicU32 = AtomicU32::new(0);
 
 /// While true, `emit_telemetry` is a no-op so a long flash/FRAM dump on the
 /// shared text channel isn't interleaved with `$TELEM,` lines (which would
@@ -21,9 +26,23 @@ static IS_CONNECTED: AtomicBool = AtomicBool::new(false);
 /// telemetry.
 static DUMP_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
-/// Returns whether the ground station umbilical is actively connected via USB.
+/// Returns whether the ground station umbilical is actively connected.
+/// True iff a heartbeat (`<H>`) was received within the last
+/// `HEARTBEAT_TIMEOUT_MS`. USB enumeration state is intentionally ignored —
+/// it lies when the host process dies but the cable stays plugged.
 pub fn is_connected() -> bool {
-    IS_CONNECTED.load(Ordering::Relaxed)
+    if !HEARTBEAT_EVER.load(Ordering::Relaxed) {
+        return false;
+    }
+    let last = LAST_HEARTBEAT_MS.load(Ordering::Relaxed);
+    let now = Instant::now().as_millis() as u32;
+    now.wrapping_sub(last) < HEARTBEAT_TIMEOUT_MS as u32
+}
+
+/// Records a heartbeat from the ground station. Called when `<H>` is received.
+fn record_heartbeat() {
+    LAST_HEARTBEAT_MS.store(Instant::now().as_millis() as u32, Ordering::Relaxed);
+    HEARTBEAT_EVER.store(true, Ordering::Relaxed);
 }
 
 /// Call before a flash/FRAM dump begins. Suppresses telemetry emission until
@@ -291,16 +310,12 @@ async fn usb_task(mut usb_device: UsbDevice<'static, UsbDriver>) -> ! {
 async fn usb_sender_task(mut sender: Sender<'static, UsbDriver>) -> ! {
     loop {
         sender.wait_connection().await;
-        IS_CONNECTED.store(true, Ordering::Relaxed);
 
         loop {
             let msg = RAW_OUTBOUND.receive().await;
             match sender.write_packet(&msg).await {
                 Ok(_) => {}
-                Err(EndpointError::Disabled) => {
-                    IS_CONNECTED.store(false, Ordering::Relaxed);
-                    break;
-                }
+                Err(EndpointError::Disabled) => break,
                 Err(_) => break,
             }
         }
@@ -313,7 +328,6 @@ async fn usb_receiver_task(mut receiver: Receiver<'static, UsbDriver>) -> ! {
     let mut buf = [0; 64];
     loop {
         receiver.wait_connection().await;
-        IS_CONNECTED.store(true, Ordering::Relaxed);
 
         loop {
             let n = match receiver.read_packet(&mut buf).await {
@@ -323,12 +337,17 @@ async fn usb_receiver_task(mut receiver: Receiver<'static, UsbDriver>) -> ! {
                     continue;
                 }
                 Err(EndpointError::Disabled) => {
-                    IS_CONNECTED.store(false, Ordering::Relaxed);
                     break;
                 }
             };
 
             let data = &buf[..n];
+
+            // Heartbeat is hot-path: bump the timestamp and skip the command channel.
+            if data == b"<H>" {
+                record_heartbeat();
+                continue;
+            }
 
             let cmd = match data {
                 b"<L>" => Some(UmbilicalCommand::Launch),

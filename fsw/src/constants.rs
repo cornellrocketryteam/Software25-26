@@ -114,6 +114,11 @@ pub const MAIN_LOG_TIMEOUT_MS: u64 = 1_200_000; // 20 minutes
 pub const N2_ARM_ALTITUDE_M: f32 = 500.0;
 
 pub const UMBILICAL_TIMEOUT_MS: u64 = 15_000; // 15 seconds
+
+/// Maximum age of the most recent umbilical heartbeat (`<H>`) before the link
+/// is considered down. Independent of `UMBILICAL_TIMEOUT_MS`, which gates the
+/// vent-on-disconnect action.
+pub const HEARTBEAT_TIMEOUT_MS: u64 = 3_000;
 pub const MAV_OPEN_DURATION_MS: u64 = 4000; // 4 seconds for L3 CHANGE FOR LV (7.88 seconds for LV)
 pub const LAUNCH_SV_PREVENT_MS: u64 = 5_000;  // 5 s pre-vent before closing SV
 pub const LAUNCH_POST_MAV_WAIT_MS: u64 = 10_000; // 10 s wait after MAV open before final vent

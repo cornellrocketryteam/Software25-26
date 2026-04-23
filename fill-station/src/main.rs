@@ -1080,7 +1080,27 @@ async fn umbilical_task(
         // Cap line_buf growth in case the FSW hangs mid-line (S5).
         const LINE_BUF_MAX: usize = 8 * 1024;
 
+        // 1 Hz heartbeat to FSW. FSW gates `umbilical_connected` on freshness
+        // of these `<H>` tokens (see fsw/src/umbilical.rs).
+        let mut last_heartbeat_sent = std::time::Instant::now()
+            .checked_sub(Duration::from_secs(2))
+            .unwrap_or_else(std::time::Instant::now);
+        const HEARTBEAT_INTERVAL: Duration = Duration::from_millis(1000);
+
         loop {
+            // Send heartbeat if due
+            if last_heartbeat_sent.elapsed() >= HEARTBEAT_INTERVAL {
+                let write_result = smol::unblock({
+                    let mut port_clone = port.try_clone().expect("Failed to clone serial port");
+                    move || port_clone.write_all(b"<H>")
+                }).await;
+                if let Err(e) = write_result {
+                    error!("Umbilical heartbeat write failed: {}", e);
+                    break;
+                }
+                last_heartbeat_sent = std::time::Instant::now();
+            }
+
             // Check for pending commands to send
             while let Ok(cmd) = cmd_rx.try_recv() {
                 let cmd_bytes = cmd.into_bytes();
