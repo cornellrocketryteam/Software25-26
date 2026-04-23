@@ -378,9 +378,9 @@ impl FlightLoop {
                     self.n4_sent = true;
                     self.flight_state.packet.cmd_n4 = 1;
                 }
-                UmbilicalCommand::FaultMode => {
-                    log::warn!("UMBILICAL CMD: Force Fault Mode");
-                    self.flight_state.trigger_fault().await;
+                UmbilicalCommand::StandbyMode => {
+                    log::warn!("UMBILICAL CMD: Force Standby Mode");
+                    self.flight_state.trigger_standby().await;
                 }
             }
         }
@@ -437,6 +437,7 @@ impl FlightLoop {
                         self.flight_state.buzz(3); // just disconnected
                     }
                 }
+                /*
                 self.umbilical_prev = self.flight_state.umbilical_connected;
                 if self.flight_state.altimeter_state == crate::state::SensorState::INVALID {
                     self.alt_armed = false;
@@ -445,6 +446,7 @@ impl FlightLoop {
                     log::error!("Altimeter invalid at Startup; transitioning to Fault");
                     return;
                 }
+                */
                 self.key_armed = true; // update with mission control box?
                 if self.key_armed && self.flight_state.umbilical_connected {
                     if self.flight_state.altimeter_state == crate::state::SensorState::VALID {
@@ -465,6 +467,7 @@ impl FlightLoop {
                 Add an indicator if the altimeter is bad for either standby and/or startup so we can try to fix it, if no fix
                 then go to fault mode
                 */
+                /*
                 if self.flight_state.altimeter_state != crate::state::SensorState::VALID {
                     // altimeter is not working
                     self.alt_armed = false;
@@ -473,6 +476,7 @@ impl FlightLoop {
                     log::error!("Altimeter invalid at Standby; transitioning to Fault");
                     return;
                 }
+                */
                 if self.flight_state.umbilical_connected {
                     log::info!("Umbilical connected");
                     self.umbilical_disconnect_time = None;
@@ -536,7 +540,7 @@ impl FlightLoop {
                 //     self.flight_state.flight_mode = FlightMode::Fault;
                 //     return;
                 // }
-
+                /*
                 if self.flight_state.altimeter_state != crate::state::SensorState::VALID {
                     // altimeter is not working
                     self.alt_armed = false;
@@ -545,6 +549,7 @@ impl FlightLoop {
                     log::error!("Altimeter invalid at Ascent; transitioning to Fault");
                     return;
                 }
+                */
                 // Look at scenario where not above armed altitude and MAV is closed
                 if self.flight_state.altimeter_state == SensorState::VALID
                     && !self.alt_armed
@@ -560,6 +565,7 @@ impl FlightLoop {
             }
 
             FlightMode::Coast => {
+                /*
                 if self.flight_state.altimeter_state != crate::state::SensorState::VALID {
                     // altimeter is not working
                     self.alt_armed = false;
@@ -568,6 +574,7 @@ impl FlightLoop {
                     log::error!("Altimeter invalid at Coast; transitioning to Fault");
                     return;
                 }
+                */
 
                 if self.flight_state.altimeter_state == SensorState::VALID && self.alt_armed {
                     // Capture oldest value (≈0.5 s ago at 20 Hz) before overwrite

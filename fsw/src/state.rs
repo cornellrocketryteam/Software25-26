@@ -588,9 +588,9 @@ impl FlightState {
         }
     }
 
-    // Force FlightMode to Fault
-    pub async fn trigger_fault(&mut self) {
-        self.flight_mode = FlightMode::Fault;
+    // Force FlightMode to Standby
+    pub async fn trigger_standby(&mut self) {
+        self.flight_mode = FlightMode::Standby;
         self.write_packet_to_fram().await;
     }
 
