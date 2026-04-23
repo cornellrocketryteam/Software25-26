@@ -10,7 +10,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 /// Number of comma-separated fields the FSW emits after the `$TELEM,` prefix.
 /// Host-side parsers must match this exactly.
-pub const TELEM_FIELD_COUNT: usize = 22;
+pub const TELEM_FIELD_COUNT: usize = 56;
 
 /// Global software umbilical connection tracked by embassy-usb.
 static IS_CONNECTED: AtomicBool = AtomicBool::new(false);
@@ -110,13 +110,13 @@ pub fn emit_telemetry(packet: &crate::packet::Packet) {
     if DUMP_IN_PROGRESS.load(Ordering::Acquire) {
         return;
     }
-    let mut buf = [0u8; 512];
+    let mut buf = [0u8; 1024];
     let len = {
         use core::fmt::Write;
         let mut w = BufWriter::new(&mut buf);
         let _ = write!(
             w,
-            "$TELEM,{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
+            "$TELEM,{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
             packet.flight_mode,
             packet.pressure,
             packet.temp,
@@ -139,6 +139,40 @@ pub fn emit_telemetry(packet: &crate::packet::Packet) {
             packet.rtd,
             packet.sv_open as u8,
             packet.mav_open as u8,
+            packet.ssa_drogue_deployed,
+            packet.ssa_main_deployed,
+            packet.cmd_n1,
+            packet.cmd_n2,
+            packet.cmd_n3,
+            packet.cmd_n4,
+            packet.cmd_a1,
+            packet.cmd_a2,
+            packet.cmd_a3,
+            packet.airbrake_state,
+            packet.predicted_apogee,
+            packet.h_acc,
+            packet.v_acc,
+            packet.vel_n,
+            packet.vel_e,
+            packet.vel_d,
+            packet.g_speed,
+            packet.s_acc,
+            packet.head_acc,
+            packet.fix_type,
+            packet.head_mot,
+            packet.blims_motor_position,
+            packet.blims_phase_id,
+            packet.blims_pid_p,
+            packet.blims_pid_i,
+            packet.blims_bearing,
+            packet.blims_loiter_step,
+            packet.blims_heading_des,
+            packet.blims_heading_error,
+            packet.blims_error_integral,
+            packet.blims_dist_to_target_m,
+            packet.blims_target_lat,
+            packet.blims_target_lon,
+            packet.blims_wind_from_deg,
         );
         w.offset
     };

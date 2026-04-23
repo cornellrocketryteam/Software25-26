@@ -1,5 +1,26 @@
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, AtomicI16};
 use crate::components::umbilical::FswTelemetry;
+
+/// Last commanded state of fill-station actuators that we can't read back from
+/// hardware. Updated by the command handler, read by the MQTT publisher (and
+/// anything else that wants the most recent intent).
+///
+/// `qd_state`: -1 = retracted, 0 = unknown/initial, 1 = extended.
+#[derive(Debug)]
+pub struct ActuatorState {
+    pub ball_valve_open: AtomicBool,
+    pub qd_state: AtomicI16,
+}
+
+impl Default for ActuatorState {
+    fn default() -> Self {
+        Self {
+            ball_valve_open: AtomicBool::new(false),
+            qd_state: AtomicI16::new(0),
+        }
+    }
+}
 
 /// All supported commands for the fill station
 #[derive(Debug, Serialize, Deserialize)]

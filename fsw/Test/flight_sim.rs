@@ -832,3 +832,53 @@ pub async fn simulate_payload_commands(flight_loop: &mut FlightLoop) {
 
     log::info!("--- PAYLOAD COMMAND SIMULATION COMPLETE ---\n");
 }
+
+// Tests the 15-second umbilical disconnect failsafe in Standby mode
+pub async fn simulate_umbilical_disconnect(flight_loop: &mut FlightLoop) {
+    log::info!("\n--- STARTING UMBILICAL DISCONNECT SIMULATION ---");
+
+    // 1. Setup Standby State
+    flight_loop.flight_state.flight_mode = FlightMode::Standby;
+    flight_loop.set_key_switch(true);
+    flight_loop.set_altimeter_state(SensorState::VALID);
+    
+    // Connect umbilical
+    flight_loop.set_umbilical(true);
+    flight_loop.simulate_cycle().await;
+    
+    if flight_loop.flight_state.flight_mode == FlightMode::Standby {
+        log::info!("[UMBILICAL SIM] Setup successful, in Standby mode with Umbilical Connected.");
+    } else {
+        log::error!("[UMBILICAL SIM] Setup failed, not in Standby mode.");
+        return;
+    }
+
+    // 2. Disconnect umbilical
+    log::info!("[UMBILICAL SIM] Disconnecting Umbilical...");
+    flight_loop.set_umbilical(false);
+    flight_loop.simulate_cycle().await;
+    
+    // Check state immediately after disconnect
+    if !flight_loop.sv_open {
+        log::info!("[UMBILICAL SIM] SV remains closed immediately after disconnect (as expected).");
+    } else {
+        log::error!("[UMBILICAL SIM] FAILED: SV opened too early!");
+    }
+
+    // 3. Wait for timeout
+    log::info!("[UMBILICAL SIM] Waiting for >15s timeout...");
+    // Fast-forward 16 seconds
+    Timer::after_millis(16_000).await;
+    
+    // Run cycle to process the timeout
+    flight_loop.simulate_cycle().await;
+
+    // Check if SV opened
+    if flight_loop.sv_open {
+        log::info!("[UMBILICAL SIM] SUCCESS: SV opened to vent after umbilical timeout.");
+    } else {
+        log::error!("[UMBILICAL SIM] FAILED: SV did not open after umbilical timeout.");
+    }
+
+    log::info!("--- UMBILICAL DISCONNECT SIMULATION COMPLETE ---\n");
+}

@@ -2,10 +2,11 @@ use serde::{Deserialize, Serialize};
 
 /// Number of comma-separated fields in a `$TELEM,` line, matching the FSW
 /// emitter in `fsw/src/umbilical.rs`. Must be kept in sync on both sides.
-pub const TELEM_FIELD_COUNT: usize = 22;
+pub const TELEM_FIELD_COUNT: usize = 56;
 
 /// FSW telemetry packet parsed from CSV text lines.
 /// The FSW emits lines like: `$TELEM,0,101325.0,25.0,0.0,...,0,0\n`
+/// Field order must match `fsw/src/umbilical.rs::emit_telemetry`.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct FswTelemetry {
     pub flight_mode: u32,
@@ -28,16 +29,52 @@ pub struct FswTelemetry {
     pub pt3: f32,            // raw ADC counts
     pub pt4: f32,
     pub rtd: f32,
-    // valve states
+    // valve states (sv_open is FSW-side SV2 on the wire)
     pub sv_open: bool,
     pub mav_open: bool,
+    // event flags (0 = not triggered, 1 = triggered)
+    pub ssa_drogue_deployed: u8,
+    pub ssa_main_deployed: u8,
+    pub cmd_n1: u8,
+    pub cmd_n2: u8,
+    pub cmd_n3: u8,
+    pub cmd_n4: u8,
+    pub cmd_a1: u8,
+    pub cmd_a2: u8,
+    pub cmd_a3: u8,
+    // airbrake
+    pub airbrake_state: u8,
+    pub predicted_apogee: f32,
+    // u-blox advanced GPS
+    pub h_acc: u32,
+    pub v_acc: u32,
+    pub vel_n: f64,
+    pub vel_e: f64,
+    pub vel_d: f64,
+    pub g_speed: f64,
+    pub s_acc: u32,
+    pub head_acc: u32,
+    pub fix_type: u8,
+    pub head_mot: i32,
+    // BLiMS outputs
+    pub blims_motor_position: f32,
+    pub blims_phase_id: i8,
+    pub blims_pid_p: f32,
+    pub blims_pid_i: f32,
+    pub blims_bearing: f32,
+    pub blims_loiter_step: i8,
+    pub blims_heading_des: f32,
+    pub blims_heading_error: f32,
+    pub blims_error_integral: f32,
+    pub blims_dist_to_target_m: f32,
+    // BLiMS config
+    pub blims_target_lat: f32,
+    pub blims_target_lon: f32,
+    pub blims_wind_from_deg: f32,
 }
 
 impl FswTelemetry {
-    /// Total serialized size in bytes (kept for binary compat if needed).
-    pub const SIZE: usize = 82;
-
-    /// Parse from a CSV field slice (the 22 fields after the `$TELEM,` prefix).
+    /// Parse from a CSV field slice (the fields after the `$TELEM,` prefix).
     /// Returns `None` if the field count or any field fails to parse.
     pub fn from_csv(fields: &[&str]) -> Option<Self> {
         if fields.len() != TELEM_FIELD_COUNT {
@@ -66,35 +103,41 @@ impl FswTelemetry {
             rtd:            fields[19].trim().parse().ok()?,
             sv_open:        fields[20].trim().parse::<u8>().ok()? != 0,
             mav_open:       fields[21].trim().parse::<u8>().ok()? != 0,
+            ssa_drogue_deployed: fields[22].trim().parse().ok()?,
+            ssa_main_deployed:   fields[23].trim().parse().ok()?,
+            cmd_n1:         fields[24].trim().parse().ok()?,
+            cmd_n2:         fields[25].trim().parse().ok()?,
+            cmd_n3:         fields[26].trim().parse().ok()?,
+            cmd_n4:         fields[27].trim().parse().ok()?,
+            cmd_a1:         fields[28].trim().parse().ok()?,
+            cmd_a2:         fields[29].trim().parse().ok()?,
+            cmd_a3:         fields[30].trim().parse().ok()?,
+            airbrake_state: fields[31].trim().parse().ok()?,
+            predicted_apogee: fields[32].trim().parse().ok()?,
+            h_acc:          fields[33].trim().parse().ok()?,
+            v_acc:          fields[34].trim().parse().ok()?,
+            vel_n:          fields[35].trim().parse().ok()?,
+            vel_e:          fields[36].trim().parse().ok()?,
+            vel_d:          fields[37].trim().parse().ok()?,
+            g_speed:        fields[38].trim().parse().ok()?,
+            s_acc:          fields[39].trim().parse().ok()?,
+            head_acc:       fields[40].trim().parse().ok()?,
+            fix_type:       fields[41].trim().parse().ok()?,
+            head_mot:       fields[42].trim().parse().ok()?,
+            blims_motor_position:   fields[43].trim().parse().ok()?,
+            blims_phase_id:         fields[44].trim().parse().ok()?,
+            blims_pid_p:            fields[45].trim().parse().ok()?,
+            blims_pid_i:            fields[46].trim().parse().ok()?,
+            blims_bearing:          fields[47].trim().parse().ok()?,
+            blims_loiter_step:      fields[48].trim().parse().ok()?,
+            blims_heading_des:      fields[49].trim().parse().ok()?,
+            blims_heading_error:    fields[50].trim().parse().ok()?,
+            blims_error_integral:   fields[51].trim().parse().ok()?,
+            blims_dist_to_target_m: fields[52].trim().parse().ok()?,
+            blims_target_lat:       fields[53].trim().parse().ok()?,
+            blims_target_lon:       fields[54].trim().parse().ok()?,
+            blims_wind_from_deg:    fields[55].trim().parse().ok()?,
         })
-    }
-
-    /// Deserialize from an 82-byte little-endian buffer (legacy binary format).
-    pub fn from_bytes(buf: &[u8; Self::SIZE]) -> Self {
-        Self {
-            flight_mode:    u32::from_le_bytes(buf[0..4].try_into().unwrap()),
-            pressure:       f32::from_le_bytes(buf[4..8].try_into().unwrap()),
-            temp:           f32::from_le_bytes(buf[8..12].try_into().unwrap()),
-            altitude:       f32::from_le_bytes(buf[12..16].try_into().unwrap()),
-            latitude:       f32::from_le_bytes(buf[16..20].try_into().unwrap()),
-            longitude:      f32::from_le_bytes(buf[20..24].try_into().unwrap()),
-            num_satellites: u32::from_le_bytes(buf[24..28].try_into().unwrap()),
-            timestamp:      f32::from_le_bytes(buf[28..32].try_into().unwrap()),
-            mag_x:          f32::from_le_bytes(buf[32..36].try_into().unwrap()),
-            mag_y:          f32::from_le_bytes(buf[36..40].try_into().unwrap()),
-            mag_z:          f32::from_le_bytes(buf[40..44].try_into().unwrap()),
-            accel_x:        f32::from_le_bytes(buf[44..48].try_into().unwrap()),
-            accel_y:        f32::from_le_bytes(buf[48..52].try_into().unwrap()),
-            accel_z:        f32::from_le_bytes(buf[52..56].try_into().unwrap()),
-            gyro_x:         f32::from_le_bytes(buf[56..60].try_into().unwrap()),
-            gyro_y:         f32::from_le_bytes(buf[60..64].try_into().unwrap()),
-            gyro_z:         f32::from_le_bytes(buf[64..68].try_into().unwrap()),
-            pt3:            f32::from_le_bytes(buf[68..72].try_into().unwrap()),
-            pt4:            f32::from_le_bytes(buf[72..76].try_into().unwrap()),
-            rtd:            f32::from_le_bytes(buf[76..80].try_into().unwrap()),
-            sv_open:        buf[80] != 0,
-            mav_open:       buf[81] != 0,
-        }
     }
 
     /// Human-readable flight mode name.
