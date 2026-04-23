@@ -467,7 +467,7 @@ impl FlightLoop {
                 Add an indicator if the altimeter is bad for either standby and/or startup so we can try to fix it, if no fix
                 then go to fault mode
                 */
-                /*
+
                 if self.flight_state.altimeter_state != crate::state::SensorState::VALID {
                     // altimeter is not working
                     self.alt_armed = false;
@@ -476,7 +476,7 @@ impl FlightLoop {
                     log::error!("Altimeter invalid at Standby; transitioning to Fault");
                     return;
                 }
-                */
+
                 if self.flight_state.umbilical_connected {
                     log::info!("Umbilical connected");
                     self.umbilical_disconnect_time = None;
@@ -540,7 +540,7 @@ impl FlightLoop {
                 //     self.flight_state.flight_mode = FlightMode::Fault;
                 //     return;
                 // }
-                /*
+
                 if self.flight_state.altimeter_state != crate::state::SensorState::VALID {
                     // altimeter is not working
                     self.alt_armed = false;
@@ -549,7 +549,7 @@ impl FlightLoop {
                     log::error!("Altimeter invalid at Ascent; transitioning to Fault");
                     return;
                 }
-                */
+
                 // Look at scenario where not above armed altitude and MAV is closed
                 if self.flight_state.altimeter_state == SensorState::VALID
                     && !self.alt_armed
@@ -565,7 +565,7 @@ impl FlightLoop {
             }
 
             FlightMode::Coast => {
-                /*
+
                 if self.flight_state.altimeter_state != crate::state::SensorState::VALID {
                     // altimeter is not working
                     self.alt_armed = false;
@@ -574,7 +574,7 @@ impl FlightLoop {
                     log::error!("Altimeter invalid at Coast; transitioning to Fault");
                     return;
                 }
-                */
+
 
                 if self.flight_state.altimeter_state == SensorState::VALID && self.alt_armed {
                     // Capture oldest value (≈0.5 s ago at 20 Hz) before overwrite
@@ -662,6 +662,7 @@ impl FlightLoop {
                     }
                 }
             }
+            
             FlightMode::DrogueDeployed => {
                 if self.flight_state.altimeter_state != crate::state::SensorState::VALID {
                     // altimeter is not working
