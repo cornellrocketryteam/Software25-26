@@ -578,6 +578,16 @@ async fn execute_command(
             actuator_state.qd_state.store(1, std::sync::atomic::Ordering::Relaxed);
             CommandResponse::Success
         }
+        Command::GetBallValveState => {
+            CommandResponse::BallValveState {
+                open: actuator_state.ball_valve_open.load(std::sync::atomic::Ordering::Relaxed),
+            }
+        }
+        Command::GetQdState => {
+            CommandResponse::QdState {
+                state: actuator_state.qd_state.load(std::sync::atomic::Ordering::Relaxed),
+            }
+        }
         Command::Heartbeat => {
             // Heartbeat command just keeps the connection alive
             CommandResponse::Success

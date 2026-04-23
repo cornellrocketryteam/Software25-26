@@ -62,6 +62,10 @@ pub enum Command {
     QdRetract,
     /// Extend QD using preset steps (CCW)
     QdExtend,
+    /// Query last-commanded ball valve state
+    GetBallValveState,
+    /// Query last-commanded QD position state
+    GetQdState,
 
     /// Client heartbeat to indicate connection is alive
     Heartbeat,
@@ -140,6 +144,10 @@ pub enum CommandResponse {
         flight_mode: String,
         telemetry: FswTelemetry,
     },
+    /// Last-commanded ball valve state
+    BallValveState { open: bool },
+    /// Last-commanded QD state (-1 retracted, 0 unknown, 1 extended)
+    QdState { state: i16 },
 }
 
 /// Single ADC channel reading with all relevant data
