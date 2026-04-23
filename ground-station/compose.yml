@@ -8,14 +8,15 @@ services:
       - "8083:8083"
       - "18083:18083"
     volumes:
-      - emqx_data:/opt/emqx/data
-      - emqx_log:/opt/emqx/log
+      - ./data/emqx/data:/opt/emqx/data
+      - ./data/emqx/log:/opt/emqx/log
     networks:
       rats-net:
         ipv4_address: 172.18.0.5
     depends_on:
       - timescaledb
     restart: unless-stopped
+  
   timescaledb:
     image: timescale/timescaledb:latest-pg17
     container_name: timescaledb
@@ -25,11 +26,12 @@ services:
       - POSTGRES_PASSWORD=Rocketry2526
       - PGDATA=/pgdata
     volumes:
-      - timescaledb_data:/pgdata
+      - ./data/timescaledb:/pgdata
     networks:
       rats-net:
         ipv4_address: 172.18.0.2
     restart: unless-stopped
+  
   grafana:
     image: grafana/grafana-oss:latest
     container_name: grafana
@@ -40,25 +42,27 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - grafana_data:/var/lib/grafana
+      - ./data/grafana:/var/lib/grafana
     networks:
       rats-net:
         ipv4_address: 172.18.0.3
     depends_on: 
       - timescaledb
     restart: unless-stopped
+  
   portainer:
     image: portainer/portainer-ce:latest
     container_name: portainer
     ports:
       - "9443:9443"
     volumes:
-      - portainer_data:/data
+      - ./data/portainer:/data
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       rats-net:
         ipv4_address: 172.18.0.4
     restart: unless-stopped
+  
   go2rtc:
     image: alexxit/go2rtc
     network_mode: host
@@ -67,7 +71,17 @@ services:
     environment:
       - TZ=America/New_York
     volumes:
-      - "~/go2rtc:/config"
+      - ./data/go2rtc:/config
+
+  homeassistant:
+    image: homeassistant/home-assistant:stable
+    container_name: homeassistant
+    network_mode: host
+    environment:
+      - TZ=America/New_York
+    volumes:
+      - ./data/homeassistant:/config
+    restart: unless-stopped
 
 networks:
   rats-net:
@@ -75,9 +89,3 @@ networks:
     ipam:
       config:
         - subnet: 172.18.0.0/24
-volumes:
-  emqx_data:
-  emqx_log:
-  timescaledb_data:
-  grafana_data:
-  portainer_data:

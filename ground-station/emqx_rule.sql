@@ -23,15 +23,58 @@ SELECT
     payload.pt3 as pt3,
     payload.pt4 as pt4,
     payload.rtd as rtd,
-    payload.sv_open as sv_open,
+    payload.sv_2_open as sv_2_open,
     payload.mav_open as mav_open,
 
-    -- Fill Station Specific
+    -- Event Flags
+    payload.ssa_drogue_deployed as ssa_drogue_deployed,
+    payload.ssa_main_deployed as ssa_main_deployed,
+    payload.cmd_n1 as cmd_n1,
+    payload.cmd_n2 as cmd_n2,
+    payload.cmd_n3 as cmd_n3,
+    payload.cmd_n4 as cmd_n4,
+    payload.cmd_a1 as cmd_a1,
+    payload.cmd_a2 as cmd_a2,
+    payload.cmd_a3 as cmd_a3,
+
+    -- Airbrake & Control States
+    payload.airbrake_state as airbrake_state,
+    payload.predicted_apogee as predicted_apogee,
+
+    -- Advanced GPS / U-Blox Metrics
+    payload.h_acc as h_acc,
+    payload.v_acc as v_acc,
+    payload.vel_n as vel_n,
+    payload.vel_e as vel_e,
+    payload.vel_d as vel_d,
+    payload.g_speed as g_speed,
+    payload.s_acc as s_acc,
+    payload.head_acc as head_acc,
+    payload.fix_type as fix_type,
+    payload.head_mot as head_mot,
+
+    -- BLiMS Outputs
+    payload.blims_motor_position as blims_motor_position,
+    payload.blims_phase_id as blims_phase_id,
+    payload.blims_pid_p as blims_pid_p,
+    payload.blims_pid_i as blims_pid_i,
+    payload.blims_bearing as blims_bearing,
+    payload.blims_loiter_step as blims_loiter_step,
+    payload.blims_heading_des as blims_heading_des,
+    payload.blims_heading_error as blims_heading_error,
+    payload.blims_error_integral as blims_error_integral,
+    payload.blims_dist_to_target_m as blims_dist_to_target_m,
+
+    -- BLiMS Config
+    payload.blims_target_lat as blims_target_lat,
+    payload.blims_target_lon as blims_target_lon,
+    payload.blims_wind_from_deg as blims_wind_from_deg,
+
+    -- Fill Station Specific (Umbilical)
     payload.pt_1_pressure as pt_1_pressure,
     payload.pt_2_pressure as pt_2_pressure,
     payload.ball_valve_open as ball_valve_open,
     payload.sv_1_open as sv_1_open,
-    payload.sv_2_open as sv_2_open,
     payload.load_cell as load_cell,
     payload.ignition as ignition,
     payload.qd_state as qd_state,
