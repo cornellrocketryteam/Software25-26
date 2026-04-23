@@ -20,7 +20,7 @@ use tracing_subscriber::fmt;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use tungstenite::Message;
 
-use crate::command::{AdcReadings, Command, CommandResponse, UmbilicalReadings};
+use crate::command::{ActuatorState, AdcReadings, Command, CommandResponse, UmbilicalReadings};
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use crate::command::ChannelReading;
 use crate::hardware::Hardware;
@@ -117,6 +117,9 @@ fn main() -> Result<()> {
         // Create shared ADC readings state
         let adc_readings = Arc::new(Mutex::new(AdcReadings::default()));
 
+        // Create shared actuator state (last-commanded ball valve + QD)
+        let actuator_state = Arc::new(ActuatorState::default());
+
         // Create shared umbilical readings state and command channel
         let umbilical_readings = Arc::new(Mutex::new(UmbilicalReadings::default()));
         let (umb_cmd_tx, umb_cmd_rx) = smol::channel::bounded::<String>(8);
@@ -154,7 +157,8 @@ fn main() -> Result<()> {
         let mqtt_hw = hardware.clone();
         let mqtt_adc = adc_readings.clone();
         let mqtt_umb = umbilical_readings.clone();
-        smol::spawn(mqtt_publisher::start_mqtt_publisher(mqtt_hw, mqtt_adc, mqtt_umb)).detach();
+        let mqtt_actuators = actuator_state.clone();
+        smol::spawn(mqtt_publisher::start_mqtt_publisher(mqtt_hw, mqtt_adc, mqtt_umb, mqtt_actuators)).detach();
 
         info!("Initializing web socket server...");
         let listener = Async::<TcpListener>::bind(([0, 0, 0, 0], 9000))?;
@@ -188,7 +192,8 @@ fn main() -> Result<()> {
             let umb = umbilical_readings.clone();
             let umb_tx = umb_cmd_tx.clone();
             let active_clients = active_client_count.clone();
-            smol::spawn(handle_socket(stream, hw, adc, umb, umb_tx, active_clients).instrument(span)).detach();
+            let actuators = actuator_state.clone();
+            smol::spawn(handle_socket(stream, hw, adc, umb, umb_tx, active_clients, actuators).instrument(span)).detach();
         }
     })
 }
@@ -201,6 +206,7 @@ async fn handle_socket(
     umbilical_readings: Arc<Mutex<UmbilicalReadings>>,
     umb_cmd_tx: smol::channel::Sender<String>,
     active_client_count: Arc<AtomicUsize>,
+    actuator_state: Arc<ActuatorState>,
 ) {
     info!("Client connected");
     active_client_count.fetch_add(1, Ordering::SeqCst);
@@ -241,7 +247,7 @@ async fn handle_socket(
             Some(Ok(Message::Text(message))) => {
                 // Reset heartbeat timer on any valid message
                 last_heartbeat = Instant::now();
-                let response = process_message(&message, &hardware, &adc_readings, &mut streaming_enabled, &mut fsw_streaming_enabled, &umb_cmd_tx).await;
+                let response = process_message(&message, &hardware, &adc_readings, &mut streaming_enabled, &mut fsw_streaming_enabled, &umb_cmd_tx, &actuator_state).await;
                 if let Err(e) = send_response(&mut stream, response).await {
                     error!("Error sending message: {}", e);
                     break;
@@ -307,13 +313,14 @@ async fn process_message(
     streaming_enabled: &mut bool,
     fsw_streaming_enabled: &mut bool,
     umb_cmd_tx: &smol::channel::Sender<String>,
+    actuator_state: &Arc<ActuatorState>,
 ) -> CommandResponse {
     debug!("Received message: {}", message);
 
     match serde_json::from_str(message) {
         Ok(command) => {
             info!("Received command: {:?}", command);
-            execute_command(command, hardware, streaming_enabled, fsw_streaming_enabled, umb_cmd_tx).await
+            execute_command(command, hardware, streaming_enabled, fsw_streaming_enabled, umb_cmd_tx, actuator_state).await
         }
         Err(e) => {
             warn!("Failed to parse command: {}", e);
@@ -328,6 +335,7 @@ async fn execute_command(
     streaming_enabled: &mut bool,
     fsw_streaming_enabled: &mut bool,
     umb_cmd_tx: &smol::channel::Sender<String>,
+    actuator_state: &Arc<ActuatorState>,
 ) -> CommandResponse {
     match command {
         Command::Ignite => {
@@ -482,6 +490,7 @@ async fn execute_command(
                 error!("Failed to open ball valve: {}", e);
                 CommandResponse::Error
             } else {
+                actuator_state.ball_valve_open.store(true, std::sync::atomic::Ordering::Relaxed);
                 CommandResponse::Success
             }
         }
@@ -492,6 +501,7 @@ async fn execute_command(
                 error!("Failed to close ball valve: {}", e);
                 CommandResponse::Error
             } else {
+                actuator_state.ball_valve_open.store(false, std::sync::atomic::Ordering::Relaxed);
                 CommandResponse::Success
             }
         }
@@ -553,6 +563,7 @@ async fn execute_command(
                     error!("QD retract failed: {}", e);
                 }
             }).detach();
+            actuator_state.qd_state.store(-1, std::sync::atomic::Ordering::Relaxed);
             CommandResponse::Success
         }
         Command::QdExtend => {
@@ -564,7 +575,18 @@ async fn execute_command(
                     error!("QD extend failed: {}", e);
                 }
             }).detach();
+            actuator_state.qd_state.store(1, std::sync::atomic::Ordering::Relaxed);
             CommandResponse::Success
+        }
+        Command::GetBallValveState => {
+            CommandResponse::BallValveState {
+                open: actuator_state.ball_valve_open.load(std::sync::atomic::Ordering::Relaxed),
+            }
+        }
+        Command::GetQdState => {
+            CommandResponse::QdState {
+                state: actuator_state.qd_state.load(std::sync::atomic::Ordering::Relaxed),
+            }
         }
         Command::Heartbeat => {
             // Heartbeat command just keeps the connection alive
@@ -1059,7 +1081,7 @@ async fn umbilical_task(
         }
 
         // CSV line-buffered reader. The FSW emits one telemetry record per
-        // line as `$TELEM,<22 fields>\n`; all other lines are FSW log output
+        // line as `$TELEM,<56 fields>\n`; all other lines are FSW log output
         // and are forwarded to debug logs.
         let mut line_buf = String::with_capacity(1024);
         // S4a: discard everything until the second `\n` after a fresh
@@ -1068,7 +1090,27 @@ async fn umbilical_task(
         // Cap line_buf growth in case the FSW hangs mid-line (S5).
         const LINE_BUF_MAX: usize = 8 * 1024;
 
+        // 1 Hz heartbeat to FSW. FSW gates `umbilical_connected` on freshness
+        // of these `<H>` tokens (see fsw/src/umbilical.rs).
+        let mut last_heartbeat_sent = std::time::Instant::now()
+            .checked_sub(Duration::from_secs(2))
+            .unwrap_or_else(std::time::Instant::now);
+        const HEARTBEAT_INTERVAL: Duration = Duration::from_millis(1000);
+
         loop {
+            // Send heartbeat if due
+            if last_heartbeat_sent.elapsed() >= HEARTBEAT_INTERVAL {
+                let write_result = smol::unblock({
+                    let mut port_clone = port.try_clone().expect("Failed to clone serial port");
+                    move || port_clone.write_all(b"<H>")
+                }).await;
+                if let Err(e) = write_result {
+                    error!("Umbilical heartbeat write failed: {}", e);
+                    break;
+                }
+                last_heartbeat_sent = std::time::Instant::now();
+            }
+
             // Check for pending commands to send
             while let Ok(cmd) = cmd_rx.try_recv() {
                 let cmd_bytes = cmd.into_bytes();

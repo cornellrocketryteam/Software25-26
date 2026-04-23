@@ -1,19 +1,24 @@
 use embassy_executor::Spawner;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
-use embassy_time::Timer;
+use embassy_time::{Instant, Timer};
 use embassy_usb::class::cdc_acm::{Receiver, Sender};
 use embassy_usb::{UsbDevice, driver::EndpointError};
 
+use crate::constants::HEARTBEAT_TIMEOUT_MS;
 use crate::module::{self, UsbDriver};
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 /// Number of comma-separated fields the FSW emits after the `$TELEM,` prefix.
 /// Host-side parsers must match this exactly.
-pub const TELEM_FIELD_COUNT: usize = 22;
+pub const TELEM_FIELD_COUNT: usize = 56;
 
-/// Global software umbilical connection tracked by embassy-usb.
-static IS_CONNECTED: AtomicBool = AtomicBool::new(false);
+/// Whether any heartbeat has ever been received. Separates the "never seen"
+/// state from the wrapping `LAST_HEARTBEAT_MS` value (RP2040 lacks AtomicU64,
+/// so we truncate millis to u32 and rely on wrapping subtraction for freshness
+/// — valid for diffs well under 2^31 ms).
+static HEARTBEAT_EVER: AtomicBool = AtomicBool::new(false);
+static LAST_HEARTBEAT_MS: AtomicU32 = AtomicU32::new(0);
 
 /// While true, `emit_telemetry` is a no-op so a long flash/FRAM dump on the
 /// shared text channel isn't interleaved with `$TELEM,` lines (which would
@@ -21,9 +26,23 @@ static IS_CONNECTED: AtomicBool = AtomicBool::new(false);
 /// telemetry.
 static DUMP_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
-/// Returns whether the ground station umbilical is actively connected via USB.
+/// Returns whether the ground station umbilical is actively connected.
+/// True iff a heartbeat (`<H>`) was received within the last
+/// `HEARTBEAT_TIMEOUT_MS`. USB enumeration state is intentionally ignored —
+/// it lies when the host process dies but the cable stays plugged.
 pub fn is_connected() -> bool {
-    IS_CONNECTED.load(Ordering::Relaxed)
+    if !HEARTBEAT_EVER.load(Ordering::Relaxed) {
+        return false;
+    }
+    let last = LAST_HEARTBEAT_MS.load(Ordering::Relaxed);
+    let now = Instant::now().as_millis() as u32;
+    now.wrapping_sub(last) < HEARTBEAT_TIMEOUT_MS as u32
+}
+
+/// Records a heartbeat from the ground station. Called when `<H>` is received.
+fn record_heartbeat() {
+    LAST_HEARTBEAT_MS.store(Instant::now().as_millis() as u32, Ordering::Relaxed);
+    HEARTBEAT_EVER.store(true, Ordering::Relaxed);
 }
 
 /// Call before a flash/FRAM dump begins. Suppresses telemetry emission until
@@ -57,7 +76,7 @@ pub enum UmbilicalCommand {
     PayloadN2,
     PayloadN3,
     PayloadN4,
-    FaultMode,
+    StandbyMode,
 }
 
 /// Command channel: receiver task pushes commands, flight loop polls them.
@@ -110,13 +129,13 @@ pub fn emit_telemetry(packet: &crate::packet::Packet) {
     if DUMP_IN_PROGRESS.load(Ordering::Acquire) {
         return;
     }
-    let mut buf = [0u8; 512];
+    let mut buf = [0u8; 1024];
     let len = {
         use core::fmt::Write;
         let mut w = BufWriter::new(&mut buf);
         let _ = write!(
             w,
-            "$TELEM,{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
+            "$TELEM,{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
             packet.flight_mode,
             packet.pressure,
             packet.temp,
@@ -139,6 +158,40 @@ pub fn emit_telemetry(packet: &crate::packet::Packet) {
             packet.rtd,
             packet.sv_open as u8,
             packet.mav_open as u8,
+            packet.ssa_drogue_deployed,
+            packet.ssa_main_deployed,
+            packet.cmd_n1,
+            packet.cmd_n2,
+            packet.cmd_n3,
+            packet.cmd_n4,
+            packet.cmd_a1,
+            packet.cmd_a2,
+            packet.cmd_a3,
+            packet.airbrake_state,
+            packet.predicted_apogee,
+            packet.h_acc,
+            packet.v_acc,
+            packet.vel_n,
+            packet.vel_e,
+            packet.vel_d,
+            packet.g_speed,
+            packet.s_acc,
+            packet.head_acc,
+            packet.fix_type,
+            packet.head_mot,
+            packet.blims_motor_position,
+            packet.blims_phase_id,
+            packet.blims_pid_p,
+            packet.blims_pid_i,
+            packet.blims_bearing,
+            packet.blims_loiter_step,
+            packet.blims_heading_des,
+            packet.blims_heading_error,
+            packet.blims_error_integral,
+            packet.blims_dist_to_target_m,
+            packet.blims_target_lat,
+            packet.blims_target_lon,
+            packet.blims_wind_from_deg,
         );
         w.offset
     };
@@ -257,16 +310,12 @@ async fn usb_task(mut usb_device: UsbDevice<'static, UsbDriver>) -> ! {
 async fn usb_sender_task(mut sender: Sender<'static, UsbDriver>) -> ! {
     loop {
         sender.wait_connection().await;
-        IS_CONNECTED.store(true, Ordering::Relaxed);
 
         loop {
             let msg = RAW_OUTBOUND.receive().await;
             match sender.write_packet(&msg).await {
                 Ok(_) => {}
-                Err(EndpointError::Disabled) => {
-                    IS_CONNECTED.store(false, Ordering::Relaxed);
-                    break;
-                }
+                Err(EndpointError::Disabled) => break,
                 Err(_) => break,
             }
         }
@@ -279,7 +328,6 @@ async fn usb_receiver_task(mut receiver: Receiver<'static, UsbDriver>) -> ! {
     let mut buf = [0; 64];
     loop {
         receiver.wait_connection().await;
-        IS_CONNECTED.store(true, Ordering::Relaxed);
 
         loop {
             let n = match receiver.read_packet(&mut buf).await {
@@ -289,12 +337,17 @@ async fn usb_receiver_task(mut receiver: Receiver<'static, UsbDriver>) -> ! {
                     continue;
                 }
                 Err(EndpointError::Disabled) => {
-                    IS_CONNECTED.store(false, Ordering::Relaxed);
                     break;
                 }
             };
 
             let data = &buf[..n];
+
+            // Heartbeat is hot-path: bump the timestamp and skip the command channel.
+            if data == b"<H>" {
+                record_heartbeat();
+                continue;
+            }
 
             let cmd = match data {
                 b"<L>" => Some(UmbilicalCommand::Launch),
@@ -314,7 +367,7 @@ async fn usb_receiver_task(mut receiver: Receiver<'static, UsbDriver>) -> ! {
                 b"<2>" => Some(UmbilicalCommand::PayloadN2),
                 b"<3>" => Some(UmbilicalCommand::PayloadN3),
                 b"<4>" => Some(UmbilicalCommand::PayloadN4),
-                b"<X>" => Some(UmbilicalCommand::FaultMode),
+                b"<X>" => Some(UmbilicalCommand::StandbyMode),
                 _ => None,
             };
 

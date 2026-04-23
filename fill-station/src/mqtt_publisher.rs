@@ -7,7 +7,7 @@ use smol::lock::Mutex;
 use tracing::{info, warn, error, debug};
 
 use crate::hardware::Hardware;
-use crate::command::{AdcReadings, UmbilicalReadings};
+use crate::command::{ActuatorState, AdcReadings, UmbilicalReadings};
 
 // ============================================================================
 // MQTT CONFIGURATION
@@ -60,15 +60,58 @@ struct TelemetryPayload {
     pt3: f64,
     pt4: f64,
     rtd: f64,
-    sv_open: bool,
+    sv_2_open: bool,
     mav_open: bool,
+
+    // Event flags
+    ssa_drogue_deployed: u8,
+    ssa_main_deployed: u8,
+    cmd_n1: u8,
+    cmd_n2: u8,
+    cmd_n3: u8,
+    cmd_n4: u8,
+    cmd_a1: u8,
+    cmd_a2: u8,
+    cmd_a3: u8,
+
+    // Airbrake & control
+    airbrake_state: u8,
+    predicted_apogee: f64,
+
+    // Advanced GPS / u-blox
+    h_acc: u32,
+    v_acc: u32,
+    vel_n: f64,
+    vel_e: f64,
+    vel_d: f64,
+    g_speed: f64,
+    s_acc: u32,
+    head_acc: u32,
+    fix_type: u8,
+    head_mot: i32,
+
+    // BLiMS outputs
+    blims_motor_position: f64,
+    blims_phase_id: i8,
+    blims_pid_p: f64,
+    blims_pid_i: f64,
+    blims_bearing: f64,
+    blims_loiter_step: i8,
+    blims_heading_des: f64,
+    blims_heading_error: f64,
+    blims_error_integral: f64,
+    blims_dist_to_target_m: f64,
+
+    // BLiMS config
+    blims_target_lat: f64,
+    blims_target_lon: f64,
+    blims_wind_from_deg: f64,
 
     // Fill station specific
     pt_1_pressure: f64,
     pt_2_pressure: f64,
     ball_valve_open: bool,
     sv_1_open: bool,
-    sv_2_open: bool,
     load_cell: f64,
     ignition: bool,
     qd_state: i16,
@@ -82,6 +125,7 @@ pub async fn start_mqtt_publisher(
     _hardware: Arc<Mutex<Hardware>>,
     adc_readings: Arc<Mutex<AdcReadings>>,
     umbilical_readings: Arc<Mutex<UmbilicalReadings>>,
+    actuator_state: Arc<ActuatorState>,
 ) {
     info!("Starting MQTT publisher task ({}:{}, topic: {}, rate: {} Hz)",
           BROKER_HOST, BROKER_PORT, MQTT_TOPIC, PUBLISH_RATE_HZ);
@@ -136,6 +180,10 @@ pub async fn start_mqtt_publisher(
             (umb.connected, umb.telemetry)
         };
 
+        // 3a. Gather last-commanded actuator state (ball valve, QD)
+        let ball_valve_open = actuator_state.ball_valve_open.load(std::sync::atomic::Ordering::Relaxed);
+        let qd_state = actuator_state.qd_state.load(std::sync::atomic::Ordering::Relaxed);
+
         // 3. Gather hardware state (SV1, igniters)
         let (sv_1_open, ignition) = {
             #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -175,16 +223,49 @@ pub async fn start_mqtt_publisher(
                 pt3: telemetry.pt3 as f64,
                 pt4: telemetry.pt4 as f64,
                 rtd: telemetry.rtd as f64,
-                sv_open: telemetry.sv_open,
+                sv_2_open: telemetry.sv_open,
                 mav_open: telemetry.mav_open,
+                ssa_drogue_deployed: telemetry.ssa_drogue_deployed,
+                ssa_main_deployed: telemetry.ssa_main_deployed,
+                cmd_n1: telemetry.cmd_n1,
+                cmd_n2: telemetry.cmd_n2,
+                cmd_n3: telemetry.cmd_n3,
+                cmd_n4: telemetry.cmd_n4,
+                cmd_a1: telemetry.cmd_a1,
+                cmd_a2: telemetry.cmd_a2,
+                cmd_a3: telemetry.cmd_a3,
+                airbrake_state: telemetry.airbrake_state,
+                predicted_apogee: telemetry.predicted_apogee as f64,
+                h_acc: telemetry.h_acc,
+                v_acc: telemetry.v_acc,
+                vel_n: telemetry.vel_n,
+                vel_e: telemetry.vel_e,
+                vel_d: telemetry.vel_d,
+                g_speed: telemetry.g_speed,
+                s_acc: telemetry.s_acc,
+                head_acc: telemetry.head_acc,
+                fix_type: telemetry.fix_type,
+                head_mot: telemetry.head_mot,
+                blims_motor_position: telemetry.blims_motor_position as f64,
+                blims_phase_id: telemetry.blims_phase_id,
+                blims_pid_p: telemetry.blims_pid_p as f64,
+                blims_pid_i: telemetry.blims_pid_i as f64,
+                blims_bearing: telemetry.blims_bearing as f64,
+                blims_loiter_step: telemetry.blims_loiter_step,
+                blims_heading_des: telemetry.blims_heading_des as f64,
+                blims_heading_error: telemetry.blims_heading_error as f64,
+                blims_error_integral: telemetry.blims_error_integral as f64,
+                blims_dist_to_target_m: telemetry.blims_dist_to_target_m as f64,
+                blims_target_lat: telemetry.blims_target_lat as f64,
+                blims_target_lon: telemetry.blims_target_lon as f64,
+                blims_wind_from_deg: telemetry.blims_wind_from_deg as f64,
                 pt_1_pressure,
                 pt_2_pressure,
-                ball_valve_open: false,
+                ball_valve_open,
                 sv_1_open,
-                sv_2_open: false,
                 load_cell,
                 ignition,
-                qd_state: 0,
+                qd_state,
             }
         } else {
             // FSW not connected — still publish fill station data with zeroed FSW fields
@@ -210,16 +291,49 @@ pub async fn start_mqtt_publisher(
                 pt3: 0.0,
                 pt4: 0.0,
                 rtd: 0.0,
-                sv_open: false,
+                sv_2_open: false,
                 mav_open: false,
+                ssa_drogue_deployed: 0,
+                ssa_main_deployed: 0,
+                cmd_n1: 0,
+                cmd_n2: 0,
+                cmd_n3: 0,
+                cmd_n4: 0,
+                cmd_a1: 0,
+                cmd_a2: 0,
+                cmd_a3: 0,
+                airbrake_state: 0,
+                predicted_apogee: 0.0,
+                h_acc: 0,
+                v_acc: 0,
+                vel_n: 0.0,
+                vel_e: 0.0,
+                vel_d: 0.0,
+                g_speed: 0.0,
+                s_acc: 0,
+                head_acc: 0,
+                fix_type: 0,
+                head_mot: 0,
+                blims_motor_position: 0.0,
+                blims_phase_id: 0,
+                blims_pid_p: 0.0,
+                blims_pid_i: 0.0,
+                blims_bearing: 0.0,
+                blims_loiter_step: 0,
+                blims_heading_des: 0.0,
+                blims_heading_error: 0.0,
+                blims_error_integral: 0.0,
+                blims_dist_to_target_m: 0.0,
+                blims_target_lat: 0.0,
+                blims_target_lon: 0.0,
+                blims_wind_from_deg: 0.0,
                 pt_1_pressure,
                 pt_2_pressure,
-                ball_valve_open: false,
+                ball_valve_open,
                 sv_1_open,
-                sv_2_open: false,
                 load_cell,
                 ignition,
-                qd_state: 0,
+                qd_state,
             }
         };
 

@@ -1,5 +1,26 @@
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, AtomicI16};
 use crate::components::umbilical::FswTelemetry;
+
+/// Last commanded state of fill-station actuators that we can't read back from
+/// hardware. Updated by the command handler, read by the MQTT publisher (and
+/// anything else that wants the most recent intent).
+///
+/// `qd_state`: -1 = retracted, 0 = unknown/initial, 1 = extended.
+#[derive(Debug)]
+pub struct ActuatorState {
+    pub ball_valve_open: AtomicBool,
+    pub qd_state: AtomicI16,
+}
+
+impl Default for ActuatorState {
+    fn default() -> Self {
+        Self {
+            ball_valve_open: AtomicBool::new(false),
+            qd_state: AtomicI16::new(0),
+        }
+    }
+}
 
 /// All supported commands for the fill station
 #[derive(Debug, Serialize, Deserialize)]
@@ -41,6 +62,10 @@ pub enum Command {
     QdRetract,
     /// Extend QD using preset steps (CCW)
     QdExtend,
+    /// Query last-commanded ball valve state
+    GetBallValveState,
+    /// Query last-commanded QD position state
+    GetQdState,
 
     /// Client heartbeat to indicate connection is alive
     Heartbeat,
@@ -119,6 +144,10 @@ pub enum CommandResponse {
         flight_mode: String,
         telemetry: FswTelemetry,
     },
+    /// Last-commanded ball valve state
+    BallValveState { open: bool },
+    /// Last-commanded QD state (-1 retracted, 0 unknown, 1 extended)
+    QdState { state: i16 },
 }
 
 /// Single ADC channel reading with all relevant data
