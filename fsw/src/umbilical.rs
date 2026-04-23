@@ -76,6 +76,9 @@ pub enum UmbilicalCommand {
     PayloadN2,
     PayloadN3,
     PayloadN4,
+    PayloadA1,
+    PayloadA2,
+    PayloadA3,
     StandbyMode,
 }
 
@@ -367,6 +370,9 @@ async fn usb_receiver_task(mut receiver: Receiver<'static, UsbDriver>) -> ! {
                 b"<2>" => Some(UmbilicalCommand::PayloadN2),
                 b"<3>" => Some(UmbilicalCommand::PayloadN3),
                 b"<4>" => Some(UmbilicalCommand::PayloadN4),
+                b"<5>" => Some(UmbilicalCommand::PayloadA1),
+                b"<6>" => Some(UmbilicalCommand::PayloadA2),
+                b"<7>" => Some(UmbilicalCommand::PayloadA3),
                 b"<X>" => Some(UmbilicalCommand::StandbyMode),
                 _ => None,
             };

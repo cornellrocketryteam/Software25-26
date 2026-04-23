@@ -378,6 +378,21 @@ impl FlightLoop {
                     self.n4_sent = true;
                     self.flight_state.packet.cmd_n4 = 1;
                 }
+                UmbilicalCommand::PayloadA1 => {
+                    log::warn!("UMBILICAL: Sent A1");
+                    let _ = self.flight_state.payload_uart.write(b"A1\n").await;
+                    self.flight_state.packet.cmd_a1 = 1;
+                }
+                UmbilicalCommand::PayloadA2 => {
+                    log::warn!("UMBILICAL: Sent A2");
+                    let _ = self.flight_state.payload_uart.write(b"A2\n").await;
+                    self.flight_state.packet.cmd_a2 = 1;
+                }
+                UmbilicalCommand::PayloadA3 => {
+                    log::warn!("UMBILICAL: Sent A3");
+                    let _ = self.flight_state.payload_uart.write(b"A3\n").await;
+                    self.flight_state.packet.cmd_a3 = 1;
+                }
                 UmbilicalCommand::StandbyMode => {
                     log::warn!("UMBILICAL CMD: Force Standby Mode");
                     self.flight_state.trigger_standby().await;
