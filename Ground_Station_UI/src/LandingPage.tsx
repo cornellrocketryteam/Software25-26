@@ -28,9 +28,10 @@ export function LandingPage() {
               
         
                 {/* Recovery & Payload Page (Not clickable) */}
-                <div className="bg-white border-[6px] border-black rounded-3xl px-16 py-20 text-4xl font-inter flex items-center justify-center w-[500px] h-[250px]">
+                <button onClick={() => navigate("/recovery")}
+                className="bg-white border-[6px] border-black rounded-3xl px-16 py-20 text-4xl font-inter flex items-center justify-center w-[500px] h-[250px]">
                     Recovery & Payload Page
-                </div>
+                </button>
             </div>
           </div>
         </div>

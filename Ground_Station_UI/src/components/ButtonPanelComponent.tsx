@@ -6,7 +6,7 @@ import { usePropulsion } from "../PropulsionPage";
 
 export default function ButtonPanelComponent() {
     const [isExpanded, setIsExpanded] = useState(false);
-    const {fillState } = usePropulsion();
+    const {fillState, telemetryDataRef } = usePropulsion();
     
 
     const renderContent  = () => {   
@@ -20,12 +20,12 @@ export default function ButtonPanelComponent() {
                     <button 
                         onClick = {() => 
                             {
-                                if(fillState !== 'INITIAL') {   
+                                if(fillState !== 'INITIAL' || (telemetryDataRef.current.at(-1)?.telemetry.pt4 ?? 0) >= 975){ // Allow expanding if we are not in the initial fill state or if we have reached at least 750 psi, which is close enough to max fill to allow launch preparations{   
                                     setIsExpanded(true);
                                 }
                             }
                         }
-                        className={fillState !== 'INITIAL' ? "bg-[#4F4B40] border-[6px] border-black rounded-full w-24 h-24 flex items-center justify-center hover:opacity-90" :
+                        className={fillState !== 'INITIAL' || (telemetryDataRef.current.at(-1)?.telemetry.pt4 ?? 0) >= 975 ? "bg-[#4F4B40] border-[6px] border-black rounded-full w-24 h-24 flex items-center justify-center hover:opacity-90" :
                             "bg-[#4F4B40]/50 border-[6px] border-black rounded-full w-24 h-24 flex items-center justify-center cursor-not-allowed opacity-50"
                          }>
                         <svg className="w-12 h-12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
@@ -43,7 +43,7 @@ export default function ButtonPanelComponent() {
                     <p className="font-inter text-lg">(Will hide launch button)</p>
                 </div>
 
-                <ButtonComponent buttonName = {"Launch Button"} currentState={false} isSpecial = {true} showState = {false}/>
+                <ButtonComponent buttonName = {"Launch Button"} currentState={false} actuationLock='LOCKED' showState = {false}/>
 
                 <button 
                     onClick = {() => setIsExpanded(false)}

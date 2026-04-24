@@ -2,23 +2,30 @@ import { useState } from 'react';
 import ConfirmationOverlay from '../ConfirmationOverlayComponent';
 import { usePropulsion } from '../../PropulsionPage';
 import { useButton } from '../ButtonComponent';
+import type { ActuationTypeIdentifier } from '../../PropulsionPage';
 
 export default function InteractiveButtonComponent() {
   const [showConfirmation, setShowConfirmation] = useState(false);
-  const [pendingAction, setPendingAction] = useState<'open' | 'close' | null>(null);
-  const { handleButtonClick } = usePropulsion();
-  const { buttonName, isSpecial, showState, isOpen, label, stateLabel } = useButton();
+  const [pendingAction, setPendingAction] = useState<ActuationTypeIdentifier | null>(null);
+  const { handleButtonClickRef } = usePropulsion();
+  const { buttonName, showState, currentState, label, stateLabel, actuationLock } = useButton();
   const [openLabel, closeLabel] = label;
+  const openState: ActuationTypeIdentifier[] = ['OPEN', 'EXTEND', 'IGNITE']; // Define which actions correspond to "open" state
+  const closedState: ActuationTypeIdentifier[] = ['CLOSE', 'RETRACT']; // Define which actions correspond to "close" state
 
-  const toggleAction = (action: 'open' | 'close') => {
-    if ((action === 'open' && isOpen) || (action === 'close' && !isOpen)) return;
+  const toggleAction = (action: ActuationTypeIdentifier) => {
+
+    if (((openState.includes(action) && currentState) || (closedState.includes(action) && !currentState)) 
+      && actuationLock === 'LOCKED') {
+      return; //<- we are ending prematurely because of this
+    } 
     setPendingAction(action);
     setShowConfirmation(true);
   };
 
   const handleConfirm = () => {
-    if (pendingAction === 'open' || pendingAction === 'close') {
-      handleButtonClick(buttonName);
+    if (pendingAction !== null) { //Pending Action has some action stored
+      handleButtonClickRef.current(buttonName, pendingAction);
     }
     setShowConfirmation(false);
     setPendingAction(null);
@@ -36,9 +43,16 @@ export default function InteractiveButtonComponent() {
         
         <div className="flex gap-2">
         <div className="flex flex-col gap-2 min-w-0 w-full">
-            {isSpecial && openLabel === closeLabel ? (
+            {openLabel === closeLabel ? ( // Special case for buttons like "Igniter" and "Launch" where both states have the same label
               <button
-                onClick={() => toggleAction('open')}
+                onClick={() => { //This is just a one time button click
+                  if(buttonName === "Igniter"){
+                    toggleAction('IGNITE'); // For igniter, we can still use OPEN/CLOSE as the action identifiers even though the labels are the same
+                  } else if (buttonName === "LAUNCH"){
+                    //run action for launch, which will be updated
+                    console.log("LAUNCH BUTTON PRESSED - RUN LAUNCH SEQUENCE ACTION HERE");
+                  }
+                }}
                 className="bg-[#555555] border-[6px] border-black rounded-2xl w-full py-3 font-inter font-bold text-2xl text-white"
               >
                 {openLabel}
@@ -46,17 +60,29 @@ export default function InteractiveButtonComponent() {
             ) : (
               <>
                 <button
-                  onClick={() => toggleAction('open')}
+                  onClick={() => {
+                    if(buttonName === "Solenoid Valve 1" || buttonName === "Solenoid Valve 2" || buttonName === "Ball Valve" || buttonName === "MAV"){
+                      toggleAction('OPEN');
+                    } else if (buttonName === "Quick Disconnect"){
+                      toggleAction('EXTEND');
+                    }
+                  }}
                   className={`${
-                    isOpen ? 'bg-[#ADC7AC]/50 cursor-not-allowed opacity-50' : 'bg-[#ADC7AC]'
+                    currentState && actuationLock === 'LOCKED' ? 'bg-[#ADC7AC]/50 cursor-not-allowed opacity-50' : 'bg-[#ADC7AC]'
                   } border-[6px] border-black rounded-2xl w-full py-3 font-inter font-bold text-2xl text-white`}
                 >
                   {openLabel}
                 </button>
                 <button
-                  onClick={() => toggleAction('close')}
+                  onClick={() => {
+                    if(buttonName === "Solenoid Valve 1" || buttonName === "Solenoid Valve 2" || buttonName === "Ball Valve" || buttonName === "MAV"){
+                      toggleAction('CLOSE');
+                    } else if (buttonName === "Quick Disconnect"){
+                      toggleAction('RETRACT');
+                    }
+                  }}
                   className={`${
-                    !isOpen ? 'bg-[#E27D7D]/50 cursor-not-allowed opacity-50' : 'bg-[#E27D7D]'
+                    !currentState && actuationLock === 'LOCKED'? 'bg-[#E27D7D]/50 cursor-not-allowed opacity-50' : 'bg-[#E27D7D]'
                   } border-[6px] border-black rounded-2xl w-full py-3 font-inter font-bold text-2xl text-white`}
                 >
                   {closeLabel}
@@ -65,13 +91,13 @@ export default function InteractiveButtonComponent() {
             )}
           </div>
 
-          {showState && (
-            <div className={`${isOpen ? 'bg-[#ADC7AC]' : 'bg-[#E27D7D]'} border-[6px] border-black rounded-2xl px-6 py-4 flex flex-col items-center justify-center min-w-[120px]`}>
+          {showState && ( // Only show state indicator if showState is true - allows flexibility for buttons that don't need a state display like the backup launch button
+            <div className={`${currentState ? 'bg-[#ADC7AC]' : 'bg-[#E27D7D]'} border-[6px] border-black rounded-2xl px-6 py-4 flex flex-col items-center justify-center min-w-[120px]`}>
               <p className="font-inter font-bold text-sm text-white mb-2">
                 State: {stateLabel}
               </p>
               <div className="w-12 h-12 border-4 border-black rounded-full flex items-center justify-center">
-                {isOpen ? (
+                {currentState ? (
                   <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="3">
                     <path d="M5 13l4 4L19 7" />
                   </svg>

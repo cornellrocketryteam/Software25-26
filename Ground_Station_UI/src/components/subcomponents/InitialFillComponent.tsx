@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { usePropulsion } from "../../PropulsionPage";
 
 export default function InitialFillComponent() {
@@ -14,10 +14,12 @@ export default function InitialFillComponent() {
         thresholdPressure,
         setThresholdPressure,
         fillState,
-        setFillState,
-        handleButtonClick,
-        valveData,
+        confirmedVentSecondsRef,
+        handleButtonClickRef,
+        valveDataRef,
         telemetryDataRef,
+        canInteractRef,
+        setButtonInteractionState
     } = usePropulsion();
 
     console.log("Rendering InitialFillComponent with fillState: ", fillState);
@@ -32,8 +34,8 @@ export default function InitialFillComponent() {
     //  fillUIActive flag. The actual loop is managed in the useEffect below.
     const handleInitiate = () => {
         // Safety: close any open valves before starting to ensure a known state.
-        if (valveData.SV1.actuated) handleButtonClick("Solenoid Valve 1");
-        if (valveData.SV2.actuated) handleButtonClick("Solenoid Valve 2");
+        if (valveDataRef.current.SV1.actuated) handleButtonClickRef.current("Solenoid Valve 1", 'CLOSE');
+        if (valveDataRef.current.SV2.actuated) handleButtonClickRef.current("Solenoid Valve 2", 'CLOSE');
 
         // Snapshot the starting pressure for reference (available for future use).
         const startingPressure = telemetryDataRef.current.at(-1)?.telemetry.pt4 ?? 0;
@@ -52,11 +54,28 @@ export default function InitialFillComponent() {
     useEffect(() => {
         if (!fillUIActive) return;
 
+        if (canInteractRef.current === 'ENABLED') {
+            setButtonInteractionState('DISABLED');
+            canInteractRef.current = 'DISABLED';
+        }
+
         // Open ball valve now that we know the fill loop is actually starting.
         // Only open if both SVs are confirmed closed (same guard as before).
-        if (!valveData.SV1.actuated && !valveData.SV2.actuated) {
-            handleButtonClick("Ball Valve");
+
+        //Close both SVs, then call open BV.
+        if (valveDataRef.current.SV1.actuated) {
+            handleButtonClickRef.current("Solenoid Valve 1", 'CLOSE');
         }
+        if (valveDataRef.current.SV2.actuated) {
+            handleButtonClickRef.current("Solenoid Valve 2", 'CLOSE');
+        }
+
+        // Delay BV open to give SV close commands + server response time to settle
+        setTimeout(() => {
+            if (!valveDataRef.current.SV1.actuated && !valveDataRef.current.SV2.actuated) {
+                handleButtonClickRef.current("Ball Valve", 'OPEN');
+            }
+        }, 600); // buttondelay (250) + query delay (50) + server response time + buffer
 
         const fillLoop = setInterval(() => {
             // Abort immediately if something externally cancelled the fill.
@@ -68,7 +87,7 @@ export default function InitialFillComponent() {
 
             // Stop condition: target pressure reached 
             if (psi >= 975) { //<-Actual condition will change if we are running through the mock server as the CSV stops at 950
-                if(valveData.BV.actuated) handleButtonClick("Ball Valve"); // Close BV
+                if(valveDataRef.current.BV.actuated) handleButtonClickRef.current("Ball Valve", 'CLOSE'); // Close BV
                 clearInterval(fillLoop);
                 isFillingRef.current = false;
                 isVentingRef.current = false; // Clear any venting locks just in case
@@ -78,53 +97,35 @@ export default function InitialFillComponent() {
                 return;
             }
 
-            if(manualVentRef.current) {
-                //set manual vent and isVenting
-                manualVentRef.current = false; // Toggle the manual vent ref to false, we are no longer requesting a manual vent after this
-                isVentingRef.current = true; //We are in fact venting now, so set this to true to prevent the auto vent logic from trying to run at the same time
-                setVentUIActive(isVentingRef.current);
-                console.log("🔴 Vent START:", new Date().toISOString(), "PSI:", psi, "Vent duration:", confirmedVentSeconds * 1000, "ms");
-
-
-                if(valveData.BV.actuated)   handleButtonClick("Ball Valve");        // Close BV before venting
-                if(!valveData.SV2.actuated) handleButtonClick("Solenoid Valve 2");  // Open SV2 to begin vent
-                //Set the time out for how long we want it
-                setTimeout(() => {
-                    console.log("🟢 Vent END:", new Date().toISOString());
-                    if(valveData.SV2.actuated) handleButtonClick("Solenoid Valve 2");  // Close SV2 after 1s
-                    if(!valveData.BV.actuated) handleButtonClick("Ball Valve");        // Reopen BV to resume fill
-
-                    // Clear the venting lock so the interval can resume normal checks.
-                    isVentingRef.current = false;
-                    setVentUIActive(isVentingRef.current);
-                }, confirmedVentSeconds * 1000); // confirmed vent duration
-                return;
-            }
-
             // Vent condition: crossed a 100PSI threshold 
-            if (psi >= thresholdRef.current) {
+            // Manual Vent has precedence over auto vent, so we check that first and return early if it's set. This prevents the scenario where an auto vent triggers on the same tick as a manual vent request, which could cause conflicts in valve commands and vent duration.
+            if (psi >= thresholdRef.current || manualVentRef.current) {
                 // Mark venting so subsequent ticks don't re-enter this block.
+                const isManualVent = manualVentRef.current; // Capture whether this vent was manual for logging and timeout purposes
+                manualVentRef.current = false; // Reset the manual vent request immediately to prevent re-entry on the next tick
                 isVentingRef.current = true;
                 setVentUIActive(isVentingRef.current);
-                if(valveData.BV.actuated)   handleButtonClick("Ball Valve");        // Close BV before venting
-                if(!valveData.SV2.actuated) handleButtonClick("Solenoid Valve 2");  // Open SV2 to begin vent
+                handleButtonClickRef.current("Ball Valve", 'CLOSE');        // Close BV before venting
+                handleButtonClickRef.current("Solenoid Valve 2", 'OPEN');  // Open SV2 to begin vent
+                console.log(`🔴 ${isManualVent ? "Manual" : "Auto"} Vent START:`, new Date().toISOString(), "PSI:", psi, `Vent duration: ${isManualVent ? confirmedVentSeconds * 1000 + " ms" : "1000 ms (auto vent)"}`);
 
-                // Raise the threshold now (via ref) so it's immediately visible
-                // to the next tick — no stale state issue.
-                thresholdRef.current += 100;
-
-                // Also sync React state for any dependent UI.
-                setThresholdPressure(thresholdRef.current);
+                // Raise the threshold (via ref) so it's immediately visible
+                // to the next tick only when our current vent isn't manual.
+                if(!isManualVent) {
+                    thresholdRef.current += 100;
+                    // Also sync React state for any dependent UI.
+                    setThresholdPressure(thresholdRef.current);
+                }
 
                 setTimeout(() => {
-                    if(valveData.SV2.actuated) handleButtonClick("Solenoid Valve 2");  // Close SV2 after 1s
-                    if(!valveData.BV.actuated) handleButtonClick("Ball Valve");        // Reopen BV to resume fill
+                    console.log("🟢 Vent END:", new Date().toISOString());
+                    handleButtonClickRef.current("Solenoid Valve 2", 'CLOSE');  // Close SV2 after 1s
+                    handleButtonClickRef.current("Ball Valve", 'OPEN');        // Reopen BV to resume fill
 
                     // Clear the venting lock so the interval can resume normal checks.
-
                     isVentingRef.current = false;
                     setVentUIActive(isVentingRef.current);
-                }, 1000); // 1-second vent duration
+                }, (isManualVent ? confirmedVentSecondsRef.current * 1000 : 1000)); // 1-second vent duration
             }
         }, 200); // Poll telemetry every 200ms <-Rough value, might change
 
@@ -156,6 +157,9 @@ export default function InitialFillComponent() {
                 {fillUIActive && <div className="flex flex-row items-center gap-2">
                     <button 
                         onClick={() => {
+                            handleButtonClickRef.current("Ball Valve", 'CLOSE'); // Close BV to stop fill
+                            isVentingRef.current = true; // Clear any venting locks just in case
+                            ventUIActive && setVentUIActive(false); // Hide vent UI if it was open
                         }}
                         className="bg-[#2D4556] border-[6px] border-black rounded-3xl px-8 py-2 font-inter font-bold text-[36px] text-white hover:opacity-90 flex-1"
                     >
@@ -165,7 +169,10 @@ export default function InitialFillComponent() {
                         </div>
                     </button>
                     <button 
-                        onClick={() => {  setFillState("STOP_FILL");
+                        onClick={() => {  //close BV1. Do NOT vent SV2, leave both SVs closed and BV closed
+                            handleButtonClickRef.current("Ball Valve", 'CLOSE');
+                            isVentingRef.current = false; // Clear any venting locks just in case
+                            setFillUIActive(false);
                         }}
                         className="bg-[#1A1A1A] border-[6px] border-black rounded-3xl px-8 py-2 font-inter font-bold text-[36px] text-white hover:opacity-90 flex-1"
                     >

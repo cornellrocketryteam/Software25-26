@@ -5,10 +5,14 @@ import FillButtonComponent from "./components/FillButtonComponent";
 import ButtonPanelComponent from "./components/ButtonPanelComponent";
 import {useEffect, useRef, useState} from "react";
 import { createContext, useContext} from "react";
+import { useAppContext } from "./App";
 
 
 export type FillState = 'INITIAL' | 'INTERVENE' | 'SAFE_PROCEDURE' | 'STOP_FILL';
 export type FlightMode = "....."| 'STANDBY';
+export type actuationLockType = "LOCKED" | "UNLOCKED";
+export type ActuationTypeIdentifier = 'OPEN' | 'CLOSE' | 'IGNITE' | 'EXTEND' | 'RETRACT';
+export type interactionType = "ENABLED" | "DISABLED";
 
 
 type ValveData = {
@@ -21,7 +25,6 @@ type ValveData = {
 }
 
 type PropulsionContextType = {
-    handleButtonClick: (valveName: string) => void;
     thresholdPressure: number;
     setThresholdPressure: (pressure: number) => void;
     ventUIActive: boolean;
@@ -37,10 +40,16 @@ type PropulsionContextType = {
     setConfirmedVentSeconds: (seconds: number) => void;
     valveData: ValveData;
     currFlightMode: FlightMode;
+    buttonInteractionState: interactionType;
+    setButtonInteractionState: (allowInteraction: interactionType) => void;
+    valveDataRef: React.RefObject<ValveData>;
     adcDataRef: React.RefObject<AdcDataMessage[]>;
     telemetryDataRef: React.RefObject<FswTelemetryMessage[]>;
+    handleButtonClickRef: React.RefObject<(valveName: string, actuate: ActuationTypeIdentifier) => void>;
+    confirmedVentSecondsRef: React.RefObject<number>;
     isVentingRef: React.RefObject<boolean>;
     isFillingRef: React.RefObject<boolean>;
+    canInteractRef: React.RefObject<interactionType>;
 }
 
 type AdcDataMessage = {
@@ -93,13 +102,15 @@ type ValveKey = "SV1" | "SV2" | "MAV" | "IG1" | "IG2";
 
 export const PropulsionContext = createContext<PropulsionContextType | null>(null);
 
-export const usePropulsion = () => { //Custom hook to access propulsion context, will throw an error if used outside of the PropulsionPage component which provides the context
+export const usePropulsion = () => {
     const context = useContext(PropulsionContext);
     if (!context) throw new Error("usePropulsion must be used inside PropulsionPage (i.e., this useContext hook can only be called by components that are children of the PropulsionContext.Provider in the component tree)");
     return context;
 };
 
 export function PropulsionPage() {
+    const {wsRef, wsReady} = useAppContext(); //The App's websocket refrence
+
     const [fillState, setFillState] = useState<FillState>('INITIAL');
     const [currFlightMode, setCurrFlightMode] = useState<FlightMode>('.....');
     const [ventSeconds, setVentSeconds] = useState(0);
@@ -107,18 +118,21 @@ export function PropulsionPage() {
     const [thresholdPressure, setThresholdPressure] = useState(600); 
     const [ventUIActive, setVentUIActive] = useState(false); // State to control whether the vent UI is active and visible
     const [fillUIActive, setFillUIActive] = useState(false); // State to control whether the fill UI is active and visible
+    const [buttonInteractionState, setButtonInteractionState] = useState<interactionType>("DISABLED"); // State to control whether buttons can be interacted with, to prevent spamming commands while waiting for server responses
 
 
     
-    const uri = "ws://192.168.8.167:9000";
+    //const uri = "ws://192.168.8.167:9000";
     //const uri = "ws://localhost:9000"; // Replace with the WebSocket server URI
-    const wsRef = useRef<WebSocket | null>(null); // Use useRef to store the WebSocket instance
+    //const wsRef = useRef<WebSocket | null>(null); // Use useRef to store the WebSocket instance
     const pendingActionRef = useRef<ValveKey | null>(null); // Use useRef to store the pending action for confirmation
     const adcDataRef = useRef<AdcDataMessage[]>([]); // Use useRef to store the latest ADC data received from the server
     const umbilicalDataRef = useRef<FswTelemetryMessage[]>([]); // Use useRef to store the latest telemetry data received from the server
     const manualVentRef = useRef(false); // We can use a ref for this since we don't necessarily need to trigger a re-render when this value changes
-    const isVentingRef = useRef(false); // Track whether a vent is currently in progress so the interval doesn't stack multiple vent cycles while the 1-second SV2 timeout is running.
-    const isFillingRef = useRef(false); // Mirror isFilling into a ref so the interval can check it synchronously without capturing a stale closure value.
+    const isVentingRef = useRef(ventUIActive); // Track whether a vent is currently in progress so the interval doesn't stack multiple vent cycles while the 1-second SV2 timeout is running.
+    const isFillingRef = useRef(fillUIActive); // Mirror isFilling into a ref so the interval can check it synchronously without capturing a stale closure value.
+    const canInteractRef = useRef<interactionType>(buttonInteractionState); // Ref to track whether buttons can be interacted with, to prevent spamming commands while waiting for server responses
+    const confirmedVentSecondsRef = useRef(confirmedVentSeconds); // Ref to track the confirmed vent seconds for the same reason as above
 
     /**
      * Below are examples of way to access elements in our refrence arrays
@@ -196,29 +210,45 @@ export function PropulsionPage() {
         QD: {"retracted": false}
     });
 
+    //Implement this refrence for all my logic and also make sure that whenever I update my valveData state, I also update this ref with the latest data so that I can access the most up to date valve data in my functions without worrying about stale closures from useState
+    const valveDataRef = useRef(valveData); // Create a ref to hold the latest valve data for synchronous access in functions without worrying about stale closures
+
+    //Do we want a delay? This is important before testing ;)
+
 
     const buttondelay = 250; // Example delay in milliseconds between commands, can adjust as needed based on testing and how quickly the server can process commands and send responses
 
     //COMMAND DELAY FUNCTION
-    const sendCommandWithDelay = (command: any, delay: number) => {
+    const sendCommandWithDelay = (param: any, delay: number) => {
         setTimeout(() => {
-
-            //If we are calling a command that gets the values of a valve, we want to set that as our pending action so that when we get the response back from the server, we know which valve's data we're getting back and can update our state accordingly
-            if(queryCommands.includes(command.command)){ 
-                pendingActionRef.current = command.valve; // Set the pending action to the valve we're getting the state of
+            if (typeof param === 'function') {
+                //param(); <-call if you want
+                return;
             }
-
-            //If we are calling a command that actuates a valve, we want to clear any pending action since we know that any information we get back from the server after sending this command will be outdated and not relevant to our current state
-            else if(actuationCommands.includes(command.command)){
-                pendingActionRef.current = null; // Clear the pending action since we're changing the state and any information we get back will be outdated
+            if (queryCommands.includes(param.command)) {
+                pendingActionRef.current = param.valve;
+            } else if (actuationCommands.includes(param.command)) {
+                pendingActionRef.current = null;
             }
-            wsRef.current?.send(JSON.stringify(command)); //Send the command passed to the function through the WebSocket connection after the specified delay
+            wsRef.current?.send(JSON.stringify(param));
         }, delay);
     };
-    
+
+    /**
+    The paramaeter `updater` takes in a function whose parameter is the previous state of the valve data and whose return value is the new state of the valve data, 
+    which allows us to update our state based on the previous state in a safe way that avoids any issues with stale closures or asynchronous updates.
+    */
+    const updateValveData = (updater: (prev: typeof valveData) => typeof valveData) => {
+        setValveData(prev => {
+            const next = updater(prev); //Run the updater (spread operator) function and save it to next
+            valveDataRef.current = next; //update our ref with the new state immeadiatly 
+            return next; //return this new state
+        });
+    };
+
     //This function is called when a valve button is clicked, and it determines which command to send based on the name of the button and the current state of the corresponding valve in our state. 
     //It also sets the pending action for query commands so that we can update our state with the response from the server when we get it back.
-    const handleButtonClick = (ValveName: string) => { 
+    const handleButtonClick = (ValveName: string, action: ActuationTypeIdentifier) => { 
 
         const commandMap : {[key: string]: string} = { //---> map names of the buttons to shorthand identifiers
             "Solenoid Valve 1": "SV1",
@@ -231,100 +261,242 @@ export function PropulsionPage() {
 
         const valveIdentifier = commandMap[ValveName]; //<= This will map the button name to the corresponding valve identifier used in the command
 
-        switch (valveIdentifier) { //Handles the logic for the button click based off the last saved state of the button
+        switch (valveIdentifier) { //Handles logic for button presses based of the current state of the button
             case "SV1":
-                valveData.SV1.actuated ? sendCommandWithDelay(actuateSV1Close, buttondelay) : sendCommandWithDelay(actuateSV1Open, buttondelay); //Send appropriate command to toggle based on toState
-                sendCommandWithDelay(getSVstate1, buttondelay + 50); //Get updated state of SV1 after actuating it to confirm it changed and to update our state with the new information
-                console.log(`Toggling Solenoid Valve 1 to ${!valveData.SV1.actuated ? 'OPEN' : 'CLOSED'}`); //We should've changed the value to the opposite of the current state with our command, so we log that we're toggling it to the opposite of the current state
+                if (valveDataRef.current.SV1.actuated && action === 'CLOSE') { // If SV1 is currently open and we want to close it
+                    sendCommandWithDelay(actuateSV1Close, buttondelay);   
+                } else if (!valveDataRef.current.SV1.actuated && action === 'OPEN') { // If SV1 is currently closed and we want to open it
+                    sendCommandWithDelay(actuateSV1Open, buttondelay);
+                }
+
+                sendCommandWithDelay(getSVstate1, buttondelay + 50); // Query the state of SV1 after sending the command to update our state with the response from the server
+                console.log(`Toggling Solenoid Valve 1 to ${!valveDataRef.current.SV1.actuated ? 'OPEN' : 'CLOSED'}`);
                 break;
+        
             case "SV2":
-                valveData.SV2.actuated ? sendCommandWithDelay(actuateSV2Close, buttondelay) : sendCommandWithDelay(actuateSV2Open, buttondelay); //Send appropriate command to toggle based on toState
-                sendCommandWithDelay(getSVstate2, buttondelay + 50); //Get updated state of SV2 after actuating it to confirm it changed and to update our state with the new information
-                console.log(`Toggling Solenoid Valve 2 to ${!valveData.SV2.actuated ? 'OPEN' : 'CLOSED'}`); //We should've changed the value to the opposite of the current state with our command, so we log that we're toggling it to the opposite of the current state
+                if (valveDataRef.current.SV2.actuated && action === 'CLOSE') { // If SV1 is currently open and we want to close it
+                    sendCommandWithDelay(actuateSV2Close, buttondelay);   
+                } else if (!valveDataRef.current.SV2.actuated && action === 'OPEN') { // If SV1 is currently closed and we want to open it
+                    sendCommandWithDelay(actuateSV2Open, buttondelay);
+                }
+
+                sendCommandWithDelay(getSVstate2, buttondelay + 50); // Query the state of SV1 after sending the command to update our state with the response from the server
+                console.log(`Toggling Solenoid Valve 2 to ${!valveDataRef.current.SV2.actuated ? 'OPEN' : 'CLOSED'}`);
                 break;
-            case "BV": //Query issues
-                valveData.BV.actuated ? sendCommandWithDelay(actuateBallValveClose, buttondelay) : sendCommandWithDelay(actuateBallValveOpen, buttondelay); //Send appropriate command to toggle based on toState
-                //Manually update state since we have no way of querrying the actual state of the ball valve, so we have to assume that our command works correctly and update our state accordingly
-                valveData.BV.actuated ? setValveData(prevState => ({...prevState, BV: {"actuated": false, "state": "high"}})) : setValveData(prevState => ({...prevState, BV: {"actuated": true, "state": "low"}})); 
-                console.log(`Toggling Ball Valve to ${!valveData.BV.actuated ? 'OPEN' : 'CLOSED'}`); //We should've changed the value to the opposite of the current state with our command, so we log that we're toggling it to the opposite of the current state
+        
+            case "BV":
+                if (valveDataRef.current.BV.actuated && action === 'CLOSE') { // If the ball valve is currently open and we want to close it
+                    sendCommandWithDelay(actuateBallValveClose, buttondelay);
+                    sendCommandWithDelay(() => {
+                        updateValveData(prevState => ({
+                            ...prevState,
+                            BV: { actuated: false, state: "high" }
+                        }));
+                        console.log("Ball Valve toggled to CLOSED");
+                    }, buttondelay + 50); // Delay state update to give command time to execute
+                } else if (!valveDataRef.current.BV.actuated && action === 'OPEN') { // If the ball valve is currently open and we want to open it (i.e., do nothing)
+                    sendCommandWithDelay(actuateBallValveOpen, buttondelay);
+                    sendCommandWithDelay(() => {
+                        updateValveData(prevState => ({
+                            ...prevState,
+                            BV: { actuated: true, state: "low" }
+                        }));
+                        console.log("Ball Valve toggled to OPEN");
+                    }, buttondelay + 50); // Delay state update to give command time to execute
+                }
                 break;
-            case "MAV": 
-                if(valveData.MAV.actuated) { //If the Mav is actuated then we want to close it
+        
+            case "MAV":
+                if(valveDataRef.current.MAV.actuated && action === 'CLOSE') { //If the Mav is actuated then we want to close it
                     sendCommandWithDelay(actuateMavClose, buttondelay); //Send `Close` Command for Mav Valve
-                } else if(!valveData.MAV.actuated) { //If the Mav is not actuated then we want to open it
+                }else if(!valveDataRef.current.MAV.actuated && action === 'OPEN') { //If the Mav is not actuated then we want to open it
                     sendCommandWithDelay(actuateMavOpen, buttondelay); //Send `Open` Command for Mav Valve
                 }
-                
-                // We no longer query MAV state directly. It updates via FSW Telemetry stream automatically.
-                console.log(`Toggling MAV to ${!valveData.MAV.actuated ? 'OPEN' : 'CLOSED'}`); //We should've changed the value to the opposite of the current state with our command, so we log that we're toggling it to the opposite of the current state
                 break;
+        
             case "QD":
-                valveData.QD.retracted ? sendCommandWithDelay(actuateQDClose, buttondelay) : sendCommandWithDelay(actuateQDOpen, buttondelay); //Send appropriate command to toggle based on toState
-                break;
-            case "Igniter":
-                if (valveData.IG1.continuity && valveData.IG2.continuity) { //Only send ignite command if we have continuity for both igniters, which means we have the ability to ignite    
-                    sendCommandWithDelay(igniteCommand, buttondelay); //Send ignite command
+                if (valveDataRef.current.QD.retracted && action === 'RETRACT') {
+                    sendCommandWithDelay(actuateQDClose, buttondelay);
+                    sendCommandWithDelay(() => {
+                        updateValveData(prevState => ({
+                            ...prevState,
+                            QD: { ...prevState.QD, retracted: false }
+                        }));
+                        console.log("Quick Disconnect toggled to CLOSED");
+                    }, buttondelay + 50);
+                } else if (!valveDataRef.current.QD.retracted && action === 'EXTEND'){
+                    sendCommandWithDelay(actuateQDOpen, buttondelay);
+                    sendCommandWithDelay(() => {
+                        updateValveData(prevState => ({
+                            ...prevState,
+                            QD: { ...prevState.QD, retracted: true }
+                        }));
+                        console.log("Quick Disconnect toggled to OPEN");
+                    }, buttondelay + 50);
                 }
                 break;
+        
+            case "Igniter":
+                if (valveDataRef.current.IG1.continuity && valveDataRef.current.IG2.continuity) {
+                    sendCommandWithDelay(igniteCommand, buttondelay);
+                    console.log("Ignite command sent — continuity confirmed on both igniters");
+                } else {
+                    const missingContinuity = [
+                        !valveDataRef.current.IG1.continuity && "IG1",
+                        !valveDataRef.current.IG2.continuity && "IG2"
+                    ].filter(Boolean).join(", ");
+                    console.warn(`Ignite command blocked — no continuity on: ${missingContinuity}`);
+                    // TODO: surface this to the UI so the operator is clearly notified
+                }
+                break;
+        
             default:
-                console.error("Unknown valve name:", ValveName);
+                console.error("Unknown valve identifier:", valveIdentifier);
         }
     };
+   
+    // This function will handle incoming messages from the WebSocket connection, and this will be set 
+    // as the onmessage handler for our WebSocket in a useEffect hook.
+    const handleMessage = (event: MessageEvent) => {
+        //Parse JSON data here
+        const data = JSON.parse(event.data);
+        //console.log("Received message:", data);
     
-    //useEffect hook sets up connection to fill station server on mount of propulsion page, and also sets up listeners for messages, connection closures, and errors, 
-    //and then cleans up the connection on unmount of the page. The connection closure listener also attempts to reconnect after a delay if the connection is lost, and 
-    //the error listener ensures that any errors also trigger a closure and reconnection attempt.
-    useEffect(() => {
-        let reconnectTimeout: ReturnType<typeof setTimeout>;
+        switch (data.type) { //Switch on response type 
+            case "adc_data":
+                if(adcDataRef.current.length > 2000) { //Limit the size of the ADC data array to prevent memory issues, adjust as needed based on how much data you want to keep track of
+                    adcDataRef.current.shift(); //Remove the oldest entry when we exceed the limit
+                }
+    
+                adcDataRef.current.push(data); //Store the latest ADC data in the ref, which we can use for displaying on the page or for any logic we want to implement based on the ADC data in the future
+                break;
+    
+            case "fsw_telemetry":
+                if(umbilicalDataRef.current.length > 500) { //Limit the size of the ADC data array to prevent memory issues, adjust as needed based on how much data you want to keep track of
+                    umbilicalDataRef.current.shift(); //Remove the oldest entry when we exceed the limit
+                }
+                
 
-        const connect = () => {
-            //
+                //const lastPressure = umbilicalDataRef.current.at(-1)?.telemetry.pt4 ?? 0;
+    
+                // if (isFillingRef.current && !isVentingRef.current) {
+                //     data.telemetry.pt4 = lastPressure + (Math.random() * 4 + 1); // Random increase between 1-5 during fill
+                // } else if (isVentingRef.current || (valveDataRef.current.SV2.venting && valveDataRef.current.BV.actuated)) {
+                //     data.telemetry.pt4 = Math.max(0, lastPressure - (Math.random() * 15 + 10)); // Random decrease between 10-25 during vent
+                // } else {
+                //     data.telemetry.pt4 = lastPressure; // Hold when idle
+                // }
+    
+                console.log("Pressure:", new Date().toISOString(), "PSI:", data.telemetry.pt4);
+    
+                setCurrFlightMode(data.flight_mode as FlightMode); //Update our current flight mode state with the latest flight mode from the telemetry data, which we can use to display on the page or for any logic we want to implement based on the flight mode in the future
+                umbilicalDataRef.current.push(data); //Store the latest ADC data in the ref, which we can use for displaying on the page or for any logic we want to implement based on the ADC data in the future
+                
+                // Update MAV state based on telemetry
+                if (data.telemetry && data.telemetry.mav_open !== undefined) {
+                    updateValveData(prevState => ({
+                        ...prevState,
+                        MAV: { "actuated": data.telemetry.mav_open, "angle": 0, "pulseWidth": 0 }
+                    }));
+                }
+                break;
+    
+            case "igniter_continuity":
+                if (data.id === 1) {
+                    updateValveData(prevState => ({
+                        ...prevState, //Spread the previous state to keep other valves' data unchanged
+                        IG1: { "continuity": data.continuity }
+                        //Adjust as needed based on actual response data and what information we want to track
+                    }));
+                }
+                else if (data.id === 2) {
+                    updateValveData(prevState => ({
+                        ...prevState, //Spread the previous state to keep other valves' data unchanged
+                        IG2: { "continuity": data.continuity }
+                        //Adjust as needed based on actual response data and what information we want to track
+                    }));
+                }
+    
+            break;
+            
+            case "valve_state":
+                //Check pending action to see which valve this response is for and update state accordingly
+                if (pendingActionRef.current === "SV1") {
+                    updateValveData(prevState => ({
+                        ...prevState, //Spread the previous state to keep other valves' data unchanged
+                        SV1: { "actuated": data.actuated, "continuity": data.continuity }
+                        //Adjust as needed based on actual response data and what information we want to track
+                    }));
+                }
+                else if (pendingActionRef.current === "SV2") {
+                    updateValveData(prevState => ({
+                        ...prevState, //Spread the previous state to keep other valves' data unchanged
+                        SV2: { "actuated": data.actuated, "venting": data.actuated, "continuity": data.continuity }
+                        //Adjust as needed based on actual response data and what information we want to track
+                    }));
+                }
+                break;
+            case "mav_state": //We get from telemetry so this is useless 
+                if (pendingActionRef.current === "MAV") {
+                    updateValveData(prevState => ({
+                        ...prevState, //Spread the previous state to keep other valves' data unchanged
+                        MAV: { "actuated": data.angle > 45, "angle": data.angle, "pulseWidth": data.pulse_width }
+                        //Adjust as needed based on actual response data and what information we want to track
+                    }));
+                }
+                break;
+            }
+        };
+    
+        
+        /*
+        Reason why we added the handleButtonClickRef (Claude)
+        Every re-render creates a new version of handleButtonClick. Your setTimeout captures the old version at creation time. When it fires later,
+        it uses that old version which has a stale wsRef → WebSocket error → disconnect. By using a ref to always point to the latest handleButtonClick, 
+        the setTimeout can call handleButtonClickRef.current() to get the up-to-date function with the current wsRef, preventing the stale closure issue and keeping the connection alive.
+        */
+    
+        const handleButtonClickRef = useRef(handleButtonClick);
+    
+        useEffect(() => {
+            handleButtonClickRef.current = handleButtonClick;
+        }); // No dependency array = runs after every render, keeping ref always fresh
+        
+        //useEffect hook sets up connection to fill station server on mount of propulsion page, and also sets up listeners for messages, connection closures, and errors, 
+        //and then cleans up the connection on unmount of the page. The connection closure listener also attempts to reconnect after a delay if the connection is lost, and 
+        //the error listener ensures that any errors also trigger a closure and reconnection attempt.
+        useEffect(() => {
+            if (!wsReady) return; // Connection not open yet, do nothing
+    
             let heartbeatInterval: ReturnType<typeof setInterval>; 
             let pollingInterval: ReturnType<typeof setInterval>;
-
-            // This is where you would set up your WebSocket connection and listeners
-            wsRef.current = new WebSocket(uri);
-
-            if(wsRef.current === null){
-                console.log("Something is bugging out with the WebSocket connection, check if the server is running and the URI is correct");
-                return;
-            }
-
-            wsRef.current.onopen = () => {
-                console.log("WebSocket connection established.");
-
-                sendCommandWithDelay(getSVstate1, 0); // Get initial state of SV1 immediately on connection
-                sendCommandWithDelay(getSVstate2, 50); // Get initial state of SV2 immediately on connection
-                sendCommandWithDelay(getIgniterContinuity1, 50); // Get initial continuity status of igniter 1 immediately on connection, just for log as mentioned previously
-                sendCommandWithDelay(getIgniterContinuity2, 50); // Get initial continuity status of igniter 2 immediately on connection, just for log as mentioned previously
-                sendCommandWithDelay(heartbeatCommand, 50); // Send initial heartbeat immediately on connection
-
-                //Delays chosen arbitrarily 
-                sendCommandWithDelay(actuateSV2Open, 150); //Normally on, so turn on after delay to ensure it gets the correct initial state before changing it
-                sendCommandWithDelay(actuateMavClose, 150); //Normally closed, so close after delay to ensure it gets the correct initial state before changing it
-
-                sendCommandWithDelay(getSVstate2, 200); //Get updated state of SV2 after actuating it to confirm it changed and to update our state with the new information
+        
+            const onOpen = () => {
+                sendCommandWithDelay(getSVstate1, 0);
+                sendCommandWithDelay(getSVstate2, 50);
+                sendCommandWithDelay(getIgniterContinuity1, 50);
+                sendCommandWithDelay(getIgniterContinuity2, 50);
+                sendCommandWithDelay(heartbeatCommand, 50);
+                sendCommandWithDelay(getSVstate2, 150);
+                sendCommandWithDelay(() => {
+                    if (!valveDataRef.current.SV2.actuated) {
+                        wsRef.current?.send(JSON.stringify(actuateSV2Open));
+                        sendCommandWithDelay(getSVstate2, 50);
+                    }
+                    if (valveDataRef.current.MAV.actuated) {
+                        wsRef.current?.send(JSON.stringify(actuateMavClose));
+                    }
+                }, 400);
                 sendCommandWithDelay(startADCStream, 333);
                 sendCommandWithDelay(startFSWStream, 333);
-                //  ^
-                //  |
-                //  |
-                //  |
-                //Helps with a lot, but for simply viewing our updates to some of our code, I do not want this thing cluttering my 
-                //console with ADC data, so I will comment it out for now, but this is where I would send the command to start the ADC 
-                //stream to start receiving that data from the server
                 console.log("Command batch finished");
-
-                //Start heartbeat loop to maintain connection with live fill station server
+        
                 heartbeatInterval = setInterval(() => {
                     if (wsRef.current?.readyState === WebSocket.OPEN) {
                         wsRef.current.send(JSON.stringify(heartbeatCommand));
                     }
                 }, 5000);
-
-                //Start polling loop to get updated valve states every 3 seconds, which will help ensure that our state stays up to date 
-                //with the actual state of the system even if we miss some responses from the server or if there are changes to the system 
-                //state that we don't directly trigger with a command (e.g., if someone manually changes the state of a valve without using our interface) <- This is incredibly important
+        
                 pollingInterval = setInterval(() => {
                     if (wsRef.current?.readyState === WebSocket.OPEN) {
                         sendCommandWithDelay(getSVstate1, 0);
@@ -334,164 +506,74 @@ export function PropulsionPage() {
                     }
                 }, 3000);
             };
-
-            wsRef.current.onmessage = (event) => {
-                //Parse JSON data here
-                const data = JSON.parse(event.data);
-                //console.log("Received message:", data);
-
-                switch (data.type) { //Switch on response type 
-                    case "adc_data":
-                        if(adcDataRef.current.length > 2000) { //Limit the size of the ADC data array to prevent memory issues, adjust as needed based on how much data you want to keep track of
-                            adcDataRef.current.shift(); //Remove the oldest entry when we exceed the limit
-                        }
-
-                        adcDataRef.current.push(data); //Store the latest ADC data in the ref, which we can use for displaying on the page or for any logic we want to implement based on the ADC data in the future
-                        break;
-
-                    case "fsw_telemetry":
-                        if(umbilicalDataRef.current.length > 500) { //Limit the size of the ADC data array to prevent memory issues, adjust as needed based on how much data you want to keep track of
-                            umbilicalDataRef.current.shift(); //Remove the oldest entry when we exceed the limit
-                        }
-
-
-                        const lastPressure = umbilicalDataRef.current.at(-1)?.telemetry.pt4 ?? 0;
+        
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+                onOpen();
+            } else {
+                wsRef.current?.addEventListener('open', onOpen);
+            }
     
-                        if (isFillingRef.current && !isVentingRef.current) {
-                            data.telemetry.pt4 = lastPressure + (Math.random() * 4 + 1); // Random increase between 1-5 during fill
-                        } else if (isVentingRef.current) {
-                            data.telemetry.pt4 = Math.max(0, lastPressure - (Math.random() * 15 + 10)); // Random decrease between 10-25 during vent
-                        } else {
-                            data.telemetry.pt4 = lastPressure; // Hold when idle
-                        }
-
-                        console.log("Pressure:", new Date().toISOString(), "PSI:", data.telemetry.pt4);
-
-                        setCurrFlightMode(data.flight_mode as FlightMode); //Update our current flight mode state with the latest flight mode from the telemetry data, which we can use to display on the page or for any logic we want to implement based on the flight mode in the future
-                        umbilicalDataRef.current.push(data); //Store the latest ADC data in the ref, which we can use for displaying on the page or for any logic we want to implement based on the ADC data in the future
-                        
-                        // Update MAV state based on telemetry
-                        if (data.telemetry && data.telemetry.mav_open !== undefined) {
-                            setValveData(prevState => ({
-                                ...prevState,
-                                MAV: { "actuated": data.telemetry.mav_open, "angle": 0, "pulseWidth": 0 }
-                            }));
-                        }
-                        break;
-
-                    case "igniter_continuity":
-                        if (data.id === 1) {
-                            setValveData(prevState => ({
-                                ...prevState, //Spread the previous state to keep other valves' data unchanged
-                                IG1: { "continuity": data.continuity }
-                                //Adjust as needed based on actual response data and what information we want to track
-                            }));
-                        }
-                        else if (data.id === 2) {
-                            setValveData(prevState => ({
-                                ...prevState, //Spread the previous state to keep other valves' data unchanged
-                                IG2: { "continuity": data.continuity }
-                                //Adjust as needed based on actual response data and what information we want to track
-                            }));
-                        }
-
-                    break;
-                    
-                    case "valve_state":
-                        //Check pending action to see which valve this response is for and update state accordingly
-                        if (pendingActionRef.current === "SV1" || data.valve === "SV1") {
-                            setValveData(prevState => ({
-                                ...prevState, //Spread the previous state to keep other valves' data unchanged
-                                SV1: { "actuated": data.open, "continuity": data.continuity }
-                                //Adjust as needed based on actual response data and what information we want to track
-                            }));
-                        }
-                        else if (pendingActionRef.current === "SV2" || data.valve === "SV2") {
-                            setValveData(prevState => ({
-                                ...prevState, //Spread the previous state to keep other valves' data unchanged
-                                SV2: { "actuated": data.open, "venting": false, "continuity": data.continuity }
-                                //Adjust as needed based on actual response data and what information we want to track
-                            }));
-                        }
-                        break;
-                }
-            };
-
-            wsRef.current.onclose = () => {
+            // Set up message listener to handle incoming messages from the server and update our state accordingly
+            wsRef.current?.addEventListener('message', handleMessage); 
+        
+            return () => {
                 clearInterval(heartbeatInterval);
                 clearInterval(pollingInterval);
-                console.log("WebSocket connection closed. Attempting to reconnect in 3 seconds...");
-                reconnectTimeout = setTimeout(connect, 3000);
-            };
-
-            wsRef.current.onerror = (error) => {
-                clearInterval(heartbeatInterval);
-                clearInterval(pollingInterval);
-                console.error("WebSocket error:", error);
-                wsRef.current?.close(); // Ensure closure to trigger onclose and reconnect
-            };
-        };
-
-        connect();
-
-        //Return function to clean up the WebSocket connection when the component unmounts
-        return () => {
-            clearTimeout(reconnectTimeout);
-
-            if (wsRef.current) {
-                // Prevent onclose from triggering a reconnect when deliberately unmounting
-                wsRef.current.onclose = null;
-                wsRef.current.onerror = null;
-
-                if (wsRef.current.readyState === WebSocket.OPEN) {
-                    //Shut OFF no delay
+                wsRef.current?.removeEventListener('open', onOpen);
+                wsRef.current?.removeEventListener('message', handleMessage);
+                if (wsRef.current?.readyState === WebSocket.OPEN) {
                     wsRef.current.send(JSON.stringify(stopADCStream));
                     wsRef.current.send(JSON.stringify(stopFSWStream));
                 }
-                wsRef.current.close(); // Close the WebSocket connection when the component unmounts
-                console.log("WebSocket connection cleanup."); //Log Cleanup
-            }
-        };
-    }, []);
-             
-    return (
-        <PropulsionContext.Provider value={{fillUIActive, setFillUIActive, ventUIActive, setVentUIActive, isVentingRef, isFillingRef, manualVentRef, handleButtonClick, fillState, setFillState, thresholdPressure, setThresholdPressure, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, valveData, currFlightMode, adcDataRef: adcDataRef, telemetryDataRef: umbilicalDataRef}}>
-            <div className={`min-h-screen bg-white ${ventUIActive ? 'cursor-wait' : ''}`}>
-                {/* Header */}       
-                <Header pageTitle="Propulsion Page" />
-            
-                {/* Main Content */}
-                <div className="flex gap-5 p-8">
-                    {/* Left Column */}
-                    <div className="flex-1 flex flex-col gap-8">
-                        {/* START AUTOMATED FILL */}
-                        <FillButtonComponent />
-
-                        {/* VENT BUTTON */}
-                        <VentButtonComponent />
-                    </div>
-
-                    {/* Right Column */}
-                    <div className="flex-1 flex flex-col gap-8">
-                        {/* 6 Button Grid */}
-                        <div className="bg-[#D9D9D9] border-[6px] border-black rounded-3xl p-5">
-                            <div className="grid grid-cols-2 gap-[25px]">
-                            <ButtonComponent buttonName="Solenoid Valve 1" currentState={valveData.SV1.actuated}/>
-                            <ButtonComponent buttonName="Solenoid Valve 2" currentState={valveData.SV2.actuated}/>
-                            <ButtonComponent buttonName="Ball Valve" currentState={valveData.BV.actuated}/>
-                            <ButtonComponent buttonName="MAV" currentState={valveData.MAV.actuated} /> 
-                            <ButtonComponent buttonName="Ignite" currentState={valveData.IG1.continuity && valveData.IG2.continuity} isSpecial = {true}/>
-                            <ButtonComponent buttonName="Quick Disconnect" currentState={valveData.QD.retracted} isSpecial = {true}/>
-                            </div>
+                console.log("Propulsion cleanup.");
+            };
+        }, [wsReady]); // Re-run effect if WebSocket connection status changes
+                 
+        return (
+            <PropulsionContext.Provider value={{confirmedVentSecondsRef, canInteractRef, buttonInteractionState, setButtonInteractionState, valveDataRef, fillUIActive, setFillUIActive, ventUIActive, setVentUIActive, isVentingRef, isFillingRef, manualVentRef, handleButtonClickRef, fillState, setFillState, thresholdPressure, setThresholdPressure, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, valveData, currFlightMode, adcDataRef: adcDataRef, telemetryDataRef: umbilicalDataRef}}>
+                <div className={`min-h-screen bg-white ${ventUIActive ? 'cursor-wait' : ''}`}>
+                    {/* Header */}       
+                <Header 
+                pageTitle="Propulsion Page" 
+                currFlightMode={currFlightMode} 
+                buttonInteractionState={buttonInteractionState} 
+                canInteractRef={canInteractRef} 
+                fillUIActive = {fillUIActive} 
+                setButtonInteractionState={setButtonInteractionState}
+                />
+    
+                    {/* Main Content */}
+                    <div className="flex gap-5 p-8">
+                        {/* Left Column */}
+                        <div className="flex-1 flex flex-col gap-8">
+                            {/* START AUTOMATED FILL */}
+                            <FillButtonComponent />
+    
+                            {/* VENT BUTTON */}
+                            <VentButtonComponent />
                         </div>
-
-                        {/* Expand Button Panel */}
-                        <ButtonPanelComponent />
+    
+                        {/* Right Column */}
+                        <div className="flex-1 flex flex-col gap-8">
+                            {/* 6 Button Grid */}
+                            <div className="bg-[#D9D9D9] border-[6px] border-black rounded-3xl p-5">
+                                <div className="grid grid-cols-2 gap-[25px]">
+                                <ButtonComponent buttonName="Solenoid Valve 1" currentState={valveData.SV1.actuated} actuationLock='LOCKED'/>
+                                <ButtonComponent buttonName="Solenoid Valve 2" currentState={valveData.SV2.actuated} actuationLock='LOCKED'/>
+                                <ButtonComponent buttonName="Ball Valve" currentState={valveData.BV.actuated} actuationLock='UNLOCKED'/>
+                                <ButtonComponent buttonName="MAV" currentState={valveData.MAV.actuated} actuationLock='LOCKED'/> 
+                                <ButtonComponent buttonName="Igniter" currentState={valveData.IG1.continuity && valveData.IG2.continuity} actuationLock='LOCKED'/>
+                                <ButtonComponent buttonName="Quick Disconnect" currentState={valveData.QD.retracted} actuationLock='UNLOCKED'/>
+                                </div>
+                            </div>
+    
+                            {/* Expand Button Panel */}
+                            <ButtonPanelComponent />
+                        </div>
                     </div>
                 </div>
-            </div>
-        </PropulsionContext.Provider>
-    );
-}
-
-export default PropulsionPage;
+            </PropulsionContext.Provider>
+        );
+    }
+    
+    export default PropulsionPage;
