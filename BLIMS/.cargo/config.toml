@@ -1,3 +1,12 @@
+[target.thumbv8m.main-none-eabihf]
+runner = "picotool load -u -v -x -t elf"
+
+[build]
+target = "thumbv8m.main-none-eabihf"
+
+[env]
+DEFMT_LOG = "info"
+
 [build]
 target = "thumbv8m.main-none-eabihf"
 target_dir = "tmpcargo/drive-test"
