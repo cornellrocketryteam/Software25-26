@@ -11,6 +11,7 @@ export default function HeaterPanelComponent() {
         "switch.tankheater3": false
     });
     const [connected, setConnected] = useState(false);
+    const [isExpanded, setIsExpanded] = useState(false);
     const msgIdRef = useRef(1);
 
     useEffect(() => {
@@ -148,15 +149,46 @@ export default function HeaterPanelComponent() {
         );
     };
 
-    return (
-        <div className="bg-[#D9D9D9] border-[6px] border-black rounded-3xl p-5 mt-8">
-            <div className="flex justify-between items-center mb-4">
-                <h2 className="font-inter text-2xl font-bold">Tank Heaters</h2>
-                <div className="flex items-center gap-2">
-                    <span className="font-inter text-sm font-bold">HA Status:</span>
-                    <div className={`w-4 h-4 rounded-full border-2 border-black ${connected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+    if (!isExpanded) {
+        return (
+            <div className="bg-[#D9D9D9] border-[6px] border-black rounded-3xl p-8 flex items-center justify-between">
+                <div>
+                    <div className="flex items-center gap-4 mb-2">
+                        <p className="font-inter text-2xl font-bold">Expand Tank Heaters</p>
+                        <div className={`w-4 h-4 rounded-full border-2 border-black ${connected ? 'bg-green-500' : 'bg-red-500'}`} title="HA Status"></div>
+                    </div>
+                    <p className="font-inter text-lg">(Will display 3 heater switches)</p>
                 </div>
+                <button 
+                    onClick={() => setIsExpanded(true)}
+                    className="bg-[#4F4B40] border-[6px] border-black rounded-full w-24 h-24 flex items-center justify-center hover:opacity-90">
+                    <svg className="w-12 h-12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
+                        <path d="M12 5v14M5 12h14" />
+                    </svg>
+                </button>
             </div>
+        );
+    }
+
+    return (
+        <div className="bg-[#D9D9D9] border-[6px] border-black rounded-3xl p-8 flex flex-col gap-6">
+            <div className="flex justify-between items-center">
+                <div>
+                    <div className="flex items-center gap-4 mb-2">
+                        <p className="font-inter text-2xl font-bold">Shrink Tank Heaters</p>
+                        <div className={`w-4 h-4 rounded-full border-2 border-black ${connected ? 'bg-green-500' : 'bg-red-500'}`} title="HA Status"></div>
+                    </div>
+                    <p className="font-inter text-lg">(Will hide heater switches)</p>
+                </div>
+                <button 
+                    onClick={() => setIsExpanded(false)}
+                    className="bg-[#4F4B40] border-[6px] border-black rounded-full w-24 h-24 flex items-center justify-center hover:opacity-90">
+                    <svg className="w-12 h-12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
+                        <path d="M5 12h14" />
+                    </svg>
+                </button>
+            </div>
+            
             <div className="grid grid-cols-1 gap-[25px]">
                 <HeaterButton name="Heater 1" entity_id="switch.tankheater1" />
                 <HeaterButton name="Heater 2" entity_id="switch.tankheater2" />
