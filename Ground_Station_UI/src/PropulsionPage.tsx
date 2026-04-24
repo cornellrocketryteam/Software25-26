@@ -3,6 +3,7 @@ import ButtonComponent from "./components/ButtonComponent";
 import VentButtonComponent from "./components/VentButtonComponent";
 import FillButtonComponent from "./components/FillButtonComponent";
 import ButtonPanelComponent from "./components/ButtonPanelComponent";
+import HeaterPanelComponent from "./components/HeaterPanelComponent";
 import {useEffect, useRef, useState} from "react";
 import { createContext, useContext} from "react";
 
@@ -484,6 +485,9 @@ export function PropulsionPage() {
                             <ButtonComponent buttonName="Quick Disconnect" currentState={valveData.QD.retracted} isSpecial = {true}/>
                             </div>
                         </div>
+
+                        {/* Home Assistant Tank Heaters */}
+                        <HeaterPanelComponent />
 
                         {/* Expand Button Panel */}
                         <ButtonPanelComponent />
