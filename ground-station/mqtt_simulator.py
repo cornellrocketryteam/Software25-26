@@ -44,6 +44,10 @@ try:
         time_step += 0.1
         fill_progress = (fill_progress + 0.5) % 150.0  # Loops 0 to 50kg
         
+        # Calculate seconds since midnight UTC (simulating MAX-M10S Time of Day)
+        # time.time() gives absolute Unix epoch, % 86400 isolates today's seconds
+        gps_time_of_day = time.time() % 86400
+        
         # Build the JSON payload matching the unified Schema
         payload = {
             # Top-Level Radio
@@ -58,7 +62,7 @@ try:
             "latitude": 42.4440,
             "longitude": -76.4832,
             "num_satellites": 12,
-            "timestamp": time.time(),
+            "timestamp": gps_time_of_day,  # <-- UPDATED TO SECONDS SINCE MIDNIGHT
             
             "mag_x": random.uniform(-50, 50),
             "mag_y": random.uniform(-50, 50),
@@ -130,7 +134,7 @@ try:
         
         # Publish to EMQX
         client.publish(MQTT_TOPIC, json.dumps(payload))
-        print(f"Published to {MQTT_TOPIC} | Apogee: {payload['predicted_apogee']:.0f}ft | Heading: {(payload['head_mot']/100000.0):.2f}°")
+        print(f"Published to {MQTT_TOPIC} | GPS Time: {gps_time_of_day:.3f}s | Apogee: {payload['predicted_apogee']:.0f}ft")
         
         # Wait to match target publish rate (10Hz)
         time.sleep(1.0 / PUBLISH_RATE_HZ)
