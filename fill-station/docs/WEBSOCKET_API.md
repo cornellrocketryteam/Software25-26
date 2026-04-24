@@ -363,6 +363,8 @@ The following commands send simple 1-byte command characters over the serial con
 *   `fsw_close_sv` — Close SV on vehicle (`<s>`)
 *   `fsw_safe` — Safe all FSW actuators (`<V>`)
 *   `fsw_reset_fram` — Clear FRAM data (`<F>`)
+*   `fsw_dump_fram` — Dump FRAM data (`<f>`)
+*   `fsw_fault_mode` — Force FSW into Fault flight mode (`<X>`)
 *   `fsw_reset_card` — Reset SD card writer (`<D>`)
 *   `fsw_reboot` — Reboot FSW (`<R>`)
 *   `fsw_dump_flash` — Dump flash memory (`<G>`)
@@ -409,11 +411,47 @@ Data received back from the Flight software, pushed to clients when `start_fsw_s
     "gyro_x": 0.0, "gyro_y": 0.0, "gyro_z": 0.0,
     "pt3": 1200.0,
     "pt4": 1500.0,
-    "rtd": 500.0
+    "rtd": 500.0,
+    "sv_open": false,
+    "mav_open": false,
+    "ssa_drogue_deployed": 0,
+    "ssa_main_deployed": 0,
+    "cmd_n1": 0,
+    "cmd_n2": 0,
+    "cmd_n3": 0,
+    "cmd_n4": 0,
+    "cmd_a1": 0,
+    "cmd_a2": 0,
+    "cmd_a3": 0,
+    "airbrake_state": 0,
+    "predicted_apogee": 0.0,
+    "h_acc": 0,
+    "v_acc": 0,
+    "vel_n": 0.0,
+    "vel_e": 0.0,
+    "vel_d": 0.0,
+    "g_speed": 0.0,
+    "s_acc": 0,
+    "head_acc": 0,
+    "fix_type": 0,
+    "head_mot": 0,
+    "blims_motor_position": 0.0,
+    "blims_phase_id": 0,
+    "blims_pid_p": 0.0,
+    "blims_pid_i": 0.0,
+    "blims_bearing": 0.0,
+    "blims_loiter_step": 0,
+    "blims_heading_des": 0.0,
+    "blims_heading_error": 0.0,
+    "blims_error_integral": 0.0,
+    "blims_dist_to_target_m": 0.0,
+    "blims_target_lat": 0.0,
+    "blims_target_lon": 0.0,
+    "blims_wind_from_deg": 0.0
   }
 }
 ```
 
 * `connected`: True if the background task can communicate with the serial device.
 * `flight_mode`: Human readable string.
-* `telemetry`: The `FswTelemetry` packet (parsed from a `$TELEM,<22 fields>\n` CSV line emitted by the FSW over the umbilical) exposed as JSON variables.
+* `telemetry`: The `FswTelemetry` packet (parsed from a `$TELEM,<56 fields>\n` CSV line emitted by the FSW over the umbilical) exposed as JSON variables.
