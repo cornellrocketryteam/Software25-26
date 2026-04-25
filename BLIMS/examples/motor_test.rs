@@ -4,10 +4,20 @@
 use embassy_executor::Spawner;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::pwm::{Config as PwmConfig, Pwm};
+use embassy_rp::usb::{Driver, InterruptHandler}; // Added USB drivers
+use embassy_rp::peripherals::USB;                // Added USB peripheral
+use embassy_rp::bind_interrupts;
+use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
+use embassy_usb::UsbDevice;
 use embassy_time::{Duration, Timer};
 use fixed::FixedU16;
 use fixed::types::extra::U4;
-use {defmt_rtt as _, panic_probe as _};
+use defmt_rtt as _;
+use panic_probe as _;
+
+bind_interrupts!(struct Irqs {
+    USBCTRL_IRQ => InterruptHandler<USB>;
+});
 
 const TOP: u16 = 65535; //setting to max value for u16
 const DIVIDER: f32 = 45.78; 
@@ -20,9 +30,20 @@ fn set_motor_position(pwm: &mut Pwm<'_>, config: &mut PwmConfig, position: f32) 
     pwm.set_config(config);
 }
 
+#[embassy_executor::task]
+async fn logger_task(driver: Driver<'static, USB>) {
+    // This initializes the 'log' crate and pipes it through USB Serial
+    embassy_usb_logger::run!(1024, log::LevelFilter::Info, driver);
+}
+
 #[embassy_executor::main]
-async fn main(_spawner: Spawner) {
+async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
+
+    let driver = Driver::new(p.USB, Irqs);
+    spawner.spawn(logger_task(driver).expect("logger task failed to spawn"));
+    Timer::after(Duration::from_secs(2)).await;
+    defmt::info!("USB Serial initialized! Motor test starting...");
 
     let mut state_pin = Output::new(p.PIN_0, Level::High);
 
@@ -38,38 +59,39 @@ async fn main(_spawner: Spawner) {
     Timer::after(Duration::from_secs(5)).await; 
 
     state_pin.set_low(); 
-    defmt::println!("pulse low");
+    defmt::info!("pulse low");
     Timer::after(Duration::from_millis(500)).await; 
 
     
     // state_pin.set_high(); 
-    // defmt::println!("enable");
+    // log::info!("enable");
     // Timer::after(Duration::from_secs(5)).await;
 
+    defmt::info!("entering test loop");
 
     loop {
         
-        defmt::println!("[main] Moving to +10.5 turns (0.75)");
+        log::info!("[main] Moving to +10.5 turns (0.75)");
         // log::info!("[main] Moving to +10.5 turns (0.75)");
         set_motor_position(&mut pwm, &mut pwm_config, 0.75);
         Timer::after(Duration::from_secs(5)).await;
  
-        defmt::println!("[main] Moving to neutral 0 turns (0.5)");
+        log::info!("[main] Moving to neutral 0 turns (0.5)");
         set_motor_position(&mut pwm, &mut pwm_config, 0.5);
         Timer::after(Duration::from_secs(5)).await;
  
-        defmt::println!("[main] Moving to -10.5 turns (0.25)");
-        // log::info!("[main] Moving to +10.5 turns (0.25)");
+        log::info!("[main] Moving to -10.5 turns (0.25)");
+        // log::info!::info!("[main] Moving to +10.5 turns (0.25)");
         set_motor_position(&mut pwm, &mut pwm_config, 0.25);
         Timer::after(Duration::from_secs(5)).await;
 
-        defmt::println!("[main] Moving to -10.5 turns (0.25)");
+        log::info!("[main] Moving to -10.5 turns (0.25)");
         set_motor_position(&mut pwm, &mut pwm_config, 0.5);
         Timer::after(Duration::from_secs(5)).await;
 }
 
     // loop {
-    //     defmt::println!("hello");
+    //     log::info!("hello");
     // }
 }
 

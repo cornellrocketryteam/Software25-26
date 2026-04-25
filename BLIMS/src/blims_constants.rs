@@ -20,7 +20,7 @@ pub const MOTOR_MIN: f32 = 0.3;   // max left
 pub const MOTOR_MAX: f32 = 0.7;   // max right
 
 // Maximum number of wind profile layers
-pub const MAX_WIND_LAYERS: usize = 16;
+pub const MAX_WIND_LAYERS: usize = 20;
 
 // PI controller gains — revalidate via car testing
 pub const ALPHA: f32 = 0.1;
@@ -45,7 +45,7 @@ pub const LOITER_LEFT_POS: f32  = 0.35; // left turn position
 
 // Minimum groundspeed for reliable GPS heading (mm/s)
 pub const GSPEED_MIN_FOR_HEADING: i32 = 3000; // 3 m/s
-pub const MAX_WIND_LAYERS: usize = 20;
+//pub const MAX_WIND_LAYERS: usize = 20;
 
 
 

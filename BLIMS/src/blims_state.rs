@@ -39,8 +39,8 @@ pub struct BlimsDataIn {
     pub altitude_ft: f32, // Altitude AGL in feet
 
     // Accuracy estimates
-    pub h_acc: u32, // Horizontal accuracy  (mm)
-    pub v_acc: u32, // Vertical accuracy    (mm)
+    pub h_acc: u32, // Horizontal acceleration (m/s)
+    pub v_acc: u32, // Vertical acceleration    (mm)
 
     // Velocity
     pub vel_n: i32, // North velocity (mm/s)
@@ -52,8 +52,8 @@ pub struct BlimsDataIn {
     pub head_mot: i32, // Heading of motion × 1e5 (degrees)
 
     // Accuracy estimates
-    pub s_acc:    u32, // Speed accuracy   (mm/s)
-    pub head_acc: u32, // Heading accuracy × 1e5 (degrees)
+    pub s_acc:    u32, // Speed acceleration   (mm/s)
+    pub head_acc: u32, // Heading acceleration × 1e5 (degrees)
 
     // GPS status
     pub fix_type:  u8,   // 0=none, 2=2D, 3=3D, 4=3D+DGPS
