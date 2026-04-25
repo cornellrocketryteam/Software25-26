@@ -364,8 +364,9 @@ The following commands send simple 1-byte command characters over the serial con
 *   `fsw_safe` — Safe all FSW actuators (`<V>`)
 *   `fsw_reset_fram` — Clear FRAM data (`<F>`)
 *   `fsw_dump_fram` — Dump FRAM data (`<f>`)
-*   `fsw_fault_mode` — Force FSW into Fault flight mode (`<X>`)
-*   `fsw_reset_card` — Reset SD card writer (`<D>`)
+*   `fsw_wipe_fram_reboot` — Wipe FRAM and reboot in one step (`<X>`)
+*   `fsw_key_arm` — Arm launch key, required for Startup → Standby (`<K>`)
+*   `fsw_key_disarm` — Disarm launch key, reverts Standby → Startup (`<k>`)
 *   `fsw_reboot` — Reboot FSW (`<R>`)
 *   `fsw_dump_flash` — Dump flash memory (`<G>`)
 *   `fsw_wipe_flash` — Wipe flash memory (`<W>`)
@@ -374,6 +375,8 @@ The following commands send simple 1-byte command characters over the serial con
 *   `fsw_payload_n2` — Payload event N2 (`<2>`)
 *   `fsw_payload_n3` — Payload event N3 (`<3>`)
 *   `fsw_payload_n4` — Payload event N4 (`<4>`)
+
+> **Removed:** `fsw_reset_card` (`<D>`) and `fsw_fault_mode` (renamed to `fsw_wipe_fram_reboot`) are no longer accepted.
 
 **Format:**
 ```json
@@ -384,6 +387,23 @@ The following commands send simple 1-byte command characters over the serial con
 ```json
 {"type": "success"}
 ```
+
+---
+
+### `fsw_set_blims_target`
+Set the BLiMS landing-zone target. Sends `<T,lat,lon>` over the umbilical with two `f32` decimal-degree numbers. Range checked on the FSW: lat ∈ [-90, 90], lon ∈ [-180, 180].
+
+**Format:**
+```json
+{"command": "fsw_set_blims_target", "lat": 42.4419130, "lon": -76.4878000}
+```
+
+**Response:**
+```json
+{"type": "success"}
+```
+
+> **Note:** BLiMS guidance only arms on entry to MainDeployed if a target was previously set this way. With no `fsw_set_blims_target` issued before main-chute deploy, BLiMS guidance stays disabled (the previous hardcoded `42.696969 / -42.696969` fallback target has been removed).
 
 ---
 

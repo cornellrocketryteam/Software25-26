@@ -65,7 +65,6 @@ pub enum UmbilicalCommand {
     OpenSv,
     CloseSv,
     Safe,
-    ResetCard,
     ResetFram,
     DumpFram,
     Reboot,
@@ -76,7 +75,10 @@ pub enum UmbilicalCommand {
     PayloadN2,
     PayloadN3,
     PayloadN4,
-    StandbyMode,
+    WipeFramReboot,
+    KeyArm,
+    KeyDisarm,
+    SetBlimsTarget { lat: f32, lon: f32 },
 }
 
 /// Command channel: receiver task pushes commands, flight loop polls them.
@@ -349,6 +351,40 @@ async fn usb_receiver_task(mut receiver: Receiver<'static, UsbDriver>) -> ! {
                 continue;
             }
 
+            // Variable-length: BLiMS target set, format `<T,<lat>,<lon>>`.
+            if data.len() >= 4 && &data[..3] == b"<T," && data[data.len() - 1] == b'>' {
+                let body = &data[3..data.len() - 1];
+                let parsed = core::str::from_utf8(body).ok().and_then(|s| {
+                    let mut parts = s.split(',');
+                    let lat = parts.next()?.parse::<f32>().ok()?;
+                    let lon = parts.next()?.parse::<f32>().ok()?;
+                    if parts.next().is_some() {
+                        return None;
+                    }
+                    Some((lat, lon))
+                });
+                match parsed {
+                    Some((lat, lon))
+                        if (-90.0..=90.0).contains(&lat)
+                            && (-180.0..=180.0).contains(&lon) =>
+                    {
+                        COMMANDS
+                            .try_send(UmbilicalCommand::SetBlimsTarget { lat, lon })
+                            .ok();
+                    }
+                    Some((lat, lon)) => {
+                        log::warn!(
+                            "Umbilical SetBlimsTarget rejected: out of range lat={} lon={}",
+                            lat, lon
+                        );
+                    }
+                    None => {
+                        log::warn!("Umbilical SetBlimsTarget parse failed");
+                    }
+                }
+                continue;
+            }
+
             let cmd = match data {
                 b"<L>" => Some(UmbilicalCommand::Launch),
                 b"<M>" => Some(UmbilicalCommand::OpenMav),
@@ -356,7 +392,6 @@ async fn usb_receiver_task(mut receiver: Receiver<'static, UsbDriver>) -> ! {
                 b"<S>" => Some(UmbilicalCommand::OpenSv),
                 b"<s>" => Some(UmbilicalCommand::CloseSv),
                 b"<V>" => Some(UmbilicalCommand::Safe),
-                b"<D>" => Some(UmbilicalCommand::ResetCard),
                 b"<F>" => Some(UmbilicalCommand::ResetFram),
                 b"<f>" => Some(UmbilicalCommand::DumpFram),
                 b"<R>" => Some(UmbilicalCommand::Reboot),
@@ -367,7 +402,9 @@ async fn usb_receiver_task(mut receiver: Receiver<'static, UsbDriver>) -> ! {
                 b"<2>" => Some(UmbilicalCommand::PayloadN2),
                 b"<3>" => Some(UmbilicalCommand::PayloadN3),
                 b"<4>" => Some(UmbilicalCommand::PayloadN4),
-                b"<X>" => Some(UmbilicalCommand::StandbyMode),
+                b"<X>" => Some(UmbilicalCommand::WipeFramReboot),
+                b"<K>" => Some(UmbilicalCommand::KeyArm),
+                b"<k>" => Some(UmbilicalCommand::KeyDisarm),
                 _ => None,
             };
 

@@ -97,8 +97,10 @@ Commands sent over the WebSocket that get parsed and sent across the serial conn
 - `fsw_safe`: Safe all FSW actuators (`<V>`).
 - `fsw_reset_fram`: Clear the FSW's FRAM data (`<F>`).
 - `fsw_dump_fram`: Dump FRAM contents over the umbilical (`<f>`).
-- `fsw_reset_card`: Reset the FSW's SD card writer (`<D>`).
-- `fsw_fault_mode`: Force the FSW into Fault flight mode (`<X>`).
+- `fsw_wipe_fram_reboot`: Wipe FRAM and immediately reboot (`<X>`).
+- `fsw_key_arm`: Arm the launch key (`<K>`); required to allow Startup → Standby.
+- `fsw_key_disarm`: Disarm the launch key (`<k>`); reverts Standby → Startup.
+- `fsw_set_blims_target`: Set BLiMS landing-zone target (`<T,lat,lon>`); takes two `f32` decimal-degree numbers.
 - `fsw_reboot`: Force a software reboot on FSW (`<R>`).
 - `fsw_dump_flash`: Dump flash memory contents (`<G>`).
 - `fsw_wipe_flash`: Wipe flash memory (`<W>`).
@@ -107,5 +109,7 @@ Commands sent over the WebSocket that get parsed and sent across the serial conn
 - `fsw_payload_n2`: Trigger payload event N2 (`<2>`).
 - `fsw_payload_n3`: Trigger payload event N3 (`<3>`).
 - `fsw_payload_n4`: Trigger payload event N4 (`<4>`).
+
+> **Removed:** `fsw_reset_card` (`<D>`) and `fsw_fault_mode` (the old name for what is now `fsw_wipe_fram_reboot`) are no longer recognized.
 
 For the exact payload and response format for these commands, refer to the [WEBSOCKET_API.md](WEBSOCKET_API.md).

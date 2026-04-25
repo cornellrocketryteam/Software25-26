@@ -585,12 +585,6 @@ impl FlightState {
         }
     }
 
-    // Force FlightMode to Standby
-    pub async fn trigger_standby(&mut self) {
-        self.flight_mode = FlightMode::Standby;
-        self.write_packet_to_fram().await;
-    }
-
     /// Append the current packet/state to the snapshot ring.
     pub async fn write_packet_to_fram(&mut self) {
         if !self.flash.flash_ok {

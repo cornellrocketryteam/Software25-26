@@ -654,16 +654,9 @@ async fn execute_command(
                 Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
             }
         }
-        Command::FswFaultMode => {
-            info!("Sending FSW Fault Mode command via umbilical");
+        Command::FswWipeFramReboot => {
+            info!("Sending FSW Wipe FRAM + Reboot command via umbilical");
             match umb_cmd_tx.try_send("<X>".into()) {
-                Ok(_) => CommandResponse::Success,
-                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
-            }
-        }
-        Command::FswResetCard => {
-            info!("Sending FSW Reset Card command via umbilical");
-            match umb_cmd_tx.try_send("<D>".into()) {
                 Ok(_) => CommandResponse::Success,
                 Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
             }
@@ -733,6 +726,33 @@ async fn execute_command(
             info!("Stopping FSW telemetry stream for client");
             *fsw_streaming_enabled = false;
             CommandResponse::Success
+        }
+        Command::FswKeyArm => {
+            info!("Sending FSW Key Arm command via umbilical");
+            match umb_cmd_tx.try_send("<K>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswKeyDisarm => {
+            info!("Sending FSW Key Disarm command via umbilical");
+            match umb_cmd_tx.try_send("<k>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswSetBlimsTarget { lat, lon } => {
+            if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) {
+                error!("FSW SetBlimsTarget rejected: out of range lat={} lon={}", lat, lon);
+                CommandResponse::Error
+            } else {
+                let msg = format!("<T,{:.7},{:.7}>", lat, lon);
+                info!("Sending FSW SetBlimsTarget: {}", msg);
+                match umb_cmd_tx.try_send(msg) {
+                    Ok(_) => CommandResponse::Success,
+                    Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+                }
+            }
         }
     }
 }

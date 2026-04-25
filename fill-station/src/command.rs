@@ -88,10 +88,8 @@ pub enum Command {
     FswResetFram,
     /// Dump FRAM contents on FSW
     FswDumpFram,
-    /// Force FSW into Fault flight mode
-    FswFaultMode,
-    /// Reset SD card on FSW
-    FswResetCard,
+    /// Wipe FRAM snapshot ring and reboot FSW
+    FswWipeFramReboot,
     /// Reboot FSW
     FswReboot,
     /// Dump flash memory on FSW
@@ -112,6 +110,12 @@ pub enum Command {
     StartFswStream,
     /// Stop streaming FSW telemetry to this client
     StopFswStream,
+    /// Arm the FSW key (allow Startup → Standby transition)
+    FswKeyArm,
+    /// Disarm the FSW key (force Standby → Startup)
+    FswKeyDisarm,
+    /// Set the BLiMS landing-zone target (latitude/longitude in decimal degrees)
+    FswSetBlimsTarget { lat: f32, lon: f32 },
 }
 
 /// Response sent back to WebSocket clients after command execution

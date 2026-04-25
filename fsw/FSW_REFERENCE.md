@@ -14,8 +14,8 @@ The FSW runs a 7-phase state machine defined in `state.rs` (`FlightMode` enum) w
 
 | Phase | ID | Entry Condition | Key Actions |
 |-------|----|-----------------|-------------|
-| **Startup** | 0 | Power-on | Read sensors, validate altimeter, set reference pressure, wait for arming switch |
-| **Standby** | 1 | Key armed + altimeter valid | Monitor sensors, check umbilical, wait for launch command |
+| **Startup** | 0 | Power-on | Read sensors, validate altimeter, set reference pressure, wait for ground `<K>` (Key Arm) command |
+| **Standby** | 1 | `key_armed = true` (set via umbilical `<K>`) + altimeter valid | Monitor sensors, check umbilical, wait for launch command. `<k>` reverts to Startup. |
 | **Ascent** | 2 | Umbilical launch command received | Open MAV + SV, rapid data collection, log to FRAM |
 | **Coast** | 3 | MAV auto-closes (~530 ms) | Apogee detection via 10-sample moving average + 3-point descending trend |
 | **DrogueDeployed** | 4 | Apogee detected (filtered altitude descending) | Fire drogue SSA, wait for main deploy altitude |
@@ -49,7 +49,7 @@ All I2C sensors share a single bus (GPIO 0 SDA / GPIO 1 SCL, 400 kHz) through `e
 |--------|-------------|-----------|---------|
 | **RFD900x Radio** | `driver/rfd900x.rs` | UART1 (GPIO 4 TX / GPIO 5 RX, 115200 baud) | Transmit-only. 4-byte sync (`0x3E5D5967`) + 68-byte packet at 1 Hz |
 | **USB Logger** | Built-in (embassy-usb-logger) | USB CDC-ACM | Debug log output, 1024-byte buffer |
-| **Umbilical** | `umbilical.rs` | USB CDC-ACM | Command parser (L=launch, M/m=MAV, S/s=SV, V=safe, D=SD reset, F=FRAM reset, R=reboot). **Not yet integrated into flight loop** |
+| **Umbilical** | `umbilical.rs` | USB CDC-ACM | 21-token command parser (H=heartbeat, L=launch, M/m=MAV, S/s=SV, V=safe, F=resetFRAM, f=dumpFRAM, R=reboot, G/W/I=flash dump/wipe/info, X=wipeFRAM+reboot, K/k=key arm/disarm, `<T,lat,lon>`=set BLiMS target, 1–4=payload events). Drained by `flight_loop.rs::check_umbilical_commands` each cycle. |
 
 ### Telemetry Packet
 
