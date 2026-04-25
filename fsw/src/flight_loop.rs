@@ -15,10 +15,10 @@ use crate::umbilical::{self, UmbilicalCommand};
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum LaunchStage {
     None,
-    PreVent,   // SV Open for 2s
-    MavOpen,   // MAV Open for 7.88s
-    PostWait,  // Wait 10s (override if apogee)
-    FinalVent, // SV Open for rest of flight
+    PreVent,      // SV Open for 2s
+    SvToMavWait,  // 1s gap between SV close and MAV open
+    MavOpen,      // MAV Open for MAV_OPEN_DURATION_MS
+    Done,         // Sequence finished; SV reopens later on entry to Drogue/Main/Fault
 }
 
 // GPIO 32 for TX UART, GPIO 33 for RX UART
@@ -66,6 +66,7 @@ pub struct FlightLoop {
     // Launch sequence
     pub launch_sequence_stage: LaunchStage,
     launch_stage_start_time: Option<Instant>,
+    recovery_vent_sent: bool,
 
     // Payload Commands tracking
     low_alt_time: Option<Instant>,
@@ -127,6 +128,7 @@ impl FlightLoop {
             last_heartbeat: None,
             launch_sequence_stage: LaunchStage::None,
             launch_stage_start_time: None,
+            recovery_vent_sent: false,
             low_alt_time: None,
             n2_low_speed_count: 0,
             n2_sent: false,
@@ -438,6 +440,19 @@ impl FlightLoop {
         let _packet = &self.flight_state.packet;
         let _mode = self.flight_state.flight_mode;
 
+        // One-shot vent: open SV on first entry to any recovery/fault mode.
+        if !self.recovery_vent_sent
+            && matches!(
+                self.flight_state.flight_mode,
+                FlightMode::DrogueDeployed | FlightMode::MainDeployed | FlightMode::Fault
+            )
+        {
+            log::warn!("Recovery vent: opening SV on entry to {:?}", self.flight_state.flight_mode);
+            self.flight_state.open_sv(0).await;
+            self.sv_open = true;
+            self.recovery_vent_sent = true;
+        }
+
         // CFC_ARM rising edge: buzz once when arming signal goes high
         let cfc_arm_now = self.flight_state.cfc_arm_active;
         if cfc_arm_now && !self.cfc_arm_prev {
@@ -693,14 +708,6 @@ impl FlightLoop {
                         self.flight_state.trigger_drogue().await;
                         self.flight_state.packet.ssa_drogue_deployed = 1;
 
-                        // Override: Open SV on apogee if still in PostWait
-                        if self.launch_sequence_stage == LaunchStage::PostWait {
-                            log::info!("Apogee override: Opening SV regardless of 10s timer.");
-                            self.flight_state.open_sv(0).await;
-                            self.sv_open = true;
-                            self.launch_sequence_stage = LaunchStage::FinalVent;
-                        }
-
                         log::info!("Drogue deployed");
                         self.drogue_deployed = true;
                         self.flight_state.flight_mode = FlightMode::DrogueDeployed;
@@ -947,11 +954,21 @@ impl FlightLoop {
                     if sequence_now.duration_since(start).as_millis()
                         >= constants::LAUNCH_SV_PREVENT_MS
                     {
-                        log::info!("Pre-launch vent complete. Closing SV, opening MAV.");
+                        log::info!("Pre-launch vent complete (2s). Closing SV.");
                         self.flight_state.close_sv().await;
                         self.sv_open = false;
 
-                        // Stage 2: MAV Open (7.88s)
+                        self.launch_sequence_stage = LaunchStage::SvToMavWait;
+                        self.launch_stage_start_time = Some(sequence_now);
+                    }
+                }
+            }
+            LaunchStage::SvToMavWait => {
+                if let Some(start) = self.launch_stage_start_time {
+                    if sequence_now.duration_since(start).as_millis()
+                        >= constants::LAUNCH_SV_TO_MAV_WAIT_MS
+                    {
+                        log::info!("1s gap complete. Opening MAV.");
                         self.flight_state
                             .open_mav(constants::MAV_OPEN_DURATION_MS)
                             .await;
@@ -967,7 +984,7 @@ impl FlightLoop {
                     if sequence_now.duration_since(start).as_millis()
                         >= constants::MAV_OPEN_DURATION_MS
                     {
-                        log::info!("MAV cycle complete. Closing MAV, waiting 10s.");
+                        log::info!("MAV cycle complete. Closing MAV.");
                         self.flight_state.close_mav().await;
                         self.mav_open = false;
 
@@ -977,23 +994,8 @@ impl FlightLoop {
                             self.flight_state.flight_mode = FlightMode::Coast;
                         }
 
-                        // Stage 3: Post-MAV Wait (10s)
-                        self.launch_sequence_stage = LaunchStage::PostWait;
-                        self.launch_stage_start_time = Some(sequence_now);
-                    }
-                }
-            }
-            LaunchStage::PostWait => {
-                if let Some(start) = self.launch_stage_start_time {
-                    if sequence_now.duration_since(start).as_millis()
-                        >= constants::LAUNCH_POST_MAV_WAIT_MS
-                    {
-                        log::info!("Post-MAV wait complete. Opening SV for final vent.");
-                        self.flight_state.open_sv(0).await;
-                        self.sv_open = true;
-
-                        // Stage 4: Final Vent (Rest of flight)
-                        self.launch_sequence_stage = LaunchStage::FinalVent;
+                        self.launch_sequence_stage = LaunchStage::Done;
+                        self.launch_stage_start_time = None;
                     }
                 }
             }
