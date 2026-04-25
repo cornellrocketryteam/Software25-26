@@ -6,9 +6,12 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react';
 
 type AppContextType = {
   wsRef: React.RefObject<WebSocket | null>;
+  currFlightMode: FlightMode;
+  setCurrFlightMode: (flightMode: FlightMode) => void;
   uri: string;
   wsReady: boolean;
 }
+export type FlightMode = "....."| 'STANDBY';
 
 export const AppContext = createContext<AppContextType | null>(null);
 
@@ -18,11 +21,22 @@ export const useAppContext = () => {
   return context;
 };
 
+
+
 function App() {
   const wsRef = useRef<WebSocket | null>(null);
   const uri = "ws://localhost:9000";
   const [wsReady, setWsReady] = useState(false);
+  const [currFlightMode, setCurrFlightMode] = useState<FlightMode>('.....');
 
+  const handleMessage = (event: MessageEvent) => {
+    //Parse JSON data here
+    const data = JSON.parse(event.data);
+    if(data.type === "fsw_telemetry"){
+      setCurrFlightMode(data.flight_mode as FlightMode);
+    }
+  }
+  
   useEffect(() => {
         let reconnectTimeout: ReturnType<typeof setTimeout>;
 
@@ -44,6 +58,7 @@ function App() {
                 console.error("WebSocket error:", error);
                 wsRef.current?.close();
             };
+            wsRef.current.addEventListener('message', handleMessage); 
         };
 
         connect();
@@ -51,6 +66,7 @@ function App() {
         return () => {
             clearTimeout(reconnectTimeout);
             if (wsRef.current) {
+              wsRef.current.removeEventListener('message', handleMessage);
               wsRef.current.onclose = null;
               wsRef.current.onerror = null;
               wsRef.current.close();
@@ -58,7 +74,7 @@ function App() {
         };
     }, []);
   return (
-    <AppContext.Provider value={{ wsRef, uri: uri, wsReady}}>
+    <AppContext.Provider value={{ setCurrFlightMode, currFlightMode, wsRef, uri: uri, wsReady}}>
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<LandingPage />} />

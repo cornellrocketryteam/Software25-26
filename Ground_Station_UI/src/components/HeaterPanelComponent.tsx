@@ -189,7 +189,7 @@ export default function HeaterPanelComponent() {
                 </button>
             </div>
             
-            <div className="grid grid-cols-1 gap-[25px]">
+            <div className="grid grid-cols-2 gap-[25px]">
                 <HeaterButton name="Heater 1" entity_id="switch.tankheater1" />
                 <HeaterButton name="Heater 2" entity_id="switch.tankheater2" />
                 <HeaterButton name="Heater 3" entity_id="switch.tankheater3" />

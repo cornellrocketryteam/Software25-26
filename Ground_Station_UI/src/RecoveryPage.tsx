@@ -1,14 +1,37 @@
 import Header from "./components/HeaderComponent";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useAppContext } from "./App";
+
 
 export function RecoveryPage() {
     const [latitude, setLatitude] = useState("");
     const [longitude, setLongitude] = useState("");
     const [confirmedCoords, setConfirmedCoords] = useState<{lat: string, lng: string} | null>(null);
+    const { wsRef, wsReady, currFlightMode, setCurrFlightMode } = useAppContext();
 
+    const handleMessage = (event: MessageEvent) => {
+        const data = JSON.parse(event.data);
+        switch(data.type) {
+            // Recovery specific message handling
+        }
+    };
+    
+    useEffect(() => {
+        if (!wsReady) return;
+    
+        
+    
+        wsRef.current?.addEventListener('message', handleMessage);
+    
+        return () => {
+            wsRef.current?.removeEventListener('message', handleMessage);
+        };
+    
+    }, [wsReady]);
+    
     return (
         <div className="min-h-screen bg-white">
-            <Header pageTitle="Recovery & Payload Page"/>
+            <Header pageTitle="Recovery & Payload Page" currFlightMode={currFlightMode}/>
         
             {/* Main Content */}
             <div className="p-8 flex flex-col gap-6">

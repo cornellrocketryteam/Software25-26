@@ -40,7 +40,6 @@ type PropulsionContextType = {
     manualVentRef: React.RefObject<boolean>;
     setConfirmedVentSeconds: (seconds: number) => void;
     valveData: ValveData;
-    currFlightMode: FlightMode;
     buttonInteractionState: interactionType;
     setButtonInteractionState: (allowInteraction: interactionType) => void;
     valveDataRef: React.RefObject<ValveData>;
@@ -110,10 +109,9 @@ export const usePropulsion = () => {
 };
 
 export function PropulsionPage() {
-    const {wsRef, wsReady} = useAppContext(); //The App's websocket refrence
+    const {wsRef, wsReady, currFlightMode, setCurrFlightMode} = useAppContext(); //The App's websocket refrence
 
     const [fillState, setFillState] = useState<FillState>('INITIAL');
-    const [currFlightMode, setCurrFlightMode] = useState<FlightMode>('.....');
     const [ventSeconds, setVentSeconds] = useState(0);
     const [confirmedVentSeconds, setConfirmedVentSeconds] = useState(0);
     const [thresholdPressure, setThresholdPressure] = useState(600); 
@@ -166,6 +164,11 @@ export function PropulsionPage() {
     const actuateSV2Open = {"command": "actuate_valve", "valve": "SV2", "open": true};
     const actuateSV1Close = {"command": "actuate_valve", "valve": "SV1", "open": false};
     const actuateSV2Close = {"command": "actuate_valve", "valve": "SV2", "open": false};
+
+    //const actuateSV2Open = {"command": "fsw_open_sv"};
+    //const actuateSV2Close = {"command": "fsw_close_sv"};
+
+
 
     //Mav comands: 
     const actuateMavOpen = {"command": "fsw_open_mav"};
@@ -223,7 +226,7 @@ export function PropulsionPage() {
     const sendCommandWithDelay = (param: any, delay: number) => {
         setTimeout(() => {
             if (typeof param === 'function') {
-                //param(); <-call if you want
+                param(); 
                 return;
             }
             if (queryCommands.includes(param.command)) {
@@ -378,17 +381,17 @@ export function PropulsionPage() {
                 }
                 
 
-                //const lastPressure = umbilicalDataRef.current.at(-1)?.telemetry.pt4 ?? 0;
+                //const lastPressure = umbilicalDataRef.current.at(-1)?.telemetry.pt3 ?? 0;
     
                 // if (isFillingRef.current && !isVentingRef.current) {
-                //     data.telemetry.pt4 = lastPressure + (Math.random() * 4 + 1); // Random increase between 1-5 during fill
+                //     data.telemetry.pt3 = lastPressure + (Math.random() * 4 + 1); // Random increase between 1-5 during fill
                 // } else if (isVentingRef.current || (valveDataRef.current.SV2.venting && valveDataRef.current.BV.actuated)) {
-                //     data.telemetry.pt4 = Math.max(0, lastPressure - (Math.random() * 15 + 10)); // Random decrease between 10-25 during vent
+                //     data.telemetry.pt3 = Math.max(0, lastPressure - (Math.random() * 15 + 10)); // Random decrease between 10-25 during vent
                 // } else {
-                //     data.telemetry.pt4 = lastPressure; // Hold when idle
+                //     data.telemetry.pt3 = lastPressure; // Hold when idle
                 // }
     
-                console.log("Pressure:", new Date().toISOString(), "PSI:", data.telemetry.pt4);
+                console.log("Pressure:", new Date().toISOString(), "PSI:", data.telemetry.pt3);
     
                 setCurrFlightMode(data.flight_mode as FlightMode); //Update our current flight mode state with the latest flight mode from the telemetry data, which we can use to display on the page or for any logic we want to implement based on the flight mode in the future
                 umbilicalDataRef.current.push(data); //Store the latest ADC data in the ref, which we can use for displaying on the page or for any logic we want to implement based on the ADC data in the future
@@ -531,7 +534,7 @@ export function PropulsionPage() {
         }, [wsReady]); // Re-run effect if WebSocket connection status changes
                  
         return (
-            <PropulsionContext.Provider value={{confirmedVentSecondsRef, canInteractRef, buttonInteractionState, setButtonInteractionState, valveDataRef, fillUIActive, setFillUIActive, ventUIActive, setVentUIActive, isVentingRef, isFillingRef, manualVentRef, handleButtonClickRef, fillState, setFillState, thresholdPressure, setThresholdPressure, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, valveData, currFlightMode, adcDataRef: adcDataRef, telemetryDataRef: umbilicalDataRef}}>
+            <PropulsionContext.Provider value={{confirmedVentSecondsRef, canInteractRef, buttonInteractionState, setButtonInteractionState, valveDataRef, fillUIActive, setFillUIActive, ventUIActive, setVentUIActive, isVentingRef, isFillingRef, manualVentRef, handleButtonClickRef, fillState, setFillState, thresholdPressure, setThresholdPressure, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, valveData, adcDataRef: adcDataRef, telemetryDataRef: umbilicalDataRef}}>
                 <div className={`min-h-screen bg-white ${ventUIActive ? 'cursor-wait' : ''}`}>
                     {/* Header */}       
                 <Header 
@@ -552,6 +555,9 @@ export function PropulsionPage() {
     
                             {/* VENT BUTTON */}
                             <VentButtonComponent />
+
+                            {/* Home Assistant Tank Heaters */}
+                            <HeaterPanelComponent />
                         </div>
     
                         {/* Right Column */}
@@ -568,8 +574,7 @@ export function PropulsionPage() {
                                 </div>
                             </div>
     
-                            {/* Home Assistant Tank Heaters */}
-                            <HeaterPanelComponent />
+                            
 
                             {/* Expand Button Panel */}
                             <ButtonPanelComponent />

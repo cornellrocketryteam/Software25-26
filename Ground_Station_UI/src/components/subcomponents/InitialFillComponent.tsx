@@ -38,7 +38,7 @@ export default function InitialFillComponent() {
         if (valveDataRef.current.SV2.actuated) handleButtonClickRef.current("Solenoid Valve 2", 'CLOSE');
 
         // Snapshot the starting pressure for reference (available for future use).
-        const startingPressure = telemetryDataRef.current.at(-1)?.telemetry.pt4 ?? 0;
+        const startingPressure = telemetryDataRef.current.at(-1)?.telemetry.pt3 ?? 0;
         console.log("Fill initiated. Starting pressure:", startingPressure);
 
         // Reset threshold ref to current thresholdPressure before each new fill run.
@@ -79,7 +79,7 @@ export default function InitialFillComponent() {
 
         const fillLoop = setInterval(() => {
             // Abort immediately if something externally cancelled the fill.
-            const psi = telemetryDataRef.current.at(-1)?.telemetry.pt4 ?? 0;
+            const psi = telemetryDataRef.current.at(-1)?.telemetry.pt3 ?? 0;
 
             if(!isFillingRef.current) {clearInterval(fillLoop); return;}
             if(isVentingRef.current) return; //DO NOT STACK VENTS
