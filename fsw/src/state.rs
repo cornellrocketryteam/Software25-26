@@ -659,8 +659,8 @@ impl FlightState {
     pub async fn wipe_flash_storage(&mut self) {
         log::info!("Wiping QSPI Flash storage...");
         crate::umbilical::print_str("Wiping QSPI Flash... Please wait.\n");
-        // Wiping a full sector bank can take several seconds — use a generous timeout.
-        let wipe_to = Duration::from_millis(constants::FLASH_TIMEOUT_MS * 50);
+        // Wiping a full 14 MB flash can take several minutes — use a dedicated timeout.
+        let wipe_to = Duration::from_millis(constants::FLASH_WIPE_TIMEOUT_MS);
         match with_timeout(wipe_to, self.flash.wipe_storage()).await {
             Ok(Ok(_)) => {
                 log::info!("Flash storage wiped successfully.");

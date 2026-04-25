@@ -85,6 +85,9 @@ pub const FLASH_LOGGING_PERIOD_MS: u64 = 50; // Log every cycle at 20 Hz
 pub const SENSOR_READ_TIMEOUT_MS: u64 = 30;
 /// QSPI flash op timeout (erase/program can be legitimately slow).
 pub const FLASH_TIMEOUT_MS: u64 = 200;
+/// Full-flash wipe timeout. 14 MB / 4 KB sectors = up to 3584 sectors; W25Q128JV
+/// typical sector erase is ~45ms, max ~400ms — allow 5 minutes to be safe.
+pub const FLASH_WIPE_TIMEOUT_MS: u64 = 300_000;
 /// One-time driver init timeout (happens once at boot, be generous).
 pub const SENSOR_INIT_TIMEOUT_MS: u64 = 500;
 
@@ -119,7 +122,7 @@ pub const UMBILICAL_TIMEOUT_MS: u64 = 15_000; // 15 seconds
 /// is considered down. Independent of `UMBILICAL_TIMEOUT_MS`, which gates the
 /// vent-on-disconnect action.
 pub const HEARTBEAT_TIMEOUT_MS: u64 = 3_000;
-pub const MAV_OPEN_DURATION_MS: u64 = 4000; // 4 seconds for L3 CHANGE FOR LV (7.88 seconds for LV)
+pub const MAV_OPEN_DURATION_MS: u64 = 12000; // 4 seconds for L3 - 7.88 for LV - 12 for Wet Dress
 pub const LAUNCH_SV_PREVENT_MS: u64 = 2_000;  // 2 s SV open before closing
 pub const LAUNCH_SV_TO_MAV_WAIT_MS: u64 = 1_000; // 1 s wait between SV close and MAV open
 pub const SSA_THRESHOLD_MS: u64 = 1000; // Duration to fire ematch

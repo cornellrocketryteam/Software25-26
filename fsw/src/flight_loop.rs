@@ -407,7 +407,8 @@ impl FlightLoop {
                     self.flight_state.packet.cmd_a3 = 1;
                 }
                 UmbilicalCommand::WipeFramReboot => {
-                    log::warn!("UMBILICAL CMD: Wipe FRAM and Reboot");
+                    log::warn!("UMBILICAL CMD: Wipe Flash + FRAM and Reboot");
+                    self.flight_state.wipe_flash_storage().await;
                     self.flight_state.reset_fram().await;
                     cortex_m::peripheral::SCB::sys_reset();
                 }
@@ -553,6 +554,7 @@ impl FlightLoop {
                             self.flight_state.arming_altitude
                         );
                         self.flight_state.flight_mode = FlightMode::Standby;
+                        self.flight_state.write_packet_to_fram().await;
                         log::info!("Transitioning to Standby");
                     }
                 }
@@ -621,9 +623,11 @@ impl FlightLoop {
 
                     self.alt_armed = true;
                     self.flight_state.flight_mode = FlightMode::Ascent;
+                    self.flight_state.write_packet_to_fram().await;
                     log::info!("Transitioning to Ascent");
                 } else if !self.key_armed {
                     self.flight_state.flight_mode = FlightMode::Startup;
+                    self.flight_state.write_packet_to_fram().await;
                     log::info!("Key not armed; Transitioning to Startup");
                 }
             }
@@ -744,6 +748,7 @@ impl FlightLoop {
                         log::info!("Drogue deployed");
                         self.drogue_deployed = true;
                         self.flight_state.flight_mode = FlightMode::DrogueDeployed;
+                        self.flight_state.write_packet_to_fram().await;
                         self.drogue_entry_time = Some(Instant::now());
                         log::info!("Transitioning to DrogueDeployed");
                     }
@@ -785,6 +790,7 @@ impl FlightLoop {
                             self.main_chutes_deployed = true;
                             log::info!("Main deployed");
                             self.flight_state.flight_mode = FlightMode::MainDeployed;
+                            self.flight_state.write_packet_to_fram().await;
                             self.main_entry_time = Some(Instant::now());
                             log::info!("Transitioning to MainDeployed");
                         }
@@ -1036,6 +1042,7 @@ impl FlightLoop {
                         if self.flight_state.flight_mode == FlightMode::Ascent {
                             log::warn!("MAV closed; Transitioning from Ascent to Coast.");
                             self.flight_state.flight_mode = FlightMode::Coast;
+                            self.flight_state.write_packet_to_fram().await;
                         }
 
                         self.launch_sequence_stage = LaunchStage::Done;
