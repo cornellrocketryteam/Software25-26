@@ -511,16 +511,13 @@ impl FlightLoop {
                         self.flight_state.buzz(3); // just disconnected
                     }
                 }
-                /*
-                self.umbilical_prev = self.flight_state.umbilical_connected;
                 if self.flight_state.altimeter_state == crate::state::SensorState::INVALID {
                     self.alt_armed = false;
                     self.flight_state.flight_mode = FlightMode::Fault;
-                    // self.flight_state.write_packet_to_fram().await; // Note: cannot await inside check_transitions easily if not mut
+                    self.flight_state.write_packet_to_fram().await;
                     log::error!("Altimeter invalid at Startup; transitioning to Fault");
                     return;
                 }
-                */
                 // key_armed is driven by umbilical KeyArm/KeyDisarm commands (<K>/<k>).
                 if self.key_armed && self.flight_state.umbilical_connected {
                     if self.flight_state.altimeter_state == crate::state::SensorState::VALID {
