@@ -14,7 +14,7 @@ CREATE TABLE telemetry_data (
     latitude DOUBLE PRECISION,         -- f32 (GPS)
     longitude DOUBLE PRECISION,        -- f32 (GPS)
     num_satellites BIGINT,             -- u32 (GPS)
-    timestamp DOUBLE PRECISION,        -- f32 (GPS)
+    gps_time DOUBLE PRECISION,        -- f32 (GPS)
     mag_x DOUBLE PRECISION,            -- f32 (Magnetometer)
     mag_y DOUBLE PRECISION,            -- f32 (Magnetometer)
     mag_z DOUBLE PRECISION,            -- f32 (Magnetometer)
