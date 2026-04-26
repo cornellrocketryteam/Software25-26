@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicI16};
+use std::time::Instant;
 use crate::components::umbilical::FswTelemetry;
 
 /// Last commanded state of fill-station actuators that we can't read back from
@@ -87,10 +88,8 @@ pub enum Command {
     FswResetFram,
     /// Dump FRAM contents on FSW
     FswDumpFram,
-    /// Force FSW into Fault flight mode
-    FswFaultMode,
-    /// Reset SD card on FSW
-    FswResetCard,
+    /// Wipe FRAM snapshot ring and reboot FSW
+    FswWipeFramReboot,
     /// Reboot FSW
     FswReboot,
     /// Dump flash memory on FSW
@@ -111,6 +110,12 @@ pub enum Command {
     StartFswStream,
     /// Stop streaming FSW telemetry to this client
     StopFswStream,
+    /// Arm the FSW key (allow Startup → Standby transition)
+    FswKeyArm,
+    /// Disarm the FSW key (force Standby → Startup)
+    FswKeyDisarm,
+    /// Set the BLiMS landing-zone target (latitude/longitude in decimal degrees)
+    FswSetBlimsTarget { lat: f32, lon: f32 },
 }
 
 /// Response sent back to WebSocket clients after command execution
@@ -178,12 +183,20 @@ impl Default for AdcReadings {
     }
 }
 
-/// Shared FSW telemetry readings from umbilical, accessible across tasks
+/// Shared FSW telemetry readings from umbilical, accessible across tasks.
+///
+/// `connected` is derived from telemetry freshness: the safety monitor sets it
+/// true iff `last_telem_instant` is within `TELEM_FRESHNESS_MS`. The serial
+/// port being open is *not* sufficient — a hung FSW with a live USB CDC port
+/// would otherwise read as connected forever.
 #[derive(Debug, Clone)]
 pub struct UmbilicalReadings {
     pub timestamp_ms: u64,
     pub connected: bool,
     pub telemetry: FswTelemetry,
+    /// Monotonic instant of the most recent successful `$TELEM` parse.
+    /// `None` means no telemetry has been received since boot/last reconnect.
+    pub last_telem_instant: Option<Instant>,
 }
 
 impl Default for UmbilicalReadings {
@@ -192,6 +205,7 @@ impl Default for UmbilicalReadings {
             timestamp_ms: 0,
             connected: false,
             telemetry: FswTelemetry::default(),
+            last_telem_instant: None,
         }
     }
 }

@@ -531,6 +531,26 @@ if client.fsw_connected and client.fsw_telemetry:
             ]
             st.dataframe(pd.DataFrame(cfg_rows), hide_index=True, use_container_width=True)
 
+            st.caption("Set BLiMS Target")
+            tgt_lat = st.number_input(
+                "Target Latitude (deg)",
+                min_value=-90.0, max_value=90.0,
+                value=float(t.get("blims_target_lat", 0.0)),
+                format="%.7f", key="blims_target_lat_input",
+            )
+            tgt_lon = st.number_input(
+                "Target Longitude (deg)",
+                min_value=-180.0, max_value=180.0,
+                value=float(t.get("blims_target_lon", 0.0)),
+                format="%.7f", key="blims_target_lon_input",
+            )
+            if st.button("Set BLiMS Target", use_container_width=True):
+                client.send_command({
+                    "command": "fsw_set_blims_target",
+                    "lat": float(tgt_lat),
+                    "lon": float(tgt_lon),
+                })
+
 # --- All FSW Umbilical Commands ---
 st.caption("FSW Umbilical Commands")
 row1 = st.columns(8)
@@ -548,8 +568,6 @@ if row1[5].button("FSW Safe", use_container_width=True):
     client.send_command({"command": "fsw_safe"})
 if row1[6].button("Reset FRAM", use_container_width=True):
     client.send_command({"command": "fsw_reset_fram"})
-if row1[7].button("Reset Card", use_container_width=True):
-    client.send_command({"command": "fsw_reset_card"})
 
 row2 = st.columns(8)
 if row2[0].button("FSW Reboot", use_container_width=True):
@@ -572,7 +590,11 @@ if row2[7].button("Payload N4", use_container_width=True):
 row3 = st.columns(8)
 if row3[0].button("Dump FRAM", use_container_width=True):
     client.send_command({"command": "fsw_dump_fram"})
-if row3[1].button("Fault Mode", use_container_width=True):
-    client.send_command({"command": "fsw_fault_mode"})
+if row3[1].button("Wipe FRAM + Reboot", use_container_width=True):
+    client.send_command({"command": "fsw_wipe_fram_reboot"})
+if row3[2].button("Key Arm", use_container_width=True):
+    client.send_command({"command": "fsw_key_arm"})
+if row3[3].button("Key Disarm", use_container_width=True):
+    client.send_command({"command": "fsw_key_disarm"})
 
 st.rerun()

@@ -94,34 +94,56 @@ Commands are sent from the ground station as ASCII byte strings over the USB ser
 
 | Token | Command | What It Does |
 |-------|---------|-------------|
-| `<L>` | **Launch** | Sets the `umbilical_launch` flag. When the FSW is in **Standby** mode, this triggers the Standby-to-Ascent transition: opens MAV (for a duration), opens SV, records reference pressure, and transitions to Ascent. |
-| `<M>` | **Open MAV** | Opens the Motor Actuated Vent servo immediately. Sets the MAV timer and `mav_open` flag. MAV state is persisted to FRAM (address 20). |
-| `<m>` | **Close MAV** | Closes the MAV servo immediately. Clears the MAV timer and `mav_open` flag. MAV state is persisted to FRAM. |
-| `<S>` | **Open SV** | Opens the Separation Valve (active-low GPIO 8). Sets `sv_open` flag. SV state is persisted to FRAM (address 24). |
-| `<s>` | **Close SV** | Closes the Separation Valve. Clears `sv_open` flag. SV state is persisted to FRAM. |
+| `<H>` | **Heartbeat** | Hot-path command: bumps the last-heartbeat timestamp used by the umbilical-disconnect timeout logic. |
+| `<L>` | **Launch** | Sets the `umbilical_launch` flag. When the FSW is in **Standby** mode, this triggers the launch actuator sequence (see "Launch Sequence" below) and the Standby-to-Ascent transition. |
+| `<M>` | **Open MAV** | Opens the Motor Actuated Vent servo immediately. No auto-close. Sets `mav_open` flag, persisted to FRAM. |
+| `<m>` | **Close MAV** | Closes the MAV servo immediately. Clears `mav_open` flag, persisted to FRAM. |
+| `<S>` | **Open SV** | Opens the Separation Valve (active-low GPIO 8). No auto-close. Sets `sv_open` flag, persisted to FRAM. |
+| `<s>` | **Close SV** | Closes the Separation Valve. Clears `sv_open` flag, persisted to FRAM. |
 | `<V>` | **Safe Vehicle** | Emergency safe: closes both MAV and SV, clears all valve flags and timers. |
 | `<F>` | **Reset FRAM** | Wipes FRAM state (FlightMode, CycleCount, altitude log). Resets FSW to `Startup` mode with cycle count 0. |
-| `<f>` | **Dump FRAM** | Streams FRAM contents over the umbilical (currently a no-op print while FRAM is disabled). |
-| `<R>` | **Reboot** | Triggers a full system reset via `cortex_m::peripheral::SCB::sys_reset()`. The Pico 2 restarts from scratch. |
+| `<f>` | **Dump FRAM** | Streams FRAM contents over the umbilical. |
+| `<R>` | **Reboot** | Triggers a full system reset via `cortex_m::peripheral::SCB::sys_reset()`. |
 | `<G>` | **Dump Flash** | Streams the QSPI CSV flash storage region over the umbilical via `print_bytes_async`. Telemetry is suppressed for the duration via `begin_dump`/`end_dump`. |
 | `<W>` | **Wipe Flash** | Erases the QSPI flash storage region. |
 | `<I>` | **Flash Info** | Prints flash usage (used / total KB and percent). |
-| `<1>`–`<4>` | **Payload N1–N4** | Trigger payload events. |
-| `<X>` | **Fault Mode** | Forces the FSW state machine into `FlightMode::Fault`. |
+| `<X>` | **Wipe FRAM + Reboot** | Calls `reset_fram()` and then `SCB::sys_reset()` — clears FRAM and reboots in one step. |
+| `<K>` | **Key Arm** | Sets `key_armed = true`. Required to allow the Startup → Standby transition. |
+| `<k>` | **Key Disarm** | Sets `key_armed = false`. From Standby this reverts the FSW to Startup. |
+| `<T,lat,lon>` | **Set BLiMS Target** | Variable-length text command carrying two `f32` decimal-degree values (e.g. `<T,42.4419130,-76.4878000>`). Range checked: lat ∈ [-90, 90], lon ∈ [-180, 180]. Stores the BLiMS landing-zone target and forwards it to the BLiMS controller. Arming of guidance happens at the MainDeployed transition (see §below). |
+| `<1>`–`<4>` | **Payload N1–N4** | Send a payload event byte (`N1`/`N2`/`N3`/`N4`) over the payload UART. `<1>` (camera deploy) is restricted to Startup/Standby. |
 
-### Parsed but Not Yet Implemented
+> **Removed:** `<D>` (Reset SD Card) is no longer recognized by the FSW.
 
-| Token | Command | Status |
-|-------|---------|--------|
-| `<D>` | **Reset SD Card** | Parsed and logged, but SD logging is currently disabled (`sd_logging_enabled = false`). Will be implemented when SD card support is enabled. |
+### Launch Sequence (triggered by `<L>` in Standby with umbilical connected)
 
-### Recognized but Need Payload Data Protocol
+When the FSW receives `<L>` in Standby and the umbilical is physically connected, `flight_loop.rs::handle_launch_sequence` runs the following actuator timeline (all from MAV/SV closed):
 
-These tokens are recognized by the parser but currently do nothing because they require additional payload data (e.g., a float value following the command token). A more complex parsing protocol is needed.
+| Time | Stage | Action |
+|------|-------|--------|
+| t = 0 ms | `PreVent` | SV opens |
+| t = `LAUNCH_SV_PREVENT_MS` (2 000 ms) | `SvToMavWait` | SV closes |
+| t = +`LAUNCH_SV_TO_MAV_WAIT_MS` (1 000 ms) | `MavOpen` | MAV opens |
+| t = +`MAV_OPEN_DURATION_MS` (4 000 ms L3 / 7 880 ms LV) | `Done` | MAV closes; sequence ends |
 
-| Token | Intended Purpose |
-|-------|-----------------|
+The `LaunchStage` enum is `{ None, PreVent, SvToMavWait, MavOpen, Done }`. There is no longer an automatic final-vent stage at the end of the launch sequence (the old `LAUNCH_POST_MAV_WAIT_MS` constant and `FinalVent` stage are gone).
 
+### Recovery Vent (replaces the old final-vent)
+
+In place of an end-of-launch automatic vent, the FSW now performs a **one-shot recovery vent**: the first time `check_transitions` enters `DrogueDeployed`, `MainDeployed`, or `Fault`, it opens SV exactly once. A `recovery_vent_sent` flag in `FlightLoop` guarantees this happens at most once per boot.
+
+### Key Arming
+
+The Startup → Standby transition is gated on `key_armed`. Previously this was hardcoded to `true` at the top of the Startup handler; that hardcoded assignment has been removed. The operator must now send `<K>` (sets `key_armed = true`) before Startup will advance to Standby. Sending `<k>` from Standby clears `key_armed` and bounces the FSW back to Startup.
+
+### BLiMS Target Setting
+
+`<T,lat,lon>` stores the target into a controller-side field and updates a `blims_target_set` flag on `FlightLoop`. The function `set_blims_target` no longer auto-arms BLiMS guidance — it only stores/forwards the value, so mid-flight retargets are supported.
+
+The previously-hardcoded fallback target of `42.696969 / -42.696969` (set on first MainDeployed entry) has been **removed**. On entry to MainDeployed:
+
+- If `blims_target_set == true`, BLiMS guidance is armed (`blims_armed = true`) and `blims.execute()` is called each cycle.
+- If no target was ever set from the ground, the FSW logs `BLiMS: no target set from ground; guidance disabled` and `blims.execute()` is **not** called for the rest of the flight.
 
 ### Command Timing
 
@@ -212,10 +234,10 @@ Three embassy async tasks are spawned at boot from `umbilical::setup()`:
 
 | File | Change |
 |------|--------|
-| `umbilical.rs` | Provides `setup()`, `UmbilicalCommand` enum (18 variants incl. `DumpFram`/`FaultMode`), `RAW_OUTBOUND` + `COMMANDS` channels, `emit_telemetry()` (CSV format, gated by `DUMP_IN_PROGRESS`), `print_str` / `print_bytes` / `print_bytes_async`, `begin_dump` / `end_dump`, `try_recv_command()`, debug-only USB serial logger, `usb_task`, `usb_sender_task`, `usb_receiver_task`. |
+| `umbilical.rs` | Provides `setup()`, `UmbilicalCommand` enum (21 variants incl. `Heartbeat`, `WipeFramReboot`, `KeyArm`, `KeyDisarm`, `SetBlimsTarget { lat, lon }`, payload `N1..N4`), `RAW_OUTBOUND` + `COMMANDS` channels, `emit_telemetry()` (CSV format, gated by `DUMP_IN_PROGRESS`), `print_str` / `print_bytes` / `print_bytes_async`, `begin_dump` / `end_dump`, `try_recv_command()`, debug-only USB serial logger, `usb_task`, `usb_sender_task`, `usb_receiver_task`. The variable-length `<T,lat,lon>` token is parsed in the receiver task. |
 | `main.rs` | Single `umbilical::setup()` call. Debug-mode boot delay. |
-| `state.rs` | `transmit()` calls `umbilical::emit_telemetry(&self.packet)` to push a `$TELEM,…\n` line. `print_flash_dump` brackets the dump with `umbilical::begin_dump()` / `end_dump()`. |
-| `flight_loop.rs` | Drains `umbilical::try_recv_command()` each cycle and dispatches all 18 command variants. |
+| `state.rs` | `transmit()` calls `umbilical::emit_telemetry(&self.packet)` to push a `$TELEM,…\n` line. `print_flash_dump` brackets the dump with `umbilical::begin_dump()` / `end_dump()`. The old `trigger_standby` helper has been removed. |
+| `flight_loop.rs` | Drains `umbilical::try_recv_command()` each cycle and dispatches all 21 command variants. Owns `handle_launch_sequence` (PreVent → SvToMavWait → MavOpen → Done), the one-shot `recovery_vent_sent` logic in `check_transitions`, and the `blims_target_set` / `blims_armed` flags. |
 
 ---
 
@@ -223,7 +245,5 @@ Three embassy async tasks are spawned at boot from `umbilical::setup()`:
 
 | Item | Where | Notes |
 |------|-------|-------|
-| SD card reset command (`<D>`) | `flight_loop.rs:179` | Needs SD card support to be enabled first |
-| Configuration commands (`<C1>` through `<C7>`) | `umbilical.rs:116-122` | Need a payload-data parsing protocol (command + value) |
-| Fill station vent command on disconnect timeout | `flight_loop.rs:219,275` | Currently only logs; needs actual command transmission to fill station |
+| Fill station vent command on disconnect timeout | `flight_loop.rs` | Currently only logs; needs actual command transmission to fill station |
 | Buzzer feedback on USB connect/disconnect | `umbilical.rs` (sender task) | Commented out (`buzzer.buzz_num(3)` / `buzzer.buzz_num(2)`); buzzer is not accessible from the async task without shared state |

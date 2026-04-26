@@ -76,7 +76,6 @@ pub struct FlightState {
 
     // actuators
     arming_switch: Input<'static>,
-    umbilical_sense: Input<'static>,
     cfc_arm: Input<'static>,
     pub cfc_arm_active: bool,
     pub arming_altitude: f32,
@@ -113,7 +112,6 @@ impl FlightState {
         spi_bus: &'static SharedSpi,
         altimeter_cs: Output<'static>,
         arming_switch: Input<'static>,
-        umbilical_sense: Input<'static>,
         cfc_arm: Input<'static>,
         uart: Uart<'static, Async>,
         ssa: Ssa<'static>,
@@ -263,7 +261,6 @@ impl FlightState {
             imu: imu,
             adc: adc,
             arming_switch: arming_switch,
-            umbilical_sense: umbilical_sense,
             cfc_arm: cfc_arm,
             cfc_arm_active: false,
             arming_altitude: 0.0,
@@ -586,12 +583,6 @@ impl FlightState {
             Ok(Err(e)) => log::warn!("Snapshot reset failed: {:?}", e),
             Err(_) => log::warn!("Snapshot reset TIMEOUT"),
         }
-    }
-
-    // Force FlightMode to Standby
-    pub async fn trigger_standby(&mut self) {
-        self.flight_mode = FlightMode::Standby;
-        self.write_packet_to_fram().await;
     }
 
     /// Append the current packet/state to the snapshot ring.

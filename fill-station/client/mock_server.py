@@ -38,17 +38,59 @@ state = {
         "rtd": 25.0,
         "sv_open": False,
         "mav_open": False,
+        "ssa_drogue_deployed": 0,
+        "ssa_main_deployed": 0,
+        "cmd_n1": 0,
+        "cmd_n2": 0,
+        "cmd_n3": 0,
+        "cmd_n4": 0,
+        "cmd_a1": 0,
+        "cmd_a2": 0,
+        "cmd_a3": 0,
+        "airbrake_state": 0,
+        "predicted_apogee": 0.0,
+        "h_acc": 0,
+        "v_acc": 0,
+        "vel_n": 0.0,
+        "vel_e": 0.0,
+        "vel_d": 0.0,
+        "g_speed": 0.0,
+        "s_acc": 0,
+        "head_acc": 0,
+        "fix_type": 0,
+        "head_mot": 0,
+        "blims_motor_position": 0.0,
+        "blims_phase_id": 0,
+        "blims_pid_p": 0.0,
+        "blims_pid_i": 0.0,
+        "blims_bearing": 0.0,
+        "blims_loiter_step": 0,
+        "blims_heading_des": 0.0,
+        "blims_heading_error": 0.0,
+        "blims_error_integral": 0.0,
+        "blims_dist_to_target_m": 0.0,
+        "blims_target_lat": 0.0,
+        "blims_target_lon": 0.0,
+        "blims_wind_from_deg": 0.0,
     }
 }
 
+# Failsafe tracking
+client_connected = False
+last_message_time = time.time()
+
 async def handler(websocket):
+    global client_connected, last_message_time
     print(f"Client connected: {websocket.remote_address}")
+    client_connected = True
+    last_message_time = time.time()
     try:
         # Start background tasks for streaming if active
         adc_task = None
         fsw_task = None
         
         async for message in websocket:
+            last_message_time = time.time()
             data = json.loads(message)
             command = data.get("command")
             print(f"Received: {data}")
@@ -69,11 +111,11 @@ async def handler(websocket):
 
             elif command == "actuate_valve":
                 valve = data.get("valve")
-                val = data.get("state") # true/false
-                if valve in state["sv"]:
+                val = data.get("open") # boolean
+                if valve in state["sv"] and val is not None:
                     state["sv"][valve]["actuated"] = val
                 else:
-                    response = {"type": "error", "message": "Unknown valve"}
+                    response = {"type": "error", "message": "Unknown valve or missing 'open'"}
 
             elif command == "get_igniter_continuity":
                 ign_id = data.get("id")
@@ -108,6 +150,19 @@ async def handler(websocket):
                 state["bv"]["signal"] = data.get("state", "low")
             elif command == "bv_on_off":
                 state["bv"]["on_off"] = data.get("state", "low")
+                
+            elif command == "get_ball_valve_state":
+                response = {
+                    "type": "ball_valve_state",
+                    "open": state["bv"]["signal"] == "high" and state["bv"]["on_off"] == "low" # rough mock logic
+                }
+                
+            elif command == "get_qd_state":
+                st = -1 if state["qd"]["state"] == "retracted" else (1 if state["qd"]["state"] == "extended" else 0)
+                response = {
+                    "type": "qd_state",
+                    "state": st
+                }
             
             # QD Commands
             elif command == "qd_move":
@@ -125,9 +180,21 @@ async def handler(websocket):
                 state["qd"]["steps"] = 0
 
             # FSW Commands
-            elif command in ["fsw_launch", "fsw_open_mav", "fsw_close_mav", "fsw_open_sv", "fsw_close_sv", "fsw_safe", "fsw_reset_fram", "fsw_reset_card", "fsw_reboot", "fsw_dump_flash", "fsw_wipe_flash", "fsw_flash_info", "fsw_payload_n1", "fsw_payload_n2", "fsw_payload_n3", "fsw_payload_n4"]:
+            elif command in ["fsw_launch", "fsw_open_mav", "fsw_close_mav", "fsw_open_sv", "fsw_close_sv", "fsw_safe", "fsw_reset_fram", "fsw_dump_fram", "fsw_wipe_fram_reboot", "fsw_reboot", "fsw_dump_flash", "fsw_wipe_flash", "fsw_flash_info", "fsw_payload_n1", "fsw_payload_n2", "fsw_payload_n3", "fsw_payload_n4", "fsw_key_arm", "fsw_key_disarm"]:
                 # Simply succeed, we could update fake fsw state if we wanted
                 pass
+
+            elif command == "fsw_set_blims_target":
+                lat = data.get("lat")
+                lon = data.get("lon")
+                if (
+                    isinstance(lat, (int, float)) and isinstance(lon, (int, float))
+                    and -90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0
+                ):
+                    state["fsw"]["blims_target_lat"] = float(lat)
+                    state["fsw"]["blims_target_lon"] = float(lon)
+                else:
+                    response = {"type": "error"}
 
             elif command == "start_fsw_stream":
                 state["fsw_stream_active"] = True
@@ -149,6 +216,7 @@ async def handler(websocket):
     except Exception as e:
         print(f"Error: {e}")
     finally:
+        client_connected = False
         state["adc_stream_active"] = False
         state["fsw_stream_active"] = False
 
@@ -202,7 +270,43 @@ async def stream_fsw(websocket):
     except Exception as e:
         print(f"FSW Stream error: {e}")
 
+async def safety_monitor():
+    global client_connected, last_message_time
+    safety_triggered = False
+    qd_retract_triggered = False
+    
+    while True:
+        await asyncio.sleep(0.5)
+        
+        # Determine time since last message
+        if client_connected:
+            time_since = time.time() - last_message_time
+        else:
+            time_since = time.time() - last_message_time # Time since it disconnected
+            
+        if time_since > 15.0 and not safety_triggered:
+            print("SAFETY TIMEOUT (15s) - Executing Emergency Shutdown")
+            # Close Ball Valve
+            state["bv"]["signal"] = "low"
+            # Close SV1
+            if "SV1" in state["sv"]:
+                state["sv"]["SV1"]["actuated"] = False
+            # FSW Open SV (<S>)
+            state["fsw"]["sv_open"] = True
+            safety_triggered = True
+            
+        if time_since > 20.0 and not qd_retract_triggered:
+            print("SAFETY TIMEOUT (20s) - Retracting QD")
+            state["qd"]["state"] = "retracted"
+            state["qd"]["steps"] = 1000
+            qd_retract_triggered = True
+            
+        if time_since <= 15.0:
+            safety_triggered = False
+            qd_retract_triggered = False
+
 async def main():
+    asyncio.create_task(safety_monitor())
     async with websockets.serve(handler, "0.0.0.0", 9000):
         print("Mock Server started on ws://0.0.0.0:9000")
         await asyncio.Future()  # run forever

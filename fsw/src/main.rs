@@ -100,9 +100,8 @@ async fn main(spawner: Spawner) {
     // Onboard LED
     let mut led = Output::new(p.PIN_25, Level::Low);
 
-    // Arming Switch and Umbilical Sense
+    // Arming Switch
     let arming_switch = embassy_rp::gpio::Input::new(p.PIN_10, embassy_rp::gpio::Pull::Down);
-    let umbilical_sense = embassy_rp::gpio::Input::new(p.PIN_24, embassy_rp::gpio::Pull::Down);
 
     // CFC_ARM (GPIO 41): off-board arming signal, input with pull-down
     let cfc_arm = embassy_rp::gpio::Input::new(p.PIN_41, embassy_rp::gpio::Pull::Down);
@@ -139,7 +138,6 @@ async fn main(spawner: Spawner) {
         spi_bus,
         altimeter_cs,
         arming_switch,
-        umbilical_sense,
         cfc_arm,
         uart,
         ssa,

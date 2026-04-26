@@ -84,6 +84,11 @@ const UMBILICAL_BAUD: u32 = 115200;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 const UMBILICAL_READ_TIMEOUT_MS: u64 = 200;
 
+/// Max age of the most recent `$TELEM` line before the umbilical is considered
+/// disconnected, even if the underlying serial port is still open. Catches
+/// FSW hangs where USB stays up but the flight loop has stalled.
+const TELEM_FRESHNESS_MS: u64 = 3_000;
+
 // ============================================================================
 // SHARED ADC STATE
 // ============================================================================
@@ -649,16 +654,9 @@ async fn execute_command(
                 Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
             }
         }
-        Command::FswFaultMode => {
-            info!("Sending FSW Fault Mode command via umbilical");
+        Command::FswWipeFramReboot => {
+            info!("Sending FSW Wipe FRAM + Reboot command via umbilical");
             match umb_cmd_tx.try_send("<X>".into()) {
-                Ok(_) => CommandResponse::Success,
-                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
-            }
-        }
-        Command::FswResetCard => {
-            info!("Sending FSW Reset Card command via umbilical");
-            match umb_cmd_tx.try_send("<D>".into()) {
                 Ok(_) => CommandResponse::Success,
                 Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
             }
@@ -728,6 +726,33 @@ async fn execute_command(
             info!("Stopping FSW telemetry stream for client");
             *fsw_streaming_enabled = false;
             CommandResponse::Success
+        }
+        Command::FswKeyArm => {
+            info!("Sending FSW Key Arm command via umbilical");
+            match umb_cmd_tx.try_send("<K>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswKeyDisarm => {
+            info!("Sending FSW Key Disarm command via umbilical");
+            match umb_cmd_tx.try_send("<k>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswSetBlimsTarget { lat, lon } => {
+            if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) {
+                error!("FSW SetBlimsTarget rejected: out of range lat={} lon={}", lat, lon);
+                CommandResponse::Error
+            } else {
+                let msg = format!("<T,{:.7},{:.7}>", lat, lon);
+                info!("Sending FSW SetBlimsTarget: {}", msg);
+                match umb_cmd_tx.try_send(msg) {
+                    Ok(_) => CommandResponse::Success,
+                    Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+                }
+            }
         }
     }
 }
@@ -804,8 +829,17 @@ async fn safety_monitor_task(
             }
         }
 
-        // Umbilical disconnect logic
-        let umb_connected = umbilical_readings.lock().await.connected;
+        // Umbilical disconnect logic.
+        // Recompute `connected` from telemetry freshness so a hung FSW (USB up
+        // but no $TELEM flowing) correctly reads as disconnected.
+        let umb_connected = {
+            let mut umb = umbilical_readings.lock().await;
+            let fresh = umb.last_telem_instant
+                .map(|t| t.elapsed() < Duration::from_millis(TELEM_FRESHNESS_MS))
+                .unwrap_or(false);
+            umb.connected = fresh;
+            fresh
+        };
         if !umb_connected {
             if umb_disconnect_start.is_none() {
                 info!("Umbilical disconnected. Starting umbilical safety timer.");
@@ -1068,16 +1102,18 @@ async fn umbilical_task(
                 {
                     let mut umb = umbilical_readings.lock().await;
                     umb.connected = false;
+                    umb.last_telem_instant = None;
                 }
                 Timer::after(Duration::from_secs(2)).await;
                 continue;
             }
         };
 
-        // Port is open — mark connected and enter read/write loop
+        // Port is open, but DO NOT mark connected yet — we wait for a fresh
+        // $TELEM line so a hung FSW with a live USB stack reads as disconnected.
         {
             let mut umb = umbilical_readings.lock().await;
-            umb.connected = true;
+            umb.last_telem_instant = None;
         }
 
         // CSV line-buffered reader. The FSW emits one telemetry record per
@@ -1175,8 +1211,11 @@ async fn umbilical_task(
                                 {
                                     let mut umb = umbilical_readings.lock().await;
                                     umb.timestamp_ms = timestamp_ms;
-                                    umb.connected = true;
                                     umb.telemetry = telemetry;
+                                    umb.last_telem_instant = Some(Instant::now());
+                                    // Flip connected true eagerly on fresh telemetry;
+                                    // safety monitor is the source of truth for staleness.
+                                    umb.connected = true;
                                 }
 
                                 debug!("FSW telemetry received: mode={}", telemetry.flight_mode_name());
@@ -1203,6 +1242,7 @@ async fn umbilical_task(
         {
             let mut umb = umbilical_readings.lock().await;
             umb.connected = false;
+            umb.last_telem_instant = None;
         }
         warn!("Umbilical disconnected, retrying in 2s...");
         Timer::after(Duration::from_secs(2)).await;

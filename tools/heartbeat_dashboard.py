@@ -65,18 +65,24 @@ COMMANDS = {
     "S": ("<S>", "Open SV"),
     "s": ("<s>", "Close SV"),
     "V": ("<V>", "Safe"),
-    "D": ("<D>", "Reset Card"),
     "F": ("<F>", "Reset FRAM"),
     "f": ("<f>", "Dump FRAM"),
     "R": ("<R>", "Reboot"),
     "G": ("<G>", "Dump Flash"),
     "W": ("<W>", "Wipe Flash"),
     "I": ("<I>", "Flash Info"),
-    "X": ("<X>", "Fault Mode"),
+    "X": ("<X>", "Wipe FRAM + Reboot"),
+    "K": ("<K>", "Key Arm"),
+    "k": ("<k>", "Key Disarm"),
     "1": ("<1>", "Payload N1"),
     "2": ("<2>", "Payload N2"),
     "3": ("<3>", "Payload N3"),
     "4": ("<4>", "Payload N4"),
+}
+
+# Special hotkeys that prompt for input rather than sending a fixed token.
+PROMPT_KEYS = {
+    "T": "Set BLiMS Target",
 }
 
 
@@ -259,14 +265,63 @@ def draw(stdscr, state, port_name):
 
 def show_help(stdscr):
     h, w = stdscr.getmaxyx()
-    win = curses.newwin(min(len(COMMANDS) + 4, h - 2), min(40, w - 2), 2, 2)
+    rows = list(COMMANDS.items()) + [(k, (None, name)) for k, name in PROMPT_KEYS.items()]
+    win = curses.newwin(min(len(rows) + 4, h - 2), min(40, w - 2), 2, 2)
     win.box()
     win.addstr(0, 2, " Commands ")
-    for i, (k, (_tok, name)) in enumerate(COMMANDS.items()):
+    for i, (k, (_tok, name)) in enumerate(rows):
         win.addstr(1 + i, 2, f"  {k}  →  {name}")
-    win.addstr(len(COMMANDS) + 2, 2, " Press any key ")
+    win.addstr(len(rows) + 2, 2, " Press any key ")
     win.refresh()
     win.getch()
+
+
+def prompt_string(stdscr, label):
+    """Block on a single-line text input. Returns the entered string or None on cancel."""
+    h, w = stdscr.getmaxyx()
+    win = curses.newwin(3, min(60, w - 2), h // 2 - 1, 2)
+    win.box()
+    win.addstr(0, 2, f" {label} ")
+    win.addstr(1, 2, "> ")
+    win.refresh()
+    curses.echo()
+    curses.curs_set(1)
+    stdscr.nodelay(False)
+    try:
+        s = win.getstr(1, 4, 50).decode(errors="ignore").strip()
+    except Exception:
+        s = ""
+    finally:
+        curses.noecho()
+        curses.curs_set(0)
+        stdscr.nodelay(True)
+    return s or None
+
+
+def prompt_blims_target(stdscr, ser, state):
+    lat_str = prompt_string(stdscr, "BLiMS target latitude (deg)")
+    if lat_str is None:
+        state.add_log("[cmd] BLiMS target cancelled")
+        return
+    lon_str = prompt_string(stdscr, "BLiMS target longitude (deg)")
+    if lon_str is None:
+        state.add_log("[cmd] BLiMS target cancelled")
+        return
+    try:
+        lat = float(lat_str)
+        lon = float(lon_str)
+    except ValueError:
+        state.add_log(f"[cmd] BLiMS target: invalid number ({lat_str}, {lon_str})")
+        return
+    if not (-90.0 <= lat <= 90.0) or not (-180.0 <= lon <= 180.0):
+        state.add_log(f"[cmd] BLiMS target: out of range lat={lat} lon={lon}")
+        return
+    tok = f"<T,{lat:.7f},{lon:.7f}>"
+    try:
+        ser.write(tok.encode())
+        state.add_log(f"[cmd] sent {tok} (Set BLiMS Target)")
+    except Exception as e:
+        state.add_log(f"[cmd] write failed: {e}")
 
 
 def run(stdscr, ser, port_name):
@@ -302,6 +357,8 @@ def run(stdscr, ser, port_name):
                 state.add_log(f"[cmd] sent {tok} ({name})")
             except Exception as e:
                 state.add_log(f"[cmd] write failed: {e}")
+        elif key == "T":
+            prompt_blims_target(stdscr, ser, state)
 
     state.stop = True
 

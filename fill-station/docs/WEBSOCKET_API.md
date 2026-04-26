@@ -363,7 +363,10 @@ The following commands send simple 1-byte command characters over the serial con
 *   `fsw_close_sv` — Close SV on vehicle (`<s>`)
 *   `fsw_safe` — Safe all FSW actuators (`<V>`)
 *   `fsw_reset_fram` — Clear FRAM data (`<F>`)
-*   `fsw_reset_card` — Reset SD card writer (`<D>`)
+*   `fsw_dump_fram` — Dump FRAM data (`<f>`)
+*   `fsw_wipe_fram_reboot` — Wipe FRAM and reboot in one step (`<X>`)
+*   `fsw_key_arm` — Arm launch key, required for Startup → Standby (`<K>`)
+*   `fsw_key_disarm` — Disarm launch key, reverts Standby → Startup (`<k>`)
 *   `fsw_reboot` — Reboot FSW (`<R>`)
 *   `fsw_dump_flash` — Dump flash memory (`<G>`)
 *   `fsw_wipe_flash` — Wipe flash memory (`<W>`)
@@ -372,6 +375,8 @@ The following commands send simple 1-byte command characters over the serial con
 *   `fsw_payload_n2` — Payload event N2 (`<2>`)
 *   `fsw_payload_n3` — Payload event N3 (`<3>`)
 *   `fsw_payload_n4` — Payload event N4 (`<4>`)
+
+> **Removed:** `fsw_reset_card` (`<D>`) and `fsw_fault_mode` (renamed to `fsw_wipe_fram_reboot`) are no longer accepted.
 
 **Format:**
 ```json
@@ -382,6 +387,23 @@ The following commands send simple 1-byte command characters over the serial con
 ```json
 {"type": "success"}
 ```
+
+---
+
+### `fsw_set_blims_target`
+Set the BLiMS landing-zone target. Sends `<T,lat,lon>` over the umbilical with two `f32` decimal-degree numbers. Range checked on the FSW: lat ∈ [-90, 90], lon ∈ [-180, 180].
+
+**Format:**
+```json
+{"command": "fsw_set_blims_target", "lat": 42.4419130, "lon": -76.4878000}
+```
+
+**Response:**
+```json
+{"type": "success"}
+```
+
+> **Note:** BLiMS guidance only arms on entry to MainDeployed if a target was previously set this way. With no `fsw_set_blims_target` issued before main-chute deploy, BLiMS guidance stays disabled (the previous hardcoded `42.696969 / -42.696969` fallback target has been removed).
 
 ---
 
@@ -409,11 +431,47 @@ Data received back from the Flight software, pushed to clients when `start_fsw_s
     "gyro_x": 0.0, "gyro_y": 0.0, "gyro_z": 0.0,
     "pt3": 1200.0,
     "pt4": 1500.0,
-    "rtd": 500.0
+    "rtd": 500.0,
+    "sv_open": false,
+    "mav_open": false,
+    "ssa_drogue_deployed": 0,
+    "ssa_main_deployed": 0,
+    "cmd_n1": 0,
+    "cmd_n2": 0,
+    "cmd_n3": 0,
+    "cmd_n4": 0,
+    "cmd_a1": 0,
+    "cmd_a2": 0,
+    "cmd_a3": 0,
+    "airbrake_state": 0,
+    "predicted_apogee": 0.0,
+    "h_acc": 0,
+    "v_acc": 0,
+    "vel_n": 0.0,
+    "vel_e": 0.0,
+    "vel_d": 0.0,
+    "g_speed": 0.0,
+    "s_acc": 0,
+    "head_acc": 0,
+    "fix_type": 0,
+    "head_mot": 0,
+    "blims_motor_position": 0.0,
+    "blims_phase_id": 0,
+    "blims_pid_p": 0.0,
+    "blims_pid_i": 0.0,
+    "blims_bearing": 0.0,
+    "blims_loiter_step": 0,
+    "blims_heading_des": 0.0,
+    "blims_heading_error": 0.0,
+    "blims_error_integral": 0.0,
+    "blims_dist_to_target_m": 0.0,
+    "blims_target_lat": 0.0,
+    "blims_target_lon": 0.0,
+    "blims_wind_from_deg": 0.0
   }
 }
 ```
 
 * `connected`: True if the background task can communicate with the serial device.
 * `flight_mode`: Human readable string.
-* `telemetry`: The `FswTelemetry` packet (parsed from a `$TELEM,<22 fields>\n` CSV line emitted by the FSW over the umbilical) exposed as JSON variables.
+* `telemetry`: The `FswTelemetry` packet (parsed from a `$TELEM,<56 fields>\n` CSV line emitted by the FSW over the umbilical) exposed as JSON variables.
