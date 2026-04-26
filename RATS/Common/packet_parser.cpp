@@ -13,7 +13,7 @@ T PacketParser::readValue(const uint8_t* buffer, size_t& offset) {
 }
 
 bool PacketParser::parseRadioPacket(const uint8_t* buffer, size_t length, RadioPacket& packet) {
-    if (length < RADIO_PACKET_SIZE) return false;
+    if (length < sizeof(RadioPacket)) return false;
 
     // Since both Raspberry Pi Pico (ARM Cortex-M0+) and the Rust packet serialization
     // use little-endian, and the struct is packed, we can directly copy the memory.

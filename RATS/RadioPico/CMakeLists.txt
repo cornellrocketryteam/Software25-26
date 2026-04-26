@@ -12,7 +12,7 @@ if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 # ====================================================================================
-# RadioPico CMakeLists.txt
+# RadioPico CMakeLists.txts
 
 cmake_minimum_required(VERSION 3.13)
 

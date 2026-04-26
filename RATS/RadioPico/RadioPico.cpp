@@ -20,7 +20,7 @@
 // Loopback Test Mode: Set to 1 to test with jumper wire GP0->GP1
 // Tests: RX, SD logging, and inter-Pico UART (no MQTT)
 // Hardware: Connect GP0 to GP1 with jumper wire
-#define LOOPBACK_TEST_MODE 1
+#define LOOPBACK_TEST_MODE 0
 
 // Inter-core communication queue
 queue_t packet_queue;
@@ -56,9 +56,10 @@ void core1_entry() {
     printf("[Core 1] MQTT/WiFi disabled (loopback test mode)\n");
 #endif
 
-    char json_buffer[2048];
+    // Large buffers must live in BSS, not on Core 1's 2KB stack
+    static char json_buffer[2048];
+    static RadioPacket batch_buffer[SD_LOG_BATCH_SIZE];
     RadioPacket packet;
-    RadioPacket batch_buffer[SD_LOG_BATCH_SIZE];
     uint32_t batch_count = 0;
     uint32_t last_stats_time = 0;
 
@@ -180,9 +181,8 @@ int main() {
     
     // Core 0 main loop - FAST I/O ONLY
     // Full Radio Packet buffer
-    uint8_t radio_buffer[RADIO_PACKET_SIZE];
+    uint8_t radio_buffer[sizeof(RadioPacket)];
     RadioPacket parsed_packet;
-    uint32_t packet_count = 0;
     uint32_t last_stats_time = 0;
     
     while (true) {
@@ -197,7 +197,7 @@ int main() {
             simulator.generateRadioPacket(sim_packet);
 
             // Serialize to bytes
-            uint8_t tx_buffer[RADIO_PACKET_SIZE];
+            uint8_t tx_buffer[sizeof(RadioPacket)];
             PacketSimulator::serializeRadioPacket(sim_packet, tx_buffer);
 
             // Transmit over UART0 to RFD900x #1 (or loopback to GP1 via GP0)
@@ -223,8 +223,6 @@ int main() {
                 if (potential_sync == SYNC_WORD) {
                     // Parse (fast operation)
                     if (PacketParser::parseRadioPacket(radio_buffer, sizeof(radio_buffer), parsed_packet)) {
-                        packet_count++;
-
                         // Toggle external LED on GP26 to indicate packet reception
                         static bool rx_led_state = false;
                         rx_led_state = !rx_led_state;

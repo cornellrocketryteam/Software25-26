@@ -118,7 +118,7 @@ bool RFD900xUART::packetAvailable() {
     // Look for sync word
     if (!findSyncWord(sync_pos)) {
         // No sync word found - if buffer is getting full, discard old data
-        if (bufferAvailable() > RFD_RX_BUFFER_SIZE - RADIO_PACKET_SIZE) {
+        if (bufferAvailable() > RFD_RX_BUFFER_SIZE - sizeof(RadioPacket)) {
             // Discard half the buffer
             for (int i = 0; i < RFD_RX_BUFFER_SIZE / 2; i++) {
                 readBufferByte();
@@ -133,24 +133,26 @@ bool RFD900xUART::packetAvailable() {
         readBufferByte();
     }
 
-    // Check if we have a full packet (40 bytes starting from sync word)
-    return bufferAvailable() >= RADIO_PACKET_SIZE;
+    // Check if we have a full packet starting from sync word
+    return bufferAvailable() >= sizeof(RadioPacket);
 }
 
 bool RFD900xUART::readPacket(uint8_t* buffer, size_t buffer_size) {
-    if (buffer_size < RADIO_PACKET_SIZE) {
+    if (buffer_size < sizeof(RadioPacket)) {
         return false;
     }
-    
-    if (!packetAvailable()) {
+
+    // Caller is expected to have just called packetAvailable() and gotten true,
+    // so rx_tail is already aligned on a sync word. Just verify enough bytes are
+    // still buffered (rx_head only grows from the IRQ side, so this is cheap).
+    if (bufferAvailable() < sizeof(RadioPacket)) {
         return false;
     }
-    
-    // Read the packet
-    for (int i = 0; i < RADIO_PACKET_SIZE; i++) {
+
+    for (size_t i = 0; i < sizeof(RadioPacket); i++) {
         buffer[i] = readBufferByte();
     }
-    
+
     total_packets_received++;
     return true;
 }

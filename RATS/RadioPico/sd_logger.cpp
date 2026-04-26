@@ -55,12 +55,23 @@ bool SDLogger::init() {
     printf("[SD] Created log file: %s\n", current_filename);
 
     // Write CSV header for ALL telemetry data fields
-    const char* header = "sync_word,metadata,ms_since_boot,events,altitude,temperature,"
-                        "latitude_deg,longitude_deg,num_satellites,gps_unix_time,gps_horizontal_accuracy,"
-                        "imu_accel_x,imu_accel_y,imu_accel_z,imu_gyro_x,imu_gyro_y,imu_gyro_z,"
-                        "imu_orient_x,imu_orient_y,imu_orient_z,"
-                        "accel_x,accel_y,accel_z,"
-                        "battery_voltage,pt3_pressure,pt4_pressure,rtd_temperature,blims_motor_state\n";
+    const char* header =
+        "sync_word,flight_mode,"
+        "pressure,temp,altitude,"
+        "latitude,longitude,num_satellites,gps_timestamp,"
+        "mag_x,mag_y,mag_z,"
+        "accel_x,accel_y,accel_z,"
+        "gyro_x,gyro_y,gyro_z,"
+        "pt3,pt4,rtd,"
+        "sv_open,mav_open,"
+        "ssa_drogue_deployed,ssa_main_deployed,"
+        "cmd_n1,cmd_n2,cmd_n3,cmd_n4,cmd_a1,cmd_a2,cmd_a3,"
+        "airbrake_state,predicted_apogee,"
+        "h_acc,v_acc,vel_n,vel_e,vel_d,g_speed,s_acc,head_acc,fix_type,head_mot,"
+        "blims_motor_position,blims_phase_id,blims_pid_p,blims_pid_i,blims_bearing,"
+        "blims_loiter_step,blims_heading_des,blims_heading_error,blims_error_integral,"
+        "blims_dist_to_target_m,blims_target_lat,blims_target_lon,blims_wind_from_deg,"
+        "ms_since_boot_cfc\n";
 
     if (!writeString(header)) {
         printf("[SD] Failed to write header\n");
@@ -83,45 +94,67 @@ bool SDLogger::logPacket(const RadioPacket& packet) {
     }
 
     // Format packet data as CSV line with ALL fields
-    char line[512];  // Increased buffer for all fields
-    float lat_deg = packet.latitude / 1000000.0f;
-    float lon_deg = packet.longitude / 1000000.0f;
+    char line[1024];
 
     int len = snprintf(line, sizeof(line),
-        "0x%08X,%u,%u,0x%08X,%.2f,%.2f,"  // sync, metadata, ms, events, alt, temp
-        "%.6f,%.6f,%u,%u,%u,"              // lat, lon, sats, gps_time, gps_acc
-        "%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,"   // imu accel, gyro
-        "%.2f,%.2f,%.2f,"                   // imu orient
-        "%.3f,%.3f,%.3f,"                   // accel
-        "%.3f,%.2f,%.2f,%.2f,%.3f\n",      // battery, pressures, rtd, blims
-        packet.sync_word,
-        packet.metadata,
-        packet.ms_since_boot,
-        packet.events,
+        "0x%08lX,%lu,"                                  // sync, flight_mode
+        "%.3f,%.3f,%.3f,"                               // pressure, temp, altitude
+        "%.6f,%.6f,%lu,%.3f,"                           // lat, lon, sats, gps timestamp
+        "%.3f,%.3f,%.3f,"                               // mag
+        "%.3f,%.3f,%.3f,"                               // accel
+        "%.3f,%.3f,%.3f,"                               // gyro
+        "%.3f,%.3f,%.3f,"                               // pt3, pt4, rtd
+        "%u,%u,"                                        // sv_open, mav_open
+        "%u,%u,"                                        // ssa drogue/main
+        "%u,%u,%u,%u,%u,%u,%u,"                         // cmd_n1..n4, cmd_a1..a3
+        "%u,%.3f,"                                      // airbrake_state, predicted_apogee
+        "%lu,%lu,%.6f,%.6f,%.6f,%.6f,%lu,%lu,%u,%ld,"   // advanced GPS
+        "%.3f,%d,%.6f,%.6f,%.3f,"                       // blims motor/phase/pid/bearing
+        "%d,%.3f,%.3f,%.6f,"                            // blims loiter/heading/err/integral
+        "%.3f,%.6f,%.6f,%.3f,"                          // blims dist/target/wind
+        "%lu\n",                                        // ms_since_boot_cfc
+        (unsigned long)packet.sync_word,
+        (unsigned long)packet.flight_mode,
+        packet.pressure,
+        packet.temp,
         packet.altitude,
-        packet.temperature,
-        lat_deg,
-        lon_deg,
-        packet.num_satellites,
-        packet.gps_unix_time,
-        packet.gps_horizontal_accuracy,
-        packet.imu_accel_x,
-        packet.imu_accel_y,
-        packet.imu_accel_z,
-        packet.imu_gyro_x,
-        packet.imu_gyro_y,
-        packet.imu_gyro_z,
-        packet.imu_orient_x,
-        packet.imu_orient_y,
-        packet.imu_orient_z,
-        packet.accel_x,
-        packet.accel_y,
-        packet.accel_z,
-        packet.battery_voltage,
-        packet.pt3_pressure,
-        packet.pt4_pressure,
-        packet.rtd_temperature,
-        packet.blims_motor_state
+        packet.latitude,
+        packet.longitude,
+        (unsigned long)packet.num_satellites,
+        packet.timestamp,
+        packet.mag_x, packet.mag_y, packet.mag_z,
+        packet.accel_x, packet.accel_y, packet.accel_z,
+        packet.gyro_x, packet.gyro_y, packet.gyro_z,
+        packet.pt3, packet.pt4, packet.rtd,
+        packet.sv_open ? 1u : 0u,
+        packet.mav_open ? 1u : 0u,
+        packet.ssa_drogue_deployed,
+        packet.ssa_main_deployed,
+        packet.cmd_n1, packet.cmd_n2, packet.cmd_n3, packet.cmd_n4,
+        packet.cmd_a1, packet.cmd_a2, packet.cmd_a3,
+        packet.airbrake_state,
+        packet.predicted_apogee,
+        (unsigned long)packet.h_acc,
+        (unsigned long)packet.v_acc,
+        packet.vel_n, packet.vel_e, packet.vel_d,
+        packet.g_speed,
+        (unsigned long)packet.s_acc,
+        (unsigned long)packet.head_acc,
+        packet.fix_type,
+        (long)packet.head_mot,
+        packet.blims_motor_position,
+        (int)packet.blims_phase_id,
+        packet.blims_pid_p, packet.blims_pid_i,
+        packet.blims_bearing,
+        (int)packet.blims_loiter_step,
+        packet.blims_heading_des,
+        packet.blims_heading_error,
+        packet.blims_error_integral,
+        packet.blims_dist_to_target_m,
+        packet.blims_target_lat,
+        packet.blims_target_lon,
+        packet.blims_wind_from_deg,
+        (unsigned long)packet.ms_since_boot_cfc
     );
 
     if (len < 0 || len >= (int)sizeof(line)) {
