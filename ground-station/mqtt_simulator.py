@@ -8,10 +8,10 @@ import math
 # ==============================================================================
 # CONFIGURATION
 # ==============================================================================
-MQTT_BROKER_IP = "192.168.8.193" 
+MQTT_BROKER_IP = "192.168.1.206" 
 MQTT_PORT = 1883
 MQTT_TOPIC = "rats/raw/1"  # unit_id 0 = Fill Station, 1 = RATS
-PUBLISH_RATE_HZ = 10       # Telemetry publish rate in Hz
+PUBLISH_RATE_HZ = 20       # Telemetry publish rate in Hz
 
 # ==============================================================================
 # MQTT SETUP
@@ -45,8 +45,11 @@ try:
         fill_progress = (fill_progress + 0.5) % 150.0  # Loops 0 to 50kg
         
         # Calculate seconds since midnight UTC (simulating MAX-M10S Time of Day)
-        # time.time() gives absolute Unix epoch, % 86400 isolates today's seconds
         gps_time_of_day = time.time() % 86400
+        
+        # Simulate the microcontrollers' internal hardware clocks (milliseconds since boot)
+        # Using time_step ensures it is perfectly monotonic for your velocity math!
+        sys_time_ms = int(time_step * 1000)
         
         # Build the JSON payload matching the unified Schema
         payload = {
@@ -57,12 +60,12 @@ try:
             "flight_mode": 1,
             "pressure": 101.3 + random.uniform(-0.1, 0.1),
             "temp": 22.5 + random.uniform(-0.2, 0.2),
-            "altitude": 140.0 + random.uniform(-1, 1),
+            "altitude": 140.0 + (time_step * 15.0) + random.uniform(-1, 1), # Simulating ascent for velocity math!
             
             "latitude": 42.4440,
             "longitude": -76.4832,
             "num_satellites": 12,
-            "timestamp": gps_time_of_day,  # <-- UPDATED TO SECONDS SINCE MIDNIGHT
+            "timestamp": gps_time_of_day,
             
             "mag_x": random.uniform(-50, 50),
             "mag_y": random.uniform(-50, 50),
@@ -82,6 +85,9 @@ try:
             
             "sv_2_open": bool(int(time_step) % 10 < 5),                          
             "mav_open": False,
+            
+            "ms_since_boot_cfc": sys_time_ms,
+            "ms_since_boot_fill": sys_time_ms,
 
             # Event Flags
             "ssa_drogue_deployed": 0,
@@ -94,16 +100,16 @@ try:
             "predicted_apogee": 10500.0 + random.uniform(-50, 50),
 
             # Advanced GPS / U-Blox Metrics
-            "h_acc": 1500 + int(random.uniform(-100, 100)),        # 1.5m accuracy (in mm)
-            "v_acc": 2000 + int(random.uniform(-100, 100)),        # 2.0m accuracy (in mm)
-            "vel_n": 25.0 + random.uniform(-1, 1),                 # 25 m/s North
-            "vel_e": 5.0 + random.uniform(-0.5, 0.5),              # 5 m/s East
-            "vel_d": -150.0 + random.uniform(-5, 5),               # -150 m/s Down (Ascending)
-            "g_speed": 25.49 + random.uniform(-1, 1),              # Ground speed derived from N/E
-            "s_acc": 150,                                          # 150 mm/s speed accuracy
-            "head_acc": 250000,                                    # 2.5 degrees accuracy (*1e5)
-            "fix_type": 3,                                         # 3D Fix
-            "head_mot": 1131000 + int(random.uniform(-5000, 5000)),# 11.31 degrees heading (*1e5)
+            "h_acc": 1500 + int(random.uniform(-100, 100)),        
+            "v_acc": 2000 + int(random.uniform(-100, 100)),        
+            "vel_n": 25.0 + random.uniform(-1, 1),                 
+            "vel_e": 5.0 + random.uniform(-0.5, 0.5),              
+            "vel_d": -150.0 + random.uniform(-5, 5),               
+            "g_speed": 25.49 + random.uniform(-1, 1),              
+            "s_acc": 150,                                          
+            "head_acc": 250000,                                    
+            "fix_type": 3,                                         
+            "head_mot": 1131000 + int(random.uniform(-5000, 5000)),
 
             # BLiMS Outputs
             "blims_motor_position": math.sin(time_step) * 5.0,
@@ -122,7 +128,7 @@ try:
             "blims_target_lon": -76.4800,
             "blims_wind_from_deg": 270.0,
             
-            # Fill Station Specific (Defaults for RATS unit_id=1, will be ignored/overwritten by Fill Station)
+            # Fill Station Specific
             "pt_1_pressure": 4500.0 + random.uniform(-10, 10),                
             "pt_2_pressure": 800.0 + random.uniform(-5, 5),                   
             "ball_valve_open": True,                                           
@@ -134,7 +140,7 @@ try:
         
         # Publish to EMQX
         client.publish(MQTT_TOPIC, json.dumps(payload))
-        print(f"Published to {MQTT_TOPIC} | GPS Time: {gps_time_of_day:.3f}s | Apogee: {payload['predicted_apogee']:.0f}ft")
+        print(f"Published to {MQTT_TOPIC} | Sys Time: {sys_time_ms}ms | GPS Time: {gps_time_of_day:.3f}s")
         
         # Wait to match target publish rate (10Hz)
         time.sleep(1.0 / PUBLISH_RATE_HZ)
