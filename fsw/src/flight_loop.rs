@@ -391,6 +391,21 @@ impl FlightLoop {
                     self.n4_sent = true;
                     self.flight_state.packet.cmd_n4 = 1;
                 }
+                UmbilicalCommand::PayloadA1 => {
+                    log::warn!("UMBILICAL: Sent A1");
+                    let _ = self.flight_state.payload_uart.write(b"A1\n").await;
+                    self.flight_state.packet.cmd_a1 = 1;
+                }
+                UmbilicalCommand::PayloadA2 => {
+                    log::warn!("UMBILICAL: Sent A2");
+                    let _ = self.flight_state.payload_uart.write(b"A2\n").await;
+                    self.flight_state.packet.cmd_a2 = 1;
+                }
+                UmbilicalCommand::PayloadA3 => {
+                    log::warn!("UMBILICAL: Sent A3");
+                    let _ = self.flight_state.payload_uart.write(b"A3\n").await;
+                    self.flight_state.packet.cmd_a3 = 1;
+                }
                 UmbilicalCommand::WipeFramReboot => {
                     log::warn!("UMBILICAL CMD: Wipe FRAM and Reboot");
                     self.flight_state.reset_fram().await;
@@ -409,6 +424,15 @@ impl FlightLoop {
                     self.set_blims_target(lat, lon);
                     self.blims_target_set = true;
                 }
+                UmbilicalCommand::TriggerDrogue => {
+                    log::warn!("UMBILICAL CMD: Trigger Drogue");
+                    self.flight_state.trigger_drogue().await;
+                }
+                UmbilicalCommand::TriggerMain => {
+                    log::warn!("UMBILICAL CMD: Trigger Main");
+                    self.flight_state.trigger_main().await;
+                }
+
             }
         }
     }

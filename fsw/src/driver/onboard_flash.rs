@@ -77,8 +77,8 @@ impl Snapshot {
         if b[0..2] != SNAPSHOT_MAGIC {
             return None;
         }
-        let mut u32at = |i: usize| u32::from_le_bytes([b[i], b[i+1], b[i+2], b[i+3]]);
-        let mut f32at = |i: usize| f32::from_le_bytes([b[i], b[i+1], b[i+2], b[i+3]]);
+        let u32at = |i: usize| u32::from_le_bytes([b[i], b[i+1], b[i+2], b[i+3]]);
+        let f32at = |i: usize| f32::from_le_bytes([b[i], b[i+1], b[i+2], b[i+3]]);
         let stored_crc = u32::from_le_bytes([b[46], b[47], b[48], b[49]]);
         if stored_crc != Self::crc(&b[0..46]) {
             return None;

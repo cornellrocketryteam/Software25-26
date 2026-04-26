@@ -755,6 +755,7 @@ pub async fn simulate_launch_sequence(flight_loop: &mut FlightLoop) {
 }
 
 // Simulation for Payload Specialized Ground Commands
+#[cfg(feature = "sim_payload")]
 pub async fn simulate_payload_commands(flight_loop: &mut FlightLoop) {
     log::info!("\n--- STARTING PAYLOAD COMMAND SIMULATION ---");
 
@@ -796,7 +797,7 @@ pub async fn simulate_payload_commands(flight_loop: &mut FlightLoop) {
 
     // 5. Test ForceMode
     log::info!("[SIM] Testing ForceMode (Startup -> DrogueDeployed)...");
-    flight_loop.flight_state.sim_radio_command = Some(crate::packet::Command::ForceMode(FlightMode::DrogueDeployed.to_u32()));
+    flight_loop.flight_state.sim_radio_command = Some(crate::packet::Command::ForceMode(FlightMode::DrogueDeployed as u32));
     flight_loop.simulate_cycle().await;
     
     if flight_loop.flight_state.flight_mode == FlightMode::DrogueDeployed {
