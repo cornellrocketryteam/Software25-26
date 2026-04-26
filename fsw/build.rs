@@ -29,6 +29,21 @@ fn main() {
     // `memory.x` is changed.
     println!("cargo:rerun-if-changed=memory.x");
 
+    // Check that the air-brake-controls submodule has been initialised.
+    // If someone cloned without --recurse-submodules the directory will be
+    // empty and the build would fail with a cryptic "can't find crate" error.
+    let submodule_marker = std::path::Path::new("../air-brake-controls/controller_in_rust_v2/Cargo.toml");
+    if !submodule_marker.exists() {
+        panic!(
+            "\n\n\
+            ============================================================\n\
+            ERROR: air-brake-controls submodule is not initialised.\n\
+            Run:  git submodule update --init\n\
+            Or clone with: git clone --recurse-submodules https://github.com/cornellrocketryteam/Software25-26.git\n\
+            ============================================================\n"
+        );
+    }
+
     println!("cargo:rustc-link-arg-bins=--nmagic");
     println!("cargo:rustc-link-arg-bins=-Tlink.x");
     println!("cargo:rustc-link-arg-bins=-Tdefmt.x");

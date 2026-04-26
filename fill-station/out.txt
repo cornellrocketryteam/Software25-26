@@ -1,0 +1,98 @@
+[02:07:57.076] Connected to /dev/cu.usbserial-0136E8581
+???output console
+
+U-Boot SPL 2025.10 (Oct 06 2025 - 19:13:09 +0000)
+SYSFW ABI: 4.0 (firmware rev 0x000b '11.2.5--v11.02.05 (Fancy Rat)')
+Trying to boot from MMC2
+Authentication passed
+Authentication passed
+
+
+U-Boot 2025.10 (Oct 06 2025 - 19:13:09 +0000)
+
+SoC:   AM64X SR2.0 HS-FS
+Model: Texas Instruments AM642 SK
+Board: AM64B-SKEVM rev A
+DRAM:  2 GiB
+Core:  90 devices, 33 uclasses, devicetree: separate
+MMC:   mmc@fa00000: 1
+Loading Environment from nowhere... OK
+In:    serial@2800000
+Out:   serial@2800000
+Err:   serial@2800000
+Hit any key to stop autoboot: 0
+switch to partitions #0, OK
+mmc1 is current device
+SD/MMC found on device 1
+150 65160542 bytes read in 697 ms (89.2 MiB/s)
+## Loading kernel (any) from FIT Image at 90000000 ...
+   Using 'board-0' configuration
+   Verifying Hash Integrity ... OK
+   Trying 'kernel' kernel subimage
+     Description:  kernel
+     Created:      1980-01-01   0:00:00 UTC
+     Type:         Kernel Image
+     Compression:  lzma compressed
+     Data Start:   0x900000cc
+     Data Size:    11006821 Bytes = 10.5 MiB
+     Architecture: AArch64
+     OS:           Linux
+     Load Address: 0x82000000
+     Entry Point:  0x82000000
+     Hash algo:    crc32
+     Hash value:   1d23146d
+   Verifying Hash Integrity ... crc32+ OK
+## Loading ramdisk (any) from FIT Image at 90000000 ...
+   Using 'board-0' configuration
+   Verifying Hash Integrity ... OK
+   Trying 'initrd' ramdisk subimage
+     Description:  initrd
+     Created:      1980-01-01   0:00:00 UTC
+     Type:         RAMDisk Image
+     Compression:  uncompressed
+     Data Start:   0x90a8ebd8
+     Data Size:    54089292 Bytes = 51.6 MiB
+     Architecture: AArch64
+     OS:           Linux
+     Load Address: unavailable
+     Entry Point:  unavailable
+     Hash algo:    crc32
+     Hash value:   e1eb6a98
+   Verifying Hash Integrity ... crc32+ OK
+## Loading fdt (any) from FIT Image at 90000000 ...
+   Using 'board-0' configuration
+   Verifying Hash Integrity ... OK
+   Trying 'fdt-0' fdt subimage
+     Description:  dtb
+     Created:      1980-01-01   0:00:00 UTC
+     Type:         Flat Device Tree
+     Compression:  uncompressed
+     Data Start:   0x90a7f504
+     Data Size:    63028 Bytes = 61.6 KiB
+     Architecture: AArch64
+     Hash algo:    crc32
+     Hash value:   8cbe8455
+   Verifying Hash Integrity ... crc32+ OK
+   Loading Device Tree to 00000000fcf18000, end 00000000fcf2afff ... OK
+## Loading fdt (any) from FIT Image at 90000000 ...
+Could not find configuration node
+load of <NULL> failed
+   Booting using the fdt blob at 0xfcf18000
+   Uncompressing Kernel Image to 82000000
+   Loading Ramdisk to f9b82000, end fcf1764c ... OK
+   Loading Device Tree to 00000000f9b6c000, end 00000000f9b81fff ... OK
+
+Starting kernel ...
+
+this was always there-> [    0.736225] pinctrl-single f4000.pinctrl: pin PIN152 already requested by f4000.pinctrl; cannot claim for 20000000.i2c
+this was always there-> [    0.736247] pinctrl-single f4000.pinctrl: error -EINVAL: pin-152 (20000000.i2c)
+this was always there-> [    0.736261] pinctrl-single f4000.pinctrl: error -EINVAL: could not request pin 152 (PIN152) from group main-i2c0-default-pins on device pinctrl-single
+this was always there-> [    0.736271] omap_i2c 20000000.i2c: Error applying setting, reverse things back
+this was always there-> [    8.273613] wlcore: ERROR could not get configuration binary ti-connectivity/wl18xx-conf.bin: -2
+
+Please press Enter to activate this console. [   11.243485] sysrq: HELP : loglevel(0-9) reboot(b) crash(c) terminate-all-tasks(e) memory-full-oom-kill(f) kill-all-tasks(i) thaw-filesystems(j) sak(k) show-backtrace-all-active-cpus(l) show-memory-usage(m) nice-all-RT-tasks(n) poweroff(o) show-registers(p) show-all-timers(q) unraw(r) sync(s) show-task-states(t) unmount(u) show-blocked-tasks(w) replay-kernel-logs(R) 
+
+~ # 
+~ # ???[   13.760549] sysrq: HELP : loglevel(0-9) reboot(b) crash(c) terminate-all-tasks(e) memory-full-oom-kill(f) kill-all-tasks(i) thaw-filesystems(j) sak(k) show-backtrace-all-active-cpus(l) show-memory-usage(m) nice-all-RT-tasks(n) poweroff(o) show-registers(p) show-all-timers(q) unraw(r) sync(s) show-task-states(t) unmount(u) show-blocked-tasks(w) replay-kernel-logs(R) 
+[   48.143069] sysrq: HELP : loglevel(0-9) reboot(b) crash(c) terminate-all-tasks(e) memory-full-oom-kill(f) kill-all-tasks(i) thaw-filesystems(j) sak(k) show-backtrace-all-active-cpus(l) show-memory-usage(m) nice-all-RT-tasks(n) poweroff(o) show-registers(p) show-all-timers(q) unraw(r) sync(s) show-task-states(t) unmount(u) show-blocked-tasks(w) replay-kernel-logs(R) 
+
