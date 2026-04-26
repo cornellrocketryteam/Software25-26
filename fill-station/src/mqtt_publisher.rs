@@ -47,6 +47,7 @@ struct TelemetryPayload {
     latitude: f64,
     longitude: f64,
     num_satellites: u32,
+    #[serde(rename = "timestamp")]
     gps_time: f64,
     mag_x: f64,
     mag_y: f64,
