@@ -50,6 +50,7 @@ type PropulsionContextType = {
     isVentingRef: React.RefObject<boolean>;
     isFillingRef: React.RefObject<boolean>;
     canInteractRef: React.RefObject<interactionType>;
+    fswConnected: boolean;
 }
 
 type AdcDataMessage = {
@@ -112,6 +113,7 @@ export function PropulsionPage() {
     const {wsRef, wsReady, currFlightMode, setCurrFlightMode} = useAppContext(); //The App's websocket refrence
 
     const [fillState, setFillState] = useState<FillState>('INITIAL');
+    const [fswConnected, setFswConnected] = useState(false);
     const [ventSeconds, setVentSeconds] = useState(0);
     const [confirmedVentSeconds, setConfirmedVentSeconds] = useState(0);
     const [thresholdPressure, setThresholdPressure] = useState(600); 
@@ -154,6 +156,7 @@ export function PropulsionPage() {
     const getIgniterContinuity1 = {"command": "get_igniter_continuity", "id": 1}; //Just to log the continuity status of igniter 1 for now, but may want to use this information to update some state and display it on the page or use it for some logic in the future
     const getIgniterContinuity2 = {"command": "get_igniter_continuity", "id": 2}; //Just to log the continuity status of igniter 2 for now, but may want to use this information to update some state and display it on the page or use it for some logic in the future
     const igniteCommand = {"command": "ignite"};
+    const launchCommand = {"command": "fsw_launch"};
 
 
     //Solenoid Valve Commands: Get the information of the valve states on mount (so call in useEffect) so I can set my initial state of the valve buttons to 
@@ -260,7 +263,8 @@ export function PropulsionPage() {
             "Ball Valve": "BV",
             "Igniter": "Igniter",
             "MAV": "MAV",
-            "Quick Disconnect": "QD"
+            "Quick Disconnect": "QD",
+            "LAUNCH": "LAUNCH"
         }
 
         const valveIdentifier = commandMap[ValveName]; //<= This will map the button name to the corresponding valve identifier used in the command
@@ -343,17 +347,21 @@ export function PropulsionPage() {
             case "Igniter":
                 if (valveDataRef.current.IG1.continuity && valveDataRef.current.IG2.continuity) {
                     sendCommandWithDelay(igniteCommand, buttondelay);
-                    console.log("Ignite command sent — continuity confirmed on both igniters");
                 } else {
                     const missingContinuity = [
                         !valveDataRef.current.IG1.continuity && "IG1",
                         !valveDataRef.current.IG2.continuity && "IG2"
                     ].filter(Boolean).join(", ");
                     console.warn(`Ignite command blocked — no continuity on: ${missingContinuity}`);
-                    // TODO: surface this to the UI so the operator is clearly notified
                 }
                 break;
-        
+
+            case "LAUNCH":
+                // Send FSW launch signal first, then fire igniters immediately after
+                sendCommandWithDelay(launchCommand, buttondelay);
+                sendCommandWithDelay(igniteCommand, buttondelay + 50);
+                break;
+
             default:
                 console.error("Unknown valve identifier:", valveIdentifier);
         }
@@ -376,8 +384,9 @@ export function PropulsionPage() {
                 break;
     
             case "fsw_telemetry":
-                if(umbilicalDataRef.current.length > 500) { //Limit the size of the ADC data array to prevent memory issues, adjust as needed based on how much data you want to keep track of
-                    umbilicalDataRef.current.shift(); //Remove the oldest entry when we exceed the limit
+                setFswConnected(data.connected);
+                if(umbilicalDataRef.current.length > 500) {
+                    umbilicalDataRef.current.shift();
                 }
                 
 
@@ -525,7 +534,7 @@ export function PropulsionPage() {
         }, [wsReady]); // Re-run effect if WebSocket connection status changes
                  
         return (
-            <PropulsionContext.Provider value={{confirmedVentSecondsRef, canInteractRef, buttonInteractionState, setButtonInteractionState, valveDataRef, fillUIActive, setFillUIActive, ventUIActive, setVentUIActive, isVentingRef, isFillingRef, manualVentRef, handleButtonClickRef, fillState, setFillState, thresholdPressure, setThresholdPressure, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, valveData, adcDataRef: adcDataRef, telemetryDataRef: umbilicalDataRef}}>
+            <PropulsionContext.Provider value={{confirmedVentSecondsRef, canInteractRef, buttonInteractionState, setButtonInteractionState, valveDataRef, fillUIActive, setFillUIActive, ventUIActive, setVentUIActive, isVentingRef, isFillingRef, manualVentRef, handleButtonClickRef, fillState, setFillState, thresholdPressure, setThresholdPressure, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, valveData, adcDataRef: adcDataRef, telemetryDataRef: umbilicalDataRef, fswConnected}}>
                 <div className={`min-h-screen bg-white ${ventUIActive ? 'cursor-wait' : ''}`}>
                     {/* Header */}       
                 <Header 

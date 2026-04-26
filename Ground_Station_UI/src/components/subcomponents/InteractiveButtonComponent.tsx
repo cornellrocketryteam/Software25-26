@@ -45,12 +45,9 @@ export default function InteractiveButtonComponent() {
         <div className="flex flex-col gap-2 min-w-0 w-full">
             {openLabel === closeLabel ? ( // Special case for buttons like "Igniter" and "Launch" where both states have the same label
               <button
-                onClick={() => { //This is just a one time button click
-                  if(buttonName === "Igniter"){
-                    toggleAction('IGNITE'); // For igniter, we can still use OPEN/CLOSE as the action identifiers even though the labels are the same
-                  } else if (buttonName === "LAUNCH"){
-                    //run action for launch, which will be updated
-                    console.log("LAUNCH BUTTON PRESSED - RUN LAUNCH SEQUENCE ACTION HERE");
+                onClick={() => {
+                  if(buttonName === "Igniter" || buttonName === "LAUNCH"){
+                    toggleAction('IGNITE');
                   }
                 }}
                 className="bg-[#555555] border-[6px] border-black rounded-2xl w-full py-3 font-inter font-bold text-2xl text-white"
