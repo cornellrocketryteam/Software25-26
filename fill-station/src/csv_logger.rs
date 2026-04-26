@@ -140,7 +140,7 @@ QD_Enabled,QD_Direction\n";
                 line.push_str(&format!(
                     "true,{},{:.2},{:.2},{:.2},{:.6},{:.6},{},{:.3},{:.2},{:.2},{:.2},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.2},{:.2},{:.2},{},{}",
                     t.flight_mode, t.pressure, t.temp, t.altitude,
-                    t.latitude, t.longitude, t.num_satellites, t.timestamp,
+                    t.latitude, t.longitude, t.num_satellites, t.gps_time,
                     t.mag_x, t.mag_y, t.mag_z,
                     t.accel_x, t.accel_y, t.accel_z,
                     t.gyro_x, t.gyro_y, t.gyro_z,

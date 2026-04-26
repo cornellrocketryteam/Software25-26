@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Number of comma-separated fields in a `$TELEM,` line, matching the FSW
 /// emitter in `fsw/src/umbilical.rs`. Must be kept in sync on both sides.
-pub const TELEM_FIELD_COUNT: usize = 56;
+pub const TELEM_FIELD_COUNT: usize = 57;
 
 /// FSW telemetry packet parsed from CSV text lines.
 /// The FSW emits lines like: `$TELEM,0,101325.0,25.0,0.0,...,0,0\n`
@@ -16,7 +16,7 @@ pub struct FswTelemetry {
     pub latitude: f32,       // degrees
     pub longitude: f32,      // degrees
     pub num_satellites: u32,
-    pub timestamp: f32,      // s
+    pub gps_time: f32,        // s since midnight UTC
     pub mag_x: f32,          // uT
     pub mag_y: f32,
     pub mag_z: f32,
@@ -71,6 +71,8 @@ pub struct FswTelemetry {
     pub blims_target_lat: f32,
     pub blims_target_lon: f32,
     pub blims_wind_from_deg: f32,
+    // CFC boot time
+    pub ms_since_boot_cfc: u32,
 }
 
 impl FswTelemetry {
@@ -88,7 +90,7 @@ impl FswTelemetry {
             latitude:       fields[4].trim().parse().ok()?,
             longitude:      fields[5].trim().parse().ok()?,
             num_satellites: fields[6].trim().parse().ok()?,
-            timestamp:      fields[7].trim().parse().ok()?,
+            gps_time:       fields[7].trim().parse().ok()?,
             mag_x:          fields[8].trim().parse().ok()?,
             mag_y:          fields[9].trim().parse().ok()?,
             mag_z:          fields[10].trim().parse().ok()?,
@@ -137,6 +139,7 @@ impl FswTelemetry {
             blims_target_lat:       fields[53].trim().parse().ok()?,
             blims_target_lon:       fields[54].trim().parse().ok()?,
             blims_wind_from_deg:    fields[55].trim().parse().ok()?,
+            ms_since_boot_cfc:      fields[56].trim().parse().ok()?,
         })
     }
 

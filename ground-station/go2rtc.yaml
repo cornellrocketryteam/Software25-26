@@ -1,0 +1,10 @@
+streams:
+  fillcam0: 
+    - rtsp://admin:Rocketry2526@192.168.8.206/Preview_01_main
+    - "ffmpeg:fillcam0#video=copy#audio=opus"
+  fillcam1: 
+    - rtsp://admin:Rocketry2526@192.168.8.137/Preview_01_main
+    - "ffmpeg:fillcam1#video=copy#audio=opus"
+  fillcam2: 
+    - rtsp://admin:Rocketry2526@192.168.8.185/Preview_01_main
+    - "ffmpeg:fillcam2#video=copy#audio=opus"
