@@ -25,6 +25,8 @@ SELECT
     payload.rtd as rtd,
     payload.sv_2_open as sv_2_open,
     payload.mav_open as mav_open,
+    payload.ms_since_boot_cfc as ms_since_boot_cfc,
+    payload.ms_since_boot_fill as ms_since_boot_fill,
 
     -- Event Flags
     payload.ssa_drogue_deployed as ssa_drogue_deployed,

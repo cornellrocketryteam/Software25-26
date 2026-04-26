@@ -29,6 +29,8 @@ CREATE TABLE telemetry_data (
     rtd DOUBLE PRECISION,              -- f32 (ADC Ch 1)
     sv_2_open BOOLEAN,                   -- bool (Valve State)
     mav_open BOOLEAN,                  -- bool (Valve State)
+    ms_since_boot_cfc BIGINT,          -- u32
+    ms_since_boot_fill BIGINT,         -- u32
 
     -- Event Flags
     ssa_drogue_deployed SMALLINT,      -- u8
