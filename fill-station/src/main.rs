@@ -605,6 +605,20 @@ async fn execute_command(
                 Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
             }
         }
+        Command::FswTriggerDrogue => {
+            info!("Sending FSW Trigger Drogue command via umbilical");
+            match umb_cmd_tx.try_send("<D>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswTriggerMain => {
+            info!("Sending FSW Trigger Main command via umbilical");
+            match umb_cmd_tx.try_send("<d>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
         Command::FswOpenMav => {
             info!("Sending FSW Open MAV command via umbilical");
             match umb_cmd_tx.try_send("<M>".into()) {

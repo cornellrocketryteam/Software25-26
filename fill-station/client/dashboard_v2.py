@@ -596,5 +596,9 @@ if row3[2].button("Key Arm", use_container_width=True):
     client.send_command({"command": "fsw_key_arm"})
 if row3[3].button("Key Disarm", use_container_width=True):
     client.send_command({"command": "fsw_key_disarm"})
+if row3[4].button("⚠ Trigger Drogue", use_container_width=True):
+    client.send_command({"command": "fsw_trigger_drogue"})
+if row3[5].button("⚠ Trigger Main", use_container_width=True):
+    client.send_command({"command": "fsw_trigger_main"})
 
 st.rerun()
