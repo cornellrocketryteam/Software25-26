@@ -51,6 +51,7 @@ TELEM_FIELDS = [
     "blims_heading_error", "blims_error_integral",
     "blims_dist_to_target_m",
     "blims_target_lat", "blims_target_lon", "blims_wind_from_deg",
+    "ms_since_boot_cfc",
 ]
 
 MODE_NAMES = {
@@ -72,12 +73,17 @@ COMMANDS = {
     "W": ("<W>", "Wipe Flash"),
     "I": ("<I>", "Flash Info"),
     "X": ("<X>", "Wipe FRAM + Reboot"),
-    "K": ("<K>", "Key Arm"),
-    "k": ("<k>", "Key Disarm"),
+    "K": ("<KA>", "Key Arm"),
+    "k": ("<KD>", "Key Disarm"),
     "1": ("<1>", "Payload N1"),
     "2": ("<2>", "Payload N2"),
     "3": ("<3>", "Payload N3"),
     "4": ("<4>", "Payload N4"),
+    "5": ("<A1>", "Payload A1"),
+    "6": ("<A2>", "Payload A2"),
+    "7": ("<A3>", "Payload A3"),
+    "D": ("<D>", "Trigger Drogue"),
+    "d": ("<d>", "Trigger Main"),
 }
 
 # Special hotkeys that prompt for input rather than sending a fixed token.
@@ -233,7 +239,7 @@ def draw(stdscr, state, port_name):
         sv = "OPEN" if telem["sv_open"] else "closed"
         mav = "OPEN" if telem["mav_open"] else "closed"
         lines = [
-            f"mode={mode:<14}  alt={telem['altitude']:>8.2f} m   pres={telem['pressure']:>9.1f} Pa   temp={telem['temp']:>6.2f} C",
+            f"mode={mode:<14}  alt={telem['altitude']:>8.2f} m   pres={telem['pressure']:>9.1f} Pa   temp={telem['temp']:>6.2f} C   ms_boot={telem['ms_since_boot_cfc']}",
             f"lat={telem['latitude']:>10.5f}  lon={telem['longitude']:>10.5f}  sats={telem['num_satellites']:<3}  fix={telem['fix_type']}",
             f"accel=({telem['accel_x']:>6.2f},{telem['accel_y']:>6.2f},{telem['accel_z']:>6.2f})  gyro=({telem['gyro_x']:>6.1f},{telem['gyro_y']:>6.1f},{telem['gyro_z']:>6.1f})",
             f"pt3={telem['pt3']:>7.1f}  pt4={telem['pt4']:>7.1f}  rtd={telem['rtd']:>7.1f}   SV={sv:<6}  MAV={mav:<6}",
