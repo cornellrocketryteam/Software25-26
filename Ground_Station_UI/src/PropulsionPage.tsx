@@ -159,14 +159,14 @@ export function PropulsionPage() {
     //Solenoid Valve Commands: Get the information of the valve states on mount (so call in useEffect) so I can set my initial state of the valve buttons to 
     //match the actual state of the valves, and then also use these commands to get updated valve states after sending any command that would change the valve states.
     const getSVstate1 = {"command": "get_valve_state", "valve": "SV1"};
-    const getSVstate2 = {"command": "get_valve_state", "valve": "SV2"};
+    // = {"command": "get_valve_state", "valve": "SV2"};
     const actuateSV1Open = {"command": "actuate_valve", "valve": "SV1", "open": true};
-    const actuateSV2Open = {"command": "actuate_valve", "valve": "SV2", "open": true};
     const actuateSV1Close = {"command": "actuate_valve", "valve": "SV1", "open": false};
-    const actuateSV2Close = {"command": "actuate_valve", "valve": "SV2", "open": false};
+    //const actuateSV2Open = {"command": "actuate_valve", "valve": "SV2", "open": true};
+    //const actuateSV2Close = {"command": "actuate_valve", "valve": "SV2", "open": false};
 
-    //const actuateSV2Open = {"command": "fsw_open_sv"};
-    //const actuateSV2Close = {"command": "fsw_close_sv"};
+    const actuateSV2Open = {"command": "fsw_open_sv"};
+    const actuateSV2Close = {"command": "fsw_close_sv"};
 
 
 
@@ -284,7 +284,7 @@ export function PropulsionPage() {
                     sendCommandWithDelay(actuateSV2Open, buttondelay);
                 }
 
-                sendCommandWithDelay(getSVstate2, buttondelay + 50); // Query the state of SV1 after sending the command to update our state with the response from the server
+                //sendCommandWithDelay(getSVstate2, buttondelay + 50); // Query the state of SV1 after sending the command to update our state with the response from the server
                 console.log(`Toggling Solenoid Valve 2 to ${!valveDataRef.current.SV2.actuated ? 'OPEN' : 'CLOSED'}`);
                 break;
         
@@ -403,6 +403,13 @@ export function PropulsionPage() {
                         MAV: { "actuated": data.telemetry.mav_open, "angle": 0, "pulseWidth": 0 }
                     }));
                 }
+                if (data.telemetry && data.telemetry.sv_open !== undefined) {
+                    updateValveData(prevState => ({
+                        ...prevState, //Spread the previous state to keep other valves' data unchanged
+                        SV2: { "actuated": data.telemetry.sv_open, "venting": data.telemetry.sv_open, "continuity": data.continuity }
+                        //Adjust as needed based on actual response data and what information we want to track
+                    }));
+                }
                 break;
     
             case "igniter_continuity":
@@ -429,22 +436,6 @@ export function PropulsionPage() {
                     updateValveData(prevState => ({
                         ...prevState, //Spread the previous state to keep other valves' data unchanged
                         SV1: { "actuated": data.actuated, "continuity": data.continuity }
-                        //Adjust as needed based on actual response data and what information we want to track
-                    }));
-                }
-                else if (pendingActionRef.current === "SV2") {
-                    updateValveData(prevState => ({
-                        ...prevState, //Spread the previous state to keep other valves' data unchanged
-                        SV2: { "actuated": data.actuated, "venting": data.actuated, "continuity": data.continuity }
-                        //Adjust as needed based on actual response data and what information we want to track
-                    }));
-                }
-                break;
-            case "mav_state": //We get from telemetry so this is useless 
-                if (pendingActionRef.current === "MAV") {
-                    updateValveData(prevState => ({
-                        ...prevState, //Spread the previous state to keep other valves' data unchanged
-                        MAV: { "actuated": data.angle > 45, "angle": data.angle, "pulseWidth": data.pulse_width }
                         //Adjust as needed based on actual response data and what information we want to track
                     }));
                 }
@@ -477,15 +468,15 @@ export function PropulsionPage() {
         
             const onOpen = () => {
                 sendCommandWithDelay(getSVstate1, 0);
-                sendCommandWithDelay(getSVstate2, 50);
+                //sendCommandWithDelay(getSVstate2, 50);
                 sendCommandWithDelay(getIgniterContinuity1, 50);
                 sendCommandWithDelay(getIgniterContinuity2, 50);
                 sendCommandWithDelay(heartbeatCommand, 50);
-                sendCommandWithDelay(getSVstate2, 150);
+                //sendCommandWithDelay(getSVstate2, 150);
                 sendCommandWithDelay(() => {
                     if (!valveDataRef.current.SV2.actuated) {
                         wsRef.current?.send(JSON.stringify(actuateSV2Open));
-                        sendCommandWithDelay(getSVstate2, 50);
+                        //sendCommandWithDelay(getSVstate2, 50);
                     }
                     if (valveDataRef.current.MAV.actuated) {
                         wsRef.current?.send(JSON.stringify(actuateMavClose));
@@ -504,7 +495,7 @@ export function PropulsionPage() {
                 pollingInterval = setInterval(() => {
                     if (wsRef.current?.readyState === WebSocket.OPEN) {
                         sendCommandWithDelay(getSVstate1, 0);
-                        sendCommandWithDelay(getSVstate2, 50);
+                        //sendCommandWithDelay(getSVstate2, 50);
                         sendCommandWithDelay(getIgniterContinuity1, 150);
                         sendCommandWithDelay(getIgniterContinuity2, 200);
                     }
