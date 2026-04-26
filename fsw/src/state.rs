@@ -340,6 +340,9 @@ impl FlightState {
     pub async fn read_sensors(&mut self) {
         self.update_actuators().await;
 
+        // Monotonic timestamp: ms since CFC boot
+        self.packet.ms_since_boot_cfc = embassy_time::Instant::now().as_millis() as u32;
+
         // Update packet flight mode
         self.packet.flight_mode = self.flight_mode as u32;
 

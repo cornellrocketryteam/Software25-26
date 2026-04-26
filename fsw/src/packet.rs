@@ -81,13 +81,15 @@ pub struct Packet {
     pub blims_target_lat: f32,
     pub blims_target_lon: f32,
     pub blims_wind_from_deg: f32,
+    // monotonic clock: milliseconds since CFC boot (resets to 0 on reboot)
+    pub ms_since_boot_cfc: u32,
 }
 
 impl Packet {
     // 149 GPS fields + 4(motor_pos) + 1(phase_id) + 4(pid_p) + 4(pid_i) + 4(bearing)
     //               + 1(loiter_step) + 4(heading_des) + 4(heading_error) + 4(error_integral)
     //               + 4(dist_to_target) + 4(target_lat) + 4(target_lon) + 4(wind_from_deg) = 195
-    pub const SIZE: usize = 195;
+    pub const SIZE: usize = 199;
 
     pub fn to_bytes(&self) -> [u8; Self::SIZE] {
         let mut data = [0u8; Self::SIZE];
@@ -147,6 +149,7 @@ impl Packet {
         data[183..187].copy_from_slice(&self.blims_target_lat.to_le_bytes());
         data[187..191].copy_from_slice(&self.blims_target_lon.to_le_bytes());
         data[191..195].copy_from_slice(&self.blims_wind_from_deg.to_le_bytes());
+        data[195..199].copy_from_slice(&self.ms_since_boot_cfc.to_le_bytes());
         data
     }
 
@@ -212,17 +215,18 @@ impl Packet {
             blims_target_lat:       f32::from_le_bytes(bytes[183..187].try_into().unwrap()),
             blims_target_lon:       f32::from_le_bytes(bytes[187..191].try_into().unwrap()),
             blims_wind_from_deg:    f32::from_le_bytes(bytes[191..195].try_into().unwrap()),
+            ms_since_boot_cfc:      u32::from_le_bytes(bytes[195..199].try_into().unwrap()),
         }
     }
 
-    pub const CSV_HEADER: &'static str = "flight_mode,pressure,temp,altitude,latitude,longitude,num_satellites,timestamp,mag_x,mag_y,mag_z,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,pt3,pt4,rtd,sv_open,mav_open,ssa_drogue_deployed,ssa_main_deployed,cmd_n1,cmd_n2,cmd_n3,cmd_n4,cmd_a1,cmd_a2,cmd_a3,airbrake_state,predicted_apogee,h_acc,v_acc,vel_n,vel_e,vel_d,g_speed,s_acc,head_acc,fix_type,head_mot,blims_motor_position,blims_phase_id,blims_pid_p,blims_pid_i,blims_bearing,blims_loiter_step,blims_heading_des,blims_heading_error,blims_error_integral,blims_dist_to_target_m,blims_target_lat,blims_target_lon,blims_wind_from_deg\n";
+    pub const CSV_HEADER: &'static str = "flight_mode,pressure,temp,altitude,latitude,longitude,num_satellites,timestamp,mag_x,mag_y,mag_z,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,pt3,pt4,rtd,sv_open,mav_open,ssa_drogue_deployed,ssa_main_deployed,cmd_n1,cmd_n2,cmd_n3,cmd_n4,cmd_a1,cmd_a2,cmd_a3,airbrake_state,predicted_apogee,h_acc,v_acc,vel_n,vel_e,vel_d,g_speed,s_acc,head_acc,fix_type,head_mot,blims_motor_position,blims_phase_id,blims_pid_p,blims_pid_i,blims_bearing,blims_loiter_step,blims_heading_des,blims_heading_error,blims_error_integral,blims_dist_to_target_m,blims_target_lat,blims_target_lon,blims_wind_from_deg,ms_since_boot_cfc\n";
 
     pub fn to_csv(&self, buf: &mut [u8]) -> usize {
         use core::fmt::Write;
         let mut wrapper = WriteWrapper::new(buf);
         let _ = write!(
             wrapper,
-            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
             self.flight_mode,
             self.pressure,
             self.temp,
@@ -279,6 +283,7 @@ impl Packet {
             self.blims_target_lat,
             self.blims_target_lon,
             self.blims_wind_from_deg,
+            self.ms_since_boot_cfc,
         );
         wrapper.offset
     }
