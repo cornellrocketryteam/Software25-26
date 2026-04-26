@@ -1,5 +1,6 @@
 SELECT
-    -- Top-Level Radio
+    -- Top-Level Packet Info
+    timestamp as broker_arrival_ms,
     payload.sync_word as sync_word,
 
     -- Shared Telemetry (Rust 'Packet' Struct)
@@ -10,7 +11,7 @@ SELECT
     payload.latitude as latitude,
     payload.longitude as longitude,
     payload.num_satellites as num_satellites,
-    payload.timestamp as timestamp,
+    payload.timestamp as gps_time -- ms since midnight UTC,
     payload.mag_x as mag_x,
     payload.mag_y as mag_y,
     payload.mag_z as mag_z,
@@ -26,7 +27,6 @@ SELECT
     payload.sv_2_open as sv_2_open,
     payload.mav_open as mav_open,
     payload.ms_since_boot_cfc as ms_since_boot_cfc,
-    payload.ms_since_boot_fill as ms_since_boot_fill,
 
     -- Event Flags
     payload.ssa_drogue_deployed as ssa_drogue_deployed,
@@ -80,6 +80,7 @@ SELECT
     payload.load_cell as load_cell,
     payload.ignition as ignition,
     payload.qd_state as qd_state,
+    payload.ms_since_boot_fill as ms_since_boot_fill
 
     -- Unit ID routing (Dynamically grabbed from topic "rats/raw/0")
     int(nth(3, split(topic, '/'))) as unit_id
