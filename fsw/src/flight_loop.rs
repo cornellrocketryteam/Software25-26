@@ -424,6 +424,15 @@ impl FlightLoop {
                     self.set_blims_target(lat, lon);
                     self.blims_target_set = true;
                 }
+                UmbilicalCommand::TriggerDrogue => {
+                    log::warn!("UMBILICAL CMD: Trigger Drogue");
+                    self.flight_state.trigger_drogue().await;
+                }
+                UmbilicalCommand::TriggerMain => {
+                    log::warn!("UMBILICAL CMD: Trigger Main");
+                    self.flight_state.trigger_main().await;
+                }
+
             }
         }
     }
