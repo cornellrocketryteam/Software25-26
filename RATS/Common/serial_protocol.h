@@ -7,7 +7,7 @@
 // RadioPico (UART1 RX) -> StepperPico (UART0 RX)
 // Baud: 115200, 8N1
 
-// Minimal tracking data packet (12 bytes)
+// Minimal tracking data packet (16 bytes)
 // Sent at 20Hz from RadioPico to StepperPico
 struct TrackingData {
     uint32_t flight_mode;    // 4 bytes - Rocket's current flight state
@@ -16,7 +16,7 @@ struct TrackingData {
     float altitude;          // 4 bytes - meters above sea level
 } __attribute__((packed));
 
-// Sync word to detect packet start (16 bytes total: 4 sync + 12 data)
+// Sync word to detect packet start (20 bytes total: 4 sync + 16 data)
 #define TRACKING_SYNC_WORD 0x54524B21  // "TRK!" in ASCII
 
 // Helper functions for conversion
