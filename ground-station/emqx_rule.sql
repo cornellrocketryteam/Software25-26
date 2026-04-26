@@ -11,7 +11,7 @@ SELECT
     payload.latitude as latitude,
     payload.longitude as longitude,
     payload.num_satellites as num_satellites,
-    payload.timestamp as gps_time -- ms since midnight UTC,
+    payload.timestamp as gps_time, -- ms since midnight UTC
     payload.mag_x as mag_x,
     payload.mag_y as mag_y,
     payload.mag_z as mag_z,
@@ -80,7 +80,7 @@ SELECT
     payload.load_cell as load_cell,
     payload.ignition as ignition,
     payload.qd_state as qd_state,
-    payload.ms_since_boot_fill as ms_since_boot_fill
+    payload.ms_since_boot_fill as ms_since_boot_fill,
 
     -- Unit ID routing (Dynamically grabbed from topic "rats/raw/0")
     int(nth(3, split(topic, '/'))) as unit_id
