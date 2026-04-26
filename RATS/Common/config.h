@@ -7,7 +7,7 @@
 // ============================================================================
 
 // --- Wi-Fi & MQTT Configuration ---
-#define WIFI_SSID "CornellRocketry-2.4G" // <-- SET THIS
+#define WIFI_SSID "CornellRocketry-Ground" // <-- SET THIS
 #define WIFI_PASS "Rocketry2526"     // <-- SET THIS
 
 // RATS Unit ID (for MQTT topic)
@@ -15,7 +15,7 @@
 #define RATS_UNIT_ID 1
 
 // MQTT Broker Address (e.g., Mini PC's IP)
-#define MQTT_BROKER_ADDRESS "192.168.1.2" // <-- SET THIS
+#define MQTT_BROKER_ADDRESS "192.168.1.206" // <-- SET THIS
 #define MQTT_BROKER_PORT 1883
 
 // Base topic. The unit ID will be appended.

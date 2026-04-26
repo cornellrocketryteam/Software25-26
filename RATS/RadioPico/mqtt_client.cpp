@@ -72,6 +72,28 @@ void MqttClient::poll() {
     // Required for non-blocking Wi-Fi
     cyw43_arch_poll();
 
+    absolute_time_t now = get_absolute_time();
+    uint32_t current_time_ms = to_ms_since_boot(now);
+    
+    // Onboard LED Debug Sequence
+    static uint32_t last_led_toggle = 0;
+    static bool led_state = false;
+    
+    if (state.connected) {
+        // Solid ON when fully connected and authenticated to MQTT
+        if (!led_state) {
+            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
+            led_state = true;
+        }
+    } else {
+        // Slow blink (500ms) when disconnected or retrying connection
+        if (current_time_ms - last_led_toggle > 500) {
+            led_state = !led_state;
+            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, led_state);
+            last_led_toggle = current_time_ms;
+        }
+    }
+
     // Reconnect if needed
     if (!state.connected && state.remote_ip.addr != 0) {
          absolute_time_t now = get_absolute_time();

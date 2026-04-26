@@ -174,6 +174,10 @@ int main() {
     RFD900xUART::init();
     printf("[Core 0] Ready for packets\n\n");
     
+    // Initialize external LED indicator
+    gpio_init(26);
+    gpio_set_dir(26, GPIO_OUT);
+    
     // Core 0 main loop - FAST I/O ONLY
     // Full Radio Packet buffer
     uint8_t radio_buffer[RADIO_PACKET_SIZE];
@@ -220,6 +224,11 @@ int main() {
                     // Parse (fast operation)
                     if (PacketParser::parseRadioPacket(radio_buffer, sizeof(radio_buffer), parsed_packet)) {
                         packet_count++;
+
+                        // Toggle external LED on GP26 to indicate packet reception
+                        static bool rx_led_state = false;
+                        rx_led_state = !rx_led_state;
+                        gpio_put(26, rx_led_state);
 
                         // Send tracking data to Stepper Pico via UART1
                         InterPicoUART::sendTrackingData(
