@@ -52,7 +52,7 @@
 
 // Buffer sizes
 #define RFD_RX_BUFFER_SIZE 512
-#define RADIO_PACKET_SIZE 199  // Full Radio Packet structure per RATS specification
+#define RADIO_PACKET_SIZE 203  // Full Radio Packet structure per RATS specification
 
 // SD card logging
 #define SD_LOG_BATCH_SIZE 10  // Write every N packets

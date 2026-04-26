@@ -13,8 +13,7 @@ T PacketParser::readValue(const uint8_t* buffer, size_t& offset) {
 }
 
 bool PacketParser::parseRadioPacket(const uint8_t* buffer, size_t length, RadioPacket& packet) {
-    // Full 199-byte Radio Packet
-    if (length < 199) return false;
+    if (length < RADIO_PACKET_SIZE) return false;
 
     // Since both Raspberry Pi Pico (ARM Cortex-M0+) and the Rust packet serialization
     // use little-endian, and the struct is packed, we can directly copy the memory.
@@ -64,7 +63,8 @@ void PacketParser::radioPacketToJSON(const RadioPacket& packet, char* json_buffe
         "\"blims_dist_to_target_m\":%.4f,"
         "\"blims_target_lat\":%.6f,"
         "\"blims_target_lon\":%.6f,"
-        "\"blims_wind_from_deg\":%.4f"
+        "\"blims_wind_from_deg\":%.4f,"
+        "\"ms_since_boot_cfc\":%u"
         "}",
         packet.sync_word,
         packet.flight_mode,
@@ -91,6 +91,7 @@ void PacketParser::radioPacketToJSON(const RadioPacket& packet, char* json_buffe
         packet.blims_heading_des, packet.blims_heading_error,
         packet.blims_error_integral, packet.blims_dist_to_target_m,
         packet.blims_target_lat, packet.blims_target_lon,
-        packet.blims_wind_from_deg
+        packet.blims_wind_from_deg,
+        packet.ms_since_boot_cfc
     );
 }

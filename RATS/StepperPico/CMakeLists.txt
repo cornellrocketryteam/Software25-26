@@ -41,6 +41,7 @@ if (COMMAND pico_sdk_init)
     # Add the current directory (for our fake Arduino.h) and the AccelStepper source folder
     target_include_directories(StepperPico PRIVATE 
         ${CMAKE_CURRENT_LIST_DIR} 
+        ${CMAKE_CURRENT_LIST_DIR}/../Common
         ${CMAKE_CURRENT_LIST_DIR}/AccelStepper-1.64.0/src
     )
 

@@ -175,8 +175,8 @@ int main() {
     printf("[Core 0] Ready for packets\n\n");
     
     // Core 0 main loop - FAST I/O ONLY
-    // Full 199-byte Radio Packet buffer
-    uint8_t radio_buffer[199];
+    // Full Radio Packet buffer
+    uint8_t radio_buffer[RADIO_PACKET_SIZE];
     RadioPacket parsed_packet;
     uint32_t packet_count = 0;
     uint32_t last_stats_time = 0;
@@ -192,8 +192,8 @@ int main() {
             RadioPacket sim_packet;
             simulator.generateRadioPacket(sim_packet);
 
-            // Serialize to bytes (199 bytes full structure)
-            uint8_t tx_buffer[199];
+            // Serialize to bytes
+            uint8_t tx_buffer[RADIO_PACKET_SIZE];
             PacketSimulator::serializeRadioPacket(sim_packet, tx_buffer);
 
             // Transmit over UART0 to RFD900x #1 (or loopback to GP1 via GP0)
