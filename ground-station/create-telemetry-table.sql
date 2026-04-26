@@ -30,7 +30,6 @@ CREATE TABLE telemetry_data (
     sv_2_open BOOLEAN,                   -- bool (Valve State)
     mav_open BOOLEAN,                  -- bool (Valve State)
     ms_since_boot_cfc BIGINT,          -- u32
-    ms_since_boot_fill BIGINT,         -- u32
 
     -- Event Flags
     ssa_drogue_deployed SMALLINT,      -- u8
@@ -83,7 +82,8 @@ CREATE TABLE telemetry_data (
     sv_1_open BOOLEAN,                 -- Solenoid Valve 1
     load_cell DOUBLE PRECISION,        -- Propellant Mass
     ignition BOOLEAN,                  -- Ignition Command
-    qd_state SMALLINT                  -- Quick Disconnect Integer
+    qd_state SMALLINT,                  -- Quick Disconnect Integer
+    ms_since_boot_fill BIGINT         -- u32
 );
 
 SELECT create_hypertable('telemetry_data', 'time');
