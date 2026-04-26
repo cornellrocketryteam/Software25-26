@@ -779,11 +779,10 @@ async fn safety_monitor_task(
 ) {
     let mut disconnect_start: Option<Instant> = None;
     let mut safety_triggered = false;
-    let mut qd_retract_triggered = false;
 
     let mut umb_disconnect_start: Option<Instant> = None;
     let mut umb_safety_triggered = false;
-    let mut umb_qd_retract_triggered = false;
+    let mut umb_ever_connected = false;
 
     loop {
         let count = active_client_count.load(Ordering::SeqCst);
@@ -795,7 +794,6 @@ async fn safety_monitor_task(
                 info!("No active clients. Starting safety timer.");
                 disconnect_start = Some(Instant::now());
                 safety_triggered = false;
-                qd_retract_triggered = false;
             }
 
             if let Some(start) = disconnect_start {
@@ -806,18 +804,6 @@ async fn safety_monitor_task(
                     perform_emergency_shutdown(&hardware, &umb_cmd_tx).await;
                     safety_triggered = true;
                 }
-
-                if !qd_retract_triggered && elapsed > Duration::from_secs(20) {
-                    warn!("SAFETY TIMEOUT (20s) - Retracting QD");
-                    {
-                        use crate::components::qd_stepper::{QD_RETRACT_STEPS, QD_RETRACT_DIRECTION};
-                        let hw = hardware.lock().await;
-                        if let Err(e) = hw.qd_stepper.move_steps(QD_RETRACT_STEPS, QD_RETRACT_DIRECTION).await {
-                            error!("QD retract during safety timeout failed: {}", e);
-                        }
-                    }
-                    qd_retract_triggered = true;
-                }
             }
         } else {
             // Client(s) connected
@@ -825,7 +811,6 @@ async fn safety_monitor_task(
                 info!("Client connected. Safety timer cancelled.");
                 disconnect_start = None;
                 safety_triggered = false;
-                qd_retract_triggered = false;
             }
         }
 
@@ -840,12 +825,15 @@ async fn safety_monitor_task(
             umb.connected = fresh;
             fresh
         };
-        if !umb_connected {
+        if umb_connected {
+            umb_ever_connected = true;
+        }
+
+        if !umb_connected && umb_ever_connected {
             if umb_disconnect_start.is_none() {
                 info!("Umbilical disconnected. Starting umbilical safety timer.");
                 umb_disconnect_start = Some(Instant::now());
                 umb_safety_triggered = false;
-                umb_qd_retract_triggered = false;
             }
 
             if let Some(start) = umb_disconnect_start {
@@ -871,25 +859,12 @@ async fn safety_monitor_task(
                     }
                     umb_safety_triggered = true;
                 }
-
-                if !umb_qd_retract_triggered && elapsed > Duration::from_secs(20) {
-                    warn!("UMBILICAL SAFETY TIMEOUT (20s) - Retracting QD");
-                    {
-                        use crate::components::qd_stepper::{QD_RETRACT_STEPS, QD_RETRACT_DIRECTION};
-                        let hw = hardware.lock().await;
-                        if let Err(e) = hw.qd_stepper.move_steps(QD_RETRACT_STEPS, QD_RETRACT_DIRECTION).await {
-                            error!("QD retract during umbilical safety timeout failed: {}", e);
-                        }
-                    }
-                    umb_qd_retract_triggered = true;
-                }
             }
         } else {
             if umb_disconnect_start.is_some() {
                 info!("Umbilical reconnected. Umbilical safety timer cancelled.");
                 umb_disconnect_start = None;
                 umb_safety_triggered = false;
-                umb_qd_retract_triggered = false;
             }
         }
 

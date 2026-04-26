@@ -2,7 +2,7 @@ use rumqttc::{Client, MqttOptions, QoS};
 use serde::Serialize;
 use smol::Timer;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use smol::lock::Mutex;
 use tracing::{info, warn, error, debug};
 
@@ -47,7 +47,7 @@ struct TelemetryPayload {
     latitude: f64,
     longitude: f64,
     num_satellites: u32,
-    timestamp: f64,
+    gps_time: f64,
     mag_x: f64,
     mag_y: f64,
     mag_z: f64,
@@ -62,6 +62,7 @@ struct TelemetryPayload {
     rtd: f64,
     sv_2_open: bool,
     mav_open: bool,
+    ms_since_boot_cfc: u32,
 
     // Event flags
     ssa_drogue_deployed: u8,
@@ -115,6 +116,7 @@ struct TelemetryPayload {
     load_cell: f64,
     ignition: bool,
     qd_state: i16,
+    ms_since_boot_fill: u64,
 }
 
 // ============================================================================
@@ -155,10 +157,12 @@ pub async fn start_mqtt_publisher(
 
     info!("MQTT event loop started on background thread");
 
+    let boot_time = Instant::now();
     let interval = Duration::from_millis(1000 / PUBLISH_RATE_HZ);
 
     loop {
-        let start = std::time::Instant::now();
+        let start = Instant::now();
+        let ms_since_boot_fill = boot_time.elapsed().as_millis() as u64;
 
         // 1. Gather ADC data
         let (pt_1_pressure, pt_2_pressure, load_cell) = {
@@ -210,7 +214,7 @@ pub async fn start_mqtt_publisher(
                 latitude: telemetry.latitude as f64,
                 longitude: telemetry.longitude as f64,
                 num_satellites: telemetry.num_satellites,
-                timestamp: telemetry.timestamp as f64,
+                gps_time: telemetry.gps_time as f64,
                 mag_x: telemetry.mag_x as f64,
                 mag_y: telemetry.mag_y as f64,
                 mag_z: telemetry.mag_z as f64,
@@ -225,6 +229,7 @@ pub async fn start_mqtt_publisher(
                 rtd: telemetry.rtd as f64,
                 sv_2_open: telemetry.sv_open,
                 mav_open: telemetry.mav_open,
+                ms_since_boot_cfc: telemetry.ms_since_boot_cfc,
                 ssa_drogue_deployed: telemetry.ssa_drogue_deployed,
                 ssa_main_deployed: telemetry.ssa_main_deployed,
                 cmd_n1: telemetry.cmd_n1,
@@ -266,6 +271,7 @@ pub async fn start_mqtt_publisher(
                 load_cell,
                 ignition,
                 qd_state,
+                ms_since_boot_fill,
             }
         } else {
             // FSW not connected — still publish fill station data with zeroed FSW fields
@@ -278,7 +284,7 @@ pub async fn start_mqtt_publisher(
                 latitude: 0.0,
                 longitude: 0.0,
                 num_satellites: 0,
-                timestamp: 0.0,
+                gps_time: 0.0,
                 mag_x: 0.0,
                 mag_y: 0.0,
                 mag_z: 0.0,
@@ -293,6 +299,7 @@ pub async fn start_mqtt_publisher(
                 rtd: 0.0,
                 sv_2_open: false,
                 mav_open: false,
+                ms_since_boot_cfc: 0,
                 ssa_drogue_deployed: 0,
                 ssa_main_deployed: 0,
                 cmd_n1: 0,
@@ -334,6 +341,7 @@ pub async fn start_mqtt_publisher(
                 load_cell,
                 ignition,
                 qd_state,
+                ms_since_boot_fill,
             }
         };
 
