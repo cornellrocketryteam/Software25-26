@@ -41,7 +41,7 @@ time_step = 0.0
 try:
     while True:
         # Simulate gradual pressurization, filling, and movement
-        time_step += 0.1
+        time_step += 0.05
         fill_progress = (fill_progress + 0.5) % 150.0  # Loops 0 to 50kg
         
         # Calculate seconds since midnight UTC (simulating MAX-M10S Time of Day)
