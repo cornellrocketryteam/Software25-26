@@ -333,11 +333,11 @@ impl FlightLoop {
                     self.sv_open = false;
                 }
                 UmbilicalCommand::Safe => {
-                    log::warn!("UMBILICAL CMD: Safe — closing all actuators");
+                    log::warn!("UMBILICAL CMD: Safe — closing MAV, opening SV to vent");
                     self.flight_state.close_mav().await;
-                    self.flight_state.close_sv().await;
+                    self.flight_state.open_sv(0).await;
                     self.mav_open = false;
-                    self.sv_open = false;
+                    self.sv_open = true;
                     self.mav_open_time = None;
                 }
                 UmbilicalCommand::ResetFram => {
