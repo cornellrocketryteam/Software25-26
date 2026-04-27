@@ -524,9 +524,7 @@ pub async fn simulate_real_flight(flight_loop: &mut FlightLoop) {
     log::info!("Insert Key Switch and type <L> in Serial Monitor to Launch.");
 
     let mut alt_index = 0;
-
-    #[cfg(debug_assertions)]
-    let mut debug_standby_cycles = 0u32;
+    let mut sim_standby_cycles = 0u32;
 
     loop {
         // Stage altitude override before execute() so transitions see it.
@@ -553,25 +551,23 @@ pub async fn simulate_real_flight(flight_loop: &mut FlightLoop) {
             flight_loop.sim_altitude_override = Some(0.0);
         }
 
-        // Debug-build overrides: no physical key/umbilical on a probe.
-        #[cfg(debug_assertions)]
-        {
-            flight_loop.flight_state.key_armed = true;
-            if matches!(
-                flight_loop.flight_state.flight_mode,
-                FlightMode::Startup | FlightMode::Standby
-            ) {
-                flight_loop.flight_state.umbilical_connected = true;
-                Timer::after_millis(2000).await;
-            } else {
-                flight_loop.flight_state.umbilical_connected = false;
-            }
-            if flight_loop.flight_state.flight_mode == FlightMode::Standby {
-                debug_standby_cycles += 1;
-                if debug_standby_cycles == 5 {
-                    log::info!("[SIM DEBUG] Auto-injecting Launch Command...");
-                    flight_loop.set_launch_command(true);
-                }
+        // sim_real_flight always auto-arms key and umbilical so the sim
+        // runs end-to-end without physical hardware intervention regardless
+        // of debug vs release build.
+        flight_loop.flight_state.key_armed = true;
+        if matches!(
+            flight_loop.flight_state.flight_mode,
+            FlightMode::Startup | FlightMode::Standby
+        ) {
+            flight_loop.flight_state.umbilical_connected = true;
+        } else {
+            flight_loop.flight_state.umbilical_connected = false;
+        }
+        if flight_loop.flight_state.flight_mode == FlightMode::Standby {
+            sim_standby_cycles += 1;
+            if sim_standby_cycles == 3 {
+                log::info!("[SIM] Auto-injecting Launch Command...");
+                flight_loop.set_launch_command(true);
             }
         }
 
