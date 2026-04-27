@@ -192,6 +192,11 @@ impl FlightState {
             }
         }
 
+        // The snapshot ring is written at 1 Hz and captures flight_mode more
+        // recently than the full packet write. Always trust it over the packet's
+        // own flight_mode field so the two sources stay consistent.
+        packet.flight_mode = stored_mode as u32;
+
         log::info!("STATE: Initializing altimeter (BMP390)...");
         let altimeter = match with_timeout(init_to, Bmp390Sensor::new(spi_bus, altimeter_cs)).await {
             Ok(s) => s,
