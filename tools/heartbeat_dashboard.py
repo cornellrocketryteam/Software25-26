@@ -244,6 +244,7 @@ def draw(stdscr, state, port_name):
             f"accel=({telem['accel_x']:>6.2f},{telem['accel_y']:>6.2f},{telem['accel_z']:>6.2f})  gyro=({telem['gyro_x']:>6.1f},{telem['gyro_y']:>6.1f},{telem['gyro_z']:>6.1f})",
             f"pt3={telem['pt3']:>7.1f}  pt4={telem['pt4']:>7.1f}  rtd={telem['rtd']:>7.1f}   SV={sv:<6}  MAV={mav:<6}",
             f"airbrake={telem['airbrake_state']}  predicted_apogee={telem['predicted_apogee']:.1f} m   drogue={telem['ssa_drogue_deployed']} main={telem['ssa_main_deployed']}",
+            f"blims_target=({telem['blims_target_lat']:.6f}, {telem['blims_target_lon']:.6f})",
         ]
         for line in lines:
             safe_addstr(stdscr, row, 2, line)
