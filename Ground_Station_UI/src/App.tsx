@@ -11,7 +11,7 @@ type AppContextType = {
   uri: string;
   wsReady: boolean;
 }
-export type FlightMode = "....."| 'STANDBY';
+export type FlightMode = "....." | 'STANDBY';
 
 export const AppContext = createContext<AppContextType | null>(null);
 
@@ -25,56 +25,56 @@ export const useAppContext = () => {
 
 function App() {
   const wsRef = useRef<WebSocket | null>(null);
-  const uri = "ws://localhost:9000";
+  const uri = "ws://192.168.1.111:9000";
   const [wsReady, setWsReady] = useState(false);
   const [currFlightMode, setCurrFlightMode] = useState<FlightMode>('.....');
 
   const handleMessage = (event: MessageEvent) => {
     //Parse JSON data here
     const data = JSON.parse(event.data);
-    if(data.type === "fsw_telemetry"){
+    if (data.type === "fsw_telemetry") {
       setCurrFlightMode(data.flight_mode as FlightMode);
     }
   }
-  
+
   useEffect(() => {
-        let reconnectTimeout: ReturnType<typeof setTimeout>;
+    let reconnectTimeout: ReturnType<typeof setTimeout>;
 
-        const connect = () => {
-          wsRef.current = new WebSocket(uri);
+    const connect = () => {
+      wsRef.current = new WebSocket(uri);
 
-          wsRef.current.onopen = () => {
-                console.log("WebSocket connection established.");
-                setWsReady(true);
-            };
+      wsRef.current.onopen = () => {
+        console.log("WebSocket connection established.");
+        setWsReady(true);
+      };
 
-            wsRef.current.onclose = () => {
-                console.log("WebSocket closed. Reconnecting in 3 seconds...");
-                setWsReady(false);
-                reconnectTimeout = setTimeout(connect, 3000);
-            };
+      wsRef.current.onclose = () => {
+        console.log("WebSocket closed. Reconnecting in 3 seconds...");
+        setWsReady(false);
+        reconnectTimeout = setTimeout(connect, 3000);
+      };
 
-            wsRef.current.onerror = (error) => {
-                console.error("WebSocket error:", error);
-                wsRef.current?.close();
-            };
-            wsRef.current.addEventListener('message', handleMessage); 
-        };
+      wsRef.current.onerror = (error) => {
+        console.error("WebSocket error:", error);
+        wsRef.current?.close();
+      };
+      wsRef.current.addEventListener('message', handleMessage);
+    };
 
-        connect();
+    connect();
 
-        return () => {
-            clearTimeout(reconnectTimeout);
-            if (wsRef.current) {
-              wsRef.current.removeEventListener('message', handleMessage);
-              wsRef.current.onclose = null;
-              wsRef.current.onerror = null;
-              wsRef.current.close();
-            }
-        };
-    }, []);
+    return () => {
+      clearTimeout(reconnectTimeout);
+      if (wsRef.current) {
+        wsRef.current.removeEventListener('message', handleMessage);
+        wsRef.current.onclose = null;
+        wsRef.current.onerror = null;
+        wsRef.current.close();
+      }
+    };
+  }, []);
   return (
-    <AppContext.Provider value={{ setCurrFlightMode, currFlightMode, wsRef, uri: uri, wsReady}}>
+    <AppContext.Provider value={{ setCurrFlightMode, currFlightMode, wsRef, uri: uri, wsReady }}>
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<LandingPage />} />

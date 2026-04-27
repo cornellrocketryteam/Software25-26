@@ -110,6 +110,12 @@ pub enum Command {
     FswPayloadN3,
     /// Trigger payload event N4 on FSW
     FswPayloadN4,
+    /// Trigger payload event A1 on FSW
+    FswPayloadA1,
+    /// Trigger payload event A2 on FSW
+    FswPayloadA2,
+    /// Trigger payload event A3 on FSW
+    FswPayloadA3,
     /// Start streaming FSW telemetry to this client
     StartFswStream,
     /// Stop streaming FSW telemetry to this client

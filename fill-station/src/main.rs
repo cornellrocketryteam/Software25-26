@@ -731,6 +731,27 @@ async fn execute_command(
                 Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
             }
         }
+        Command::FswPayloadA1 => {
+            info!("Sending FSW Payload A1 command via umbilical");
+            match umb_cmd_tx.try_send("<A1>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswPayloadA2 => {
+            info!("Sending FSW Payload A2 command via umbilical");
+            match umb_cmd_tx.try_send("<A2>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
+        Command::FswPayloadA3 => {
+            info!("Sending FSW Payload A3 command via umbilical");
+            match umb_cmd_tx.try_send("<A3>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
         Command::StartFswStream => {
             info!("Starting FSW telemetry stream for client");
             *fsw_streaming_enabled = true;
@@ -743,14 +764,14 @@ async fn execute_command(
         }
         Command::FswKeyArm => {
             info!("Sending FSW Key Arm command via umbilical");
-            match umb_cmd_tx.try_send("<K>".into()) {
+            match umb_cmd_tx.try_send("<KA>".into()) {
                 Ok(_) => CommandResponse::Success,
                 Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
             }
         }
         Command::FswKeyDisarm => {
             info!("Sending FSW Key Disarm command via umbilical");
-            match umb_cmd_tx.try_send("<k>".into()) {
+            match umb_cmd_tx.try_send("<KD>".into()) {
                 Ok(_) => CommandResponse::Success,
                 Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
             }
