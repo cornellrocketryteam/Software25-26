@@ -46,7 +46,7 @@ const labelMap: { [key: string]: [string, string] } = {
     "Ball Valve":       ["OPENED",    "CLOSED"],
     "MAV":              ["OPENED",    "CLOSED"],
     "Igniter":           ["CONTINUITY","NO CONTINUITY"],
-    "Quick Disconnect": ["EXTENDED", "RETRACTED"],
+    "Quick Disconnect": ["RETRACTED", "EXTENDED"],
   };
   
   
