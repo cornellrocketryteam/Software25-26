@@ -359,15 +359,15 @@ export function PropulsionPage() {
                 }
 
 
-                //const lastPressure = umbilicalDataRef.current.at(-1)?.telemetry.pt3 ?? 0;
+                const lastPressure = umbilicalDataRef.current.at(-1)?.telemetry.pt3 ?? 0;
 
-                // if (isFillingRef.current && !isVentingRef.current) {
-                //     data.telemetry.pt3 = lastPressure + (Math.random() * 4 + 1); // Random increase between 1-5 during fill
-                // } else if (isVentingRef.current || (valveDataRef.current.SV2.venting && valveDataRef.current.BV.actuated)) {
-                //     data.telemetry.pt3 = Math.max(0, lastPressure - (Math.random() * 15 + 10)); // Random decrease between 10-25 during vent
-                // } else {
-                //     data.telemetry.pt3 = lastPressure; // Hold when idle
-                // }
+                if (isFillingRef.current && !isVentingRef.current) {
+                    data.telemetry.pt3 = lastPressure + (Math.random() * 4 + 1); // Random increase between 1-5 during fill
+                } else if (isVentingRef.current || (valveDataRef.current.SV2.venting && valveDataRef.current.BV.actuated)) {
+                    data.telemetry.pt3 = Math.max(0, lastPressure - (Math.random() * 15 + 10)); // Random decrease between 10-25 during vent
+                } else {
+                    data.telemetry.pt3 = lastPressure; // Hold when idle
+                }
 
                 console.log("Pressure:", new Date().toISOString(), "PSI:", data.telemetry.pt3);
 
@@ -555,7 +555,7 @@ export function PropulsionPage() {
 
 
                         {/* Home Assistant Tank Heaters */}
-                        <HeaterPanelComponent />
+                        {/* <HeaterPanelComponent /> */}
                     </div>
                 </div>
             </div>
