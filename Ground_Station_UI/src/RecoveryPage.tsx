@@ -5,6 +5,13 @@ import { useAppContext } from "./App";
 import type { FlightMode } from "./App";
 
 type BasicAction = "OPEN_PAYLOAD" | "RETRACT_PAYLOAD"; // Define basic action types for payload deployment
+const extendCommand = {"command": "fsw_payload_n1"}; 
+
+const setTargetLocationCommand = (lat: number, lon: number) => ({
+    "command": "fsw_set_blims_target",
+    "latitude": lat,
+    "longitude": lon
+});
 
 export function RecoveryPage() {
     const [showConfirmation, setShowConfirmation] = useState(false);
@@ -13,12 +20,9 @@ export function RecoveryPage() {
     const [latitude, setLatitude] = useState("");
     const [longitude, setLongitude] = useState("");
     const [confirmedCoords, setConfirmedCoords] = useState<{lat: string, lng: string} | null>(null);
-    const { wsRef, wsReady, currFlightMode, setCurrFlightMode } = useAppContext();
+    const { wsRef, wsReady, currFlightMode} = useAppContext();
 
     const toggleAction = (action: BasicAction) => {
-        if (payloadDeployed && action === "OPEN_PAYLOAD" || !payloadDeployed && action === "RETRACT_PAYLOAD") { //Can update if there is a better way of getting payload state
-            return; 
-        } 
         setPendingAction(action);
         setShowConfirmation(true);
     };
@@ -27,10 +31,7 @@ export function RecoveryPage() {
         if (pendingAction !== null) { //Do Something here with commands
             if(pendingAction === "OPEN_PAYLOAD"){
                 setPayloadDeployed(true);
-                //Send command to open payload here
-            } else if (pendingAction === "RETRACT_PAYLOAD"){
-                setPayloadDeployed(false);
-                //Send command to retract payload here
+                wsRef.current?.send(JSON.stringify(extendCommand)); //Send command to extend payload
             }
         }
         setShowConfirmation(false);
@@ -54,12 +55,10 @@ export function RecoveryPage() {
     };
     
     useEffect(() => {
-        let heartbeatInterval: ReturnType<typeof setInterval>; 
-
         if (!wsReady) return;
         
-
         const onOpen = () => {
+            let heartbeatInterval: ReturnType<typeof setInterval>; 
             heartbeatInterval = setInterval(() => {
                 if (wsRef.current?.readyState === WebSocket.OPEN) {
                     wsRef.current.send(JSON.stringify({"command": "heartbeat"}));
@@ -122,7 +121,10 @@ export function RecoveryPage() {
                             />
                         </div>
                         <button
-                            onClick={() => setConfirmedCoords({ lat: latitude, lng: longitude })} //Add commands here to send the coordinates to the server and update target location
+                            onClick={() => {
+                                setConfirmedCoords({ lat: latitude, lng: longitude })
+                                setTargetLocationCommand(Number(latitude), Number(longitude));
+                            }} //Add commands here to send the coordinates to the server and update target location
                             disabled={!latitude || !longitude} // Disable if either latitude or longitude is empty 
                             className="bg-[#5A87FF] border-[3px] border-black rounded-xl px-6 py-2 font-inter font-bold text-white text-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
@@ -141,18 +143,8 @@ export function RecoveryPage() {
                                 console.log("Open Payload");
                             }
                         }
-                         //Add real command here to open payload
                         className="bg-[#5A87FF] border-[3px] border-black rounded-2xl px-12 py-3 font-inter font-bold text-white text-xl hover:opacity-90">
                             Open
-                        </button>
-                        <button onClick = {() => 
-                            {
-                                toggleAction("RETRACT_PAYLOAD");
-                                console.log("Retract Payload")
-                            }
-                        } //Add real command here to retract payload
-                        className="bg-[#4A4A4A] border-[3px] border-black rounded-2xl px-12 py-3 font-inter font-bold text-white text-xl hover:opacity-90">
-                            Retract
                         </button>
                     </div>
                 </div>
