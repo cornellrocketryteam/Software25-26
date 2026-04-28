@@ -159,7 +159,7 @@ export function PropulsionPage() {
     //Solenoid Valve Commands: Get the information of the valve states on mount (so call in useEffect) so I can set my initial state of the valve buttons to 
     //match the actual state of the valves, and then also use these commands to get updated valve states after sending any command that would change the valve states.
     const getSVstate1 = {"command": "get_valve_state", "valve": "SV1"};
-    // = {"command": "get_valve_state", "valve": "SV2"};
+    //{"command": "get_valve_state", "valve": "SV2"};
     const actuateSV1Open = {"command": "actuate_valve", "valve": "SV1", "open": true};
     const actuateSV1Close = {"command": "actuate_valve", "valve": "SV1", "open": false};
     //const actuateSV2Open = {"command": "actuate_valve", "valve": "SV2", "open": true};
@@ -438,7 +438,7 @@ export function PropulsionPage() {
                 if (pendingActionRef.current === "SV1") {
                     updateValveData(prevState => ({
                         ...prevState, //Spread the previous state to keep other valves' data unchanged
-                        SV1: { "actuated": data.actuated, "continuity": data.continuity }
+                        SV1: { "actuated": data.actuated.open, "continuity": data.continuity }
                         //Adjust as needed based on actual response data and what information we want to track
                     }));
                 }
