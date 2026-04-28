@@ -17,7 +17,7 @@ export default function InteractiveButtonComponent() {
 
     if (((openState.includes(action) && currentState) || (closedState.includes(action) && !currentState)) 
       && actuationLock === 'LOCKED') {
-      return; //<- we are ending prematurely because of this
+      return;
     } 
     setPendingAction(action);
     setShowConfirmation(true);

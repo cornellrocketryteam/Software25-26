@@ -393,7 +393,9 @@ export function PropulsionPage() {
     
                 console.log("Pressure:", new Date().toISOString(), "PSI:", data.telemetry.pt3);
     
-                setCurrFlightMode(data.flight_mode as FlightMode); //Update our current flight mode state with the latest flight mode from the telemetry data, which we can use to display on the page or for any logic we want to implement based on the flight mode in the future
+                /* Not needed as we already poll for flight mode in our initial hook in `App`
+                    setCurrFlightMode(data.flight_mode as FlightMode); 
+                */
                 umbilicalDataRef.current.push(data); //Store the latest ADC data in the ref, which we can use for displaying on the page or for any logic we want to implement based on the ADC data in the future
                 
                 // Update MAV state based on telemetry
@@ -403,6 +405,7 @@ export function PropulsionPage() {
                         MAV: { "actuated": data.telemetry.mav_open, "angle": 0, "pulseWidth": 0 }
                     }));
                 }
+                // Update SV2 state based on telemetry, including venting status and continuity if available
                 if (data.telemetry && data.telemetry.sv_open !== undefined) {
                     updateValveData(prevState => ({
                         ...prevState, //Spread the previous state to keep other valves' data unchanged
