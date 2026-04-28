@@ -1,25 +1,11 @@
 import { usePropulsion } from "../PropulsionPage";
-import { useState } from "react";
+import { useState } from "react"; 
 import ConfirmationOverlay from "./ConfirmationOverlayComponent";
-import { useAppContext } from "../App";
 
 export default function VentButtonComponent() {
 
-    const { manualVentRef, fillUIActive, ventUIActive, setVentUIActive, isVentingRef, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds } = usePropulsion();
-    const { wsRef } = useAppContext();
+    const{manualVentRef, fillUIActive, ventUIActive, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds} = usePropulsion();
     const [showConfirmation, setShowConfirmation] = useState(false);
-
-    const handleVentOrAbort = () => {
-        if (ventUIActive) {
-            // Abort: immediately close SV2 and cancel the in-progress vent
-            wsRef.current?.send(JSON.stringify({ command: "fsw_close_sv" }));
-            isVentingRef.current = false;
-            setVentUIActive(false);
-            return;
-        }
-        manualVentRef.current = true;
-    };
-
     const toggleVentAction = () => {
         if (ventSeconds === 0) {
             alert("Please select a vent time greater than 0 seconds.");
@@ -30,26 +16,27 @@ export default function VentButtonComponent() {
         } else {
             alert("Vent time is already set to the selected value.");
         }
-    };
-
+    }
+    //If we say yes, then we will actually be doin it :)
     const handleVentConfirm = () => {
-        setConfirmedVentSeconds(ventSeconds);
+        setConfirmedVentSeconds(ventSeconds); 
+        console.log(`Vent process set to last for ${ventSeconds} seconds.`); //<- inaccurate log due to state update timing, consider using ventSeconds directly in the log if needed
         setShowConfirmation(false);
-    };
-
+      };
+    
+      //We will not be doin it chat
     const handleVentCancel = () => {
         setVentSeconds(0);
         setShowConfirmation(false);
     };
-
     return (
         <>
         <div className="bg-[#D9D9D9] border-[6px] border-black rounded-3xl p-12">
             <h2 className="font-inter font-bold text-[42px] text-center mb-8">VENT BUTTON</h2>
                 <div className="bg-white border-[6px] border-black rounded-2xl px-6 py-4 mb-8">
                     <label className="font-inter text-xl mb-2 block">Number of seconds to open SV2:</label>
-                    <select
-                        value={ventSeconds}
+                    <select 
+                        value={ventSeconds} 
                         onChange={(e) => setVentSeconds(Number(e.target.value))}
                         className="w-full p-2 border-2 border-gray-300 rounded text-xl font-inter"
                     >
@@ -59,15 +46,15 @@ export default function VentButtonComponent() {
                     </select>
                 </div>
                 <div className="flex flex-row gap-4 justify-center">
-                    <button
+                    <button 
                     onClick={() => toggleVentAction()}
                     className="bg-[#5A87FF] border-[6px] border-black rounded-3xl px-16 py-6 font-inter font-bold text-[35px] text-white hover:opacity-90">
                         Set Time
                     </button>
                     <div className="relative group inline-block">
-                        <button
-                        onClick={handleVentOrAbort}
-                        disabled={!ventUIActive && (confirmedVentSeconds === 0 || !fillUIActive)}
+                        <button 
+                        onClick={() => { manualVentRef.current = true }}
+                        disabled={confirmedVentSeconds === 0 || ventUIActive || !fillUIActive} // Disable if no vent time is set or if vent is already active or if we havenet started filling 
                         className="bg-[#E05A2B] border-[4px] border-black rounded-2xl px-10 py-3 font-inter font-bold text-[32px] text-white hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed"
                         >
                             {!ventUIActive ? "VENT" : "ABORT"}
@@ -78,7 +65,9 @@ export default function VentButtonComponent() {
                                 Vent duration: {confirmedVentSeconds} second{confirmedVentSeconds !== 1 ? 's' : ''}
                             </div>
                         )}
+
                     </div>
+                    
                 </div>
         </div>
             {showConfirmation && (
@@ -88,6 +77,6 @@ export default function VentButtonComponent() {
                   onCancel={handleVentCancel}
                 />
               )}
-        </>
+        </> 
     );
 }

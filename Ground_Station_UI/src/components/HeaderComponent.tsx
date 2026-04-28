@@ -42,7 +42,7 @@ export default function Header({
                     <div className="rounded-xl bg-white border-[3px] border-black px-6 py-2 shadow text-lg font-semibold">
                         Curr Rocket State: {currFlightMode}
                     </div>
-                    <button 
+                    {isPropulsionPage && (<button 
                         disabled = {fillUIActive} // Disable interaction toggle when fill UI is active
                         onClick={() => {
                             if(canInteractRef?.current === "DISABLED"){
@@ -57,7 +57,8 @@ export default function Header({
                         className="bg-white border-[3px] border-black rounded-3xl px-6 py-2 text-lg font-inter hover:bg-gray-50 transition-colors text-lg font-semibold disabled:opacity-30 disabled:cursor-not-allowed"
                     >
                         Button Interaction State: {buttonInteractionState}
-                    </button>
+                    </button>)
+                    }
                 </div>
 
                 {/* RIGHT: Navigation Button */}

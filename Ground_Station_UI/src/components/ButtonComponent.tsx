@@ -36,32 +36,26 @@ const labelMap: { [key: string]: [string, string] } = {
     "Solenoid Valve 2": ["OPEN",      "CLOSE"],
     "Ball Valve":       ["OPEN",      "CLOSE"],
     "MAV":              ["OPEN",      "CLOSE"],
-    "Igniter":          ["IGNITE",    "IGNITE"],
-    "Quick Disconnect": ["EXTEND",    "RETRACT"],
-    "LAUNCH":           ["LAUNCH",    "LAUNCH"],
+    "Igniter":           ["IGNITE",      "IGNITE"],
+    "Quick Disconnect": ["EXTEND",      "RETRACT"],
   };
-
+  
   const stateMap: { [key: string]: [string, string] } = {
     "Solenoid Valve 1": ["OPENED",    "CLOSED"],
     "Solenoid Valve 2": ["OPENED",    "CLOSED"],
     "Ball Valve":       ["OPENED",    "CLOSED"],
     "MAV":              ["OPENED",    "CLOSED"],
-    "Igniter":          ["CONTINUITY","NO CONTINUITY"],
-    "Quick Disconnect": ["EXTENDED",  "RETRACTED"],
-    "LAUNCH":           ["",          ""],
+    "Igniter":           ["CONTINUITY","NO CONTINUITY"],
+    "Quick Disconnect": ["RETRACTED", "EXTENDED"],
   };
-
-const fswDependentButtons = ["Solenoid Valve 2", "MAV"];
   
   
   
 export default function ButtonComponent({ buttonName, actuationLock, currentState = false, transitioning = false, showState = true }: ButtonComponentProps) {
-    const { buttonInteractionState, fswConnected } = usePropulsion();
+    const {buttonInteractionState} = usePropulsion();
     const label = labelMap[buttonName] ?? ["ON", "OFF"];
     const stateLabels = stateMap[buttonName] ?? ["ON", "OFF"];
-    const stateLabel = (fswDependentButtons.includes(buttonName) && !fswConnected)
-        ? "N/A"
-        : currentState ? stateLabels[0] : stateLabels[1];
+    const stateLabel = currentState ? stateLabels[0] : stateLabels[1];
 
     useEffect(() => {
         console.log(`${buttonName} changed to ${currentState ? label[0] : label[1]}`);
