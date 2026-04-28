@@ -93,10 +93,35 @@ pub struct FlightLoop {
 
 impl FlightLoop {
     pub fn new(flight_state: FlightState) -> Self {
+        // Derive runtime flags implied by the recovered flight mode so that
+        // check_transitions doesn't immediately kick a recovered mode back to
+        // Startup (e.g. Standby requires key_armed, which isn't otherwise persisted).
+        let recovered = flight_state.flight_mode;
+        let key_armed = matches!(
+            recovered,
+            FlightMode::Standby
+                | FlightMode::Ascent
+                | FlightMode::Coast
+                | FlightMode::DrogueDeployed
+                | FlightMode::MainDeployed
+        );
+        let alt_armed = matches!(
+            recovered,
+            FlightMode::Ascent
+                | FlightMode::Coast
+                | FlightMode::DrogueDeployed
+                | FlightMode::MainDeployed
+        );
+        let drogue_deployed = matches!(
+            recovered,
+            FlightMode::DrogueDeployed | FlightMode::MainDeployed
+        );
+        let main_chutes_deployed = matches!(recovered, FlightMode::MainDeployed);
+
         Self {
             flight_state,
-            key_armed: false,
-            alt_armed: false,
+            key_armed,
+            alt_armed,
             umbilical_state: false,
             umbilical_launch: false,
             mav_open: false,
@@ -104,8 +129,8 @@ impl FlightLoop {
             camera_deployed: false,
             alt_sum: 0.0,
             airbrakes_init: false,
-            drogue_deployed: false,
-            main_chutes_deployed: false,
+            drogue_deployed,
+            main_chutes_deployed,
             blims_armed: false,
             log_armed: false,
             blims: None,
@@ -203,6 +228,11 @@ impl FlightLoop {
         // 3. Process logic and transitions
         self.check_transitions().await;
         self.handle_launch_sequence().await;
+
+        // Sync packet flight mode after transitions so telemetry always reflects
+        // the mode that was active when the data was produced, not the mode from
+        // the start of the cycle before check_transitions() ran.
+        self.flight_state.packet.flight_mode = self.flight_state.flight_mode as u32;
 
         // 4. Update actuators
         self.flight_state.update_actuators().await;
@@ -433,7 +463,16 @@ impl FlightLoop {
                     log::warn!("UMBILICAL CMD: Trigger Main");
                     self.flight_state.trigger_main().await;
                 }
-
+                /*
+                UmbilicalCommand::DrogueMode => {  // Remove only for testing
+                    log::warn!("UMBILICAL CMD: Force Drogue Mode");
+                    self.set_flight_mode(FlightMode::DrogueDeployed);
+                }
+                UmbilicalCommand::MainMode => {
+                    log::warn!("UMBILICAL CMD: Force Main Mode");
+                    self.set_flight_mode(FlightMode::MainDeployed);
+                }
+                */
             }
         }
     }
@@ -973,6 +1012,7 @@ impl FlightLoop {
     pub fn set_blims_target(&mut self, lat: f32, lon: f32) {
         self.blims_target_lat = lat;
         self.blims_target_lon = lon;
+        self.blims_target_set = true;
         self.flight_state.packet.blims_target_lat = lat;
         self.flight_state.packet.blims_target_lon = lon;
         if let Some(b) = &mut self.blims {

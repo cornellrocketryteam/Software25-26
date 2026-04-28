@@ -84,6 +84,8 @@ pub enum UmbilicalCommand {
     SetBlimsTarget { lat: f32, lon: f32 },
     TriggerDrogue, // Remove this functionality for real code
     TriggerMain,   // Remove this functionality for real code
+    //DrogueMode,    // Remove this functionality for real code
+    //MainMode,      // Remove this functionality for real code
 }
 
 /// Command channel: receiver task pushes commands, flight loop polls them.
@@ -416,6 +418,8 @@ async fn usb_receiver_task(mut receiver: Receiver<'static, UsbDriver>) -> ! {
                 b"<KD>" => Some(UmbilicalCommand::KeyDisarm),
                 b"<D>" => Some(UmbilicalCommand::TriggerDrogue),
                 b"<d>" => Some(UmbilicalCommand::TriggerMain),
+                // b"<DR>" => Some(UmbilicalCommand::DrogueMode),
+                // b"<MR>" => Some(UmbilicalCommand::MainMode),
                 _ => None,
             };
 

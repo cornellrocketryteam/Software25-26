@@ -748,12 +748,12 @@ pub async fn simulate_launch_sequence(flight_loop: &mut FlightLoop) {
     Timer::after_millis(constants::MAV_OPEN_DURATION_MS + 100).await;
     flight_loop.simulate_cycle().await;
 
-    // --- STAGE 3: PostWait (10s) ---
-    if flight_loop.launch_sequence_stage == LaunchStage::PostWait
+    // --- STAGE 3: Done (sequence complete, MAV and SV both closed) ---
+    if flight_loop.launch_sequence_stage == LaunchStage::Done
         && !flight_loop.mav_open
         && !flight_loop.sv_open
     {
-        log::info!("[LAUNCH SIM] SUCCESS: Stage 3 (PostWait) active, MAV Closed, SV Closed.");
+        log::info!("[LAUNCH SIM] SUCCESS: Stage 3 (Done) active, MAV Closed, SV Closed.");
         if flight_loop.flight_state.flight_mode == FlightMode::Coast {
             log::info!("[LAUNCH SIM] SUCCESS: Transitioned to Coast during wait.");
         }
@@ -787,12 +787,14 @@ pub async fn simulate_launch_sequence(flight_loop: &mut FlightLoop) {
         flight_loop.simulate_cycle().await;
     }
 
-    if flight_loop.launch_sequence_stage == LaunchStage::FinalVent && flight_loop.sv_open {
-        log::info!("[LAUNCH SIM] SUCCESS: Apogee override triggered FinalVent and opened SV.");
+    // FinalVent no longer exists as a LaunchStage — SV now reopens via the one-shot
+    // recovery vent in check_transitions when entering DrogueDeployed/MainDeployed/Fault.
+    if flight_loop.flight_state.flight_mode == FlightMode::DrogueDeployed && flight_loop.sv_open {
+        log::info!("[LAUNCH SIM] SUCCESS: Apogee triggered DrogueDeployed and recovery vent opened SV.");
     } else {
         log::error!(
-            "[LAUNCH SIM] FAILED: Apogee override did not open SV. Stage: {:?}, SV: {}",
-            flight_loop.launch_sequence_stage,
+            "[LAUNCH SIM] FAILED: Apogee did not open SV. Mode: {:?}, SV: {}",
+            flight_loop.flight_state.flight_mode,
             flight_loop.sv_open
         );
     }

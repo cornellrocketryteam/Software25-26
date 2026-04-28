@@ -114,7 +114,12 @@ pub struct OnboardFlash<'a> {
     spi: SpiDeviceType<'a>,
     write_offset: u32,
     needs_header: bool,
+    /// True iff the flash chip is accessible (JEDEC ID responded).
+    /// Snapshot ring reads/writes are gated on this flag.
     pub flash_ok: bool,
+    /// True iff the data-log region (0x200000+) is exhausted.
+    /// The snapshot ring at 0x100000 is a separate region and still works when this is set.
+    pub storage_full: bool,
     snapshot_offset: u32,
     snapshot_next_seq: u32,
 }
@@ -134,6 +139,7 @@ impl<'a> OnboardFlash<'a> {
             write_offset: STORAGE_OFFSET,
             needs_header: true,
             flash_ok: false,
+            storage_full: false,
             snapshot_offset: SNAPSHOT_RING_BASE,
             snapshot_next_seq: 1,
         }

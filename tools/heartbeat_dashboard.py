@@ -84,6 +84,8 @@ COMMANDS = {
     "7": ("<A3>", "Payload A3"),
     "D": ("<D>", "Trigger Drogue"),
     "d": ("<d>", "Trigger Main"),
+    "8": ("<DR>", "Force DrogueDeployed"),
+    "9": ("<MR>", "Force MainDeployed"),
 }
 
 # Special hotkeys that prompt for input rather than sending a fixed token.

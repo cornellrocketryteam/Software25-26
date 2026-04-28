@@ -135,6 +135,8 @@ impl FlightState {
         // DMA transactions (calibration reads, soft reset, config writes) that
         // can leave the SPI/DMA engine in a state where 256-byte page reads hang.
         // Running the flash binary-search scan before BMP390 avoids this.
+        // flash_ok = chip is accessible (snapshot ring can be used)
+        // storage_full = data-log region exhausted (snapshot ring at 0x100000 is unaffected)
         let flash_ok = match with_timeout(
             Duration::from_millis(constants::SENSOR_INIT_TIMEOUT_MS),
             flash.initialize_logging(),
@@ -142,6 +144,11 @@ impl FlightState {
             Ok(Ok(_)) => {
                 log::info!("QSPI Flash logging initialized.");
                 true
+            }
+            Ok(Err(crate::driver::onboard_flash::Error::StorageFull)) => {
+                log::warn!("QSPI Flash data-log full — data logging disabled. Snapshot ring still active.");
+                flash.storage_full = true;
+                true  // chip is accessible; snapshot ring at 0x100000 works fine
             }
             Ok(Err(e)) => {
                 log::error!("Failed to initialize QSPI Flash logging: {:?}", e);
@@ -155,11 +162,14 @@ impl FlightState {
         flash.flash_ok = flash_ok;
 
         // Initialize the snapshot ring (replaces FRAM for crash recovery).
+        // Scans 1024 × 64-byte slots — use a generous timeout separate from
+        // the per-op FLASH_TIMEOUT_MS which is sized for single erase/program ops.
+        let scan_to = Duration::from_millis(constants::SNAPSHOT_SCAN_TIMEOUT_MS);
         let mut stored_mode = FlightMode::Startup;
         let mut stored_cycle_count = 0u32;
         if flash_ok {
-            match with_timeout(flash_to, flash.initialize_snapshot_ring()).await {
-                Ok(Ok(_)) => match with_timeout(flash_to, flash.read_latest_snapshot()).await {
+            match with_timeout(scan_to, flash.initialize_snapshot_ring()).await {
+                Ok(Ok(_)) => match with_timeout(scan_to, flash.read_latest_snapshot()).await {
                     Ok(Ok(Some(snap))) => {
                         stored_mode = FlightMode::from_u32(snap.flight_mode);
                         stored_cycle_count = snap.cycle_count;
@@ -588,7 +598,7 @@ impl FlightState {
 
     // Appends the current packet as CSV to the onboard QSPI Flash memory
     pub async fn save_packet_to_flash(&mut self) {
-        if !self.flash.flash_ok {
+        if !self.flash.flash_ok || self.flash.storage_full {
             return;
         }
         let to = Duration::from_millis(constants::FLASH_TIMEOUT_MS);
