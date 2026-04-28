@@ -519,51 +519,106 @@ pub async fn simulate_flash_storage(flight_loop: &mut FlightLoop) {
 // Release: insert key switch, type <L> over USB to launch.
 // Debug:   key + umbilical auto-asserted; launch fires after 5 standby cycles.
 pub async fn simulate_real_flight(flight_loop: &mut FlightLoop) {
-    log::info!("\n--- STARTING REAL FLIGHT SIMULATION ---");
-    log::info!("execute() path active. Altitude injected from TEST_ALTS_LST.");
-    log::info!("Insert Key Switch and type <L> in Serial Monitor to Launch.");
+    log::info!("\n--- STARTING REAL FLIGHT SIMULATION (REBOOT RECOVERY MODE) ---");
+    log::info!("Altitude injected from TEST_ALTS_LST ({} points).", constants::TEST_ALTS_LST.len());
+    log::info!("Each mode dwells 60s — reboot during the dwell to test snapshot recovery.");
 
-    let mut alt_index = 0;
-    let mut sim_standby_cycles = 0u32;
+    // How long to pause after entering each new flight mode before advancing
+    // the altitude profile. 60 s gives plenty of time to power-cycle the board
+    // and confirm it recovers to the correct mode.
+    const DWELL_MS: u64 = 60_000;
+
+    let mut alt_index: usize = 0;
+    let mut sim_standby_cycles: u32 = 0;
+
+    // Sentinel value that won't match any real FlightMode, so the very first
+    // loop iteration always triggers the mode-entry banner and starts the dwell.
+    let mut last_mode = FlightMode::Fault;
+    let mut mode_entry_time: Option<Instant> = None;
+    // Altitude held fixed while dwelling so the mode doesn't spuriously advance.
+    let mut dwell_alt: f32 = 0.0;
 
     loop {
-        // Stage altitude override before execute() so transitions see it.
-        // execute() applies it right after read_sensors().
-        if matches!(
-            flight_loop.flight_state.flight_mode,
-            FlightMode::Ascent
-                | FlightMode::Coast
-                | FlightMode::DrogueDeployed
-                | FlightMode::MainDeployed
-        ) {
-            if alt_index < constants::TEST_ALTS_LST.len() {
-                let alt = constants::TEST_ALTS_LST[alt_index];
-                flight_loop.sim_altitude_override = Some(alt);
-                if alt_index % 20 == 0 {
-                    log::info!("[SIM] alt: {:.2} m  index: {}", alt, alt_index);
-                }
-                alt_index += 1;
+        let current_mode = flight_loop.flight_state.flight_mode;
+
+        // ── Mode-entry detection ──────────────────────────────────────────────
+        if current_mode != last_mode {
+            log::info!("[SIM] ================================================");
+            log::info!("[SIM]  ENTERED MODE: {}", flight_loop.flight_state.flight_mode_name());
+            log::info!("[SIM]  REBOOT NOW to verify snapshot recovery.");
+            log::info!("[SIM]  Dwelling {}s before advancing altitude.", DWELL_MS / 1000);
+            log::info!("[SIM] ================================================");
+            mode_entry_time = Some(Instant::now());
+            // Freeze at the last altitude the profile produced, or 0 at launch.
+            dwell_alt = if alt_index == 0 {
+                0.0
             } else {
-                log::info!("\n[SIM] End of TEST_ALTS_LST — simulation complete");
-                break;
-            }
-        } else {
-            flight_loop.sim_altitude_override = Some(0.0);
+                constants::TEST_ALTS_LST[(alt_index - 1).min(constants::TEST_ALTS_LST.len() - 1)]
+            };
+            last_mode = current_mode;
         }
 
-        // sim_real_flight always auto-arms key and umbilical so the sim
-        // runs end-to-end without physical hardware intervention regardless
-        // of debug vs release build.
+        let elapsed_ms = mode_entry_time
+            .map(|t| t.elapsed().as_millis())
+            .unwrap_or(0);
+        let in_dwell = elapsed_ms < DWELL_MS;
+
+        // ── Altitude override ─────────────────────────────────────────────────
+        if in_dwell {
+            // Hold altitude fixed so the flight-mode logic doesn't auto-advance.
+            flight_loop.sim_altitude_override = Some(dwell_alt);
+
+            // Print a countdown every 10 s so the operator knows how long is left.
+            if elapsed_ms % 10_000 < 1_100 {
+                let secs_left = (DWELL_MS - elapsed_ms) / 1000;
+                log::info!(
+                    "[SIM] {} | {}s left in dwell | alt held {:.0}m",
+                    flight_loop.flight_state.flight_mode_name(),
+                    secs_left,
+                    dwell_alt
+                );
+            }
+        } else {
+            // Advance the altitude profile only while in a flight mode.
+            if matches!(
+                current_mode,
+                FlightMode::Ascent
+                    | FlightMode::Coast
+                    | FlightMode::DrogueDeployed
+                    | FlightMode::MainDeployed
+            ) {
+                if alt_index < constants::TEST_ALTS_LST.len() {
+                    let alt = constants::TEST_ALTS_LST[alt_index];
+                    flight_loop.sim_altitude_override = Some(alt);
+                    if alt_index % 50 == 0 {
+                        log::info!(
+                            "[SIM] alt: {:.1}m  idx: {}  mode: {}",
+                            alt,
+                            alt_index,
+                            flight_loop.flight_state.flight_mode_name()
+                        );
+                    }
+                    alt_index += 1;
+                } else {
+                    log::info!("[SIM] End of TEST_ALTS_LST — simulation complete.");
+                    break;
+                }
+            } else {
+                flight_loop.sim_altitude_override = Some(0.0);
+            }
+        }
+
+        // ── Hardware overrides (run every cycle, debug and release) ───────────
+        // Force key and umbilical so no physical hardware is required.
         flight_loop.flight_state.key_armed = true;
-        if matches!(
-            flight_loop.flight_state.flight_mode,
-            FlightMode::Startup | FlightMode::Standby
-        ) {
+        if matches!(current_mode, FlightMode::Startup | FlightMode::Standby) {
             flight_loop.flight_state.umbilical_connected = true;
         } else {
             flight_loop.flight_state.umbilical_connected = false;
         }
-        if flight_loop.flight_state.flight_mode == FlightMode::Standby {
+        // Launch only fires after the Standby dwell completes, giving the
+        // operator time to reboot and verify Standby recovery first.
+        if current_mode == FlightMode::Standby && !in_dwell {
             sim_standby_cycles += 1;
             if sim_standby_cycles == 3 {
                 log::info!("[SIM] Auto-injecting Launch Command...");
@@ -571,17 +626,12 @@ pub async fn simulate_real_flight(flight_loop: &mut FlightLoop) {
             }
         }
 
-        // Full real execute(): commands → sensors (+ alt override) →
-        // transitions → launch sequence → actuators → telemetry → flash + heartbeat.
+        // ── Execute and sleep ─────────────────────────────────────────────────
         flight_loop.execute().await;
 
-        log::info!(
-            "[SIM] Mode: {}  Cycle: {}",
-            flight_loop.flight_state.flight_mode_name(),
-            flight_loop.flight_state.cycle_count
-        );
-
-        Timer::after_millis(constants::MAIN_LOOP_DELAY_MS).await;
+        // Slow cycle during dwell (snapshot ring still writes at 1 Hz regardless),
+        // normal 20 Hz once the dwell ends and the altitude profile is running.
+        Timer::after_millis(if in_dwell { 1_000 } else { constants::MAIN_LOOP_DELAY_MS }).await;
     }
 
     flight_loop.sim_altitude_override = None;

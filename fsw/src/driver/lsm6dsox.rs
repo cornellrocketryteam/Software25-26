@@ -95,6 +95,16 @@ impl Lsm6dsoxSensor {
         Ok(())
     }
 
+    /// Lightweight presence check: read WHO_AM_I and return true if the sensor
+    /// responds with the expected value. Used to detect reconnection without
+    /// re-running the full init sequence.
+    pub async fn probe(&mut self) -> bool {
+        match self.read_register(REG_WHO_AM_I).await {
+            Ok(id) => id == WHO_AM_I_VALUE,
+            Err(_) => false,
+        }
+    }
+
     pub async fn read_into_packet(&mut self,packet: &mut crate::packet::Packet,) -> Result<(), Lsm6dsoxError<<I2cDevice<'static> as embedded_hal_async::i2c::ErrorType>::Error>> {
         if !self.initialized {
             return Ok(());

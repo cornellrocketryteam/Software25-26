@@ -6,7 +6,7 @@ use crate::packet::Packet;
 use crate::driver::bmp390::Bmp390Sensor;
 use crate::driver::lsm6dsox::Lsm6dsoxSensor;
 use crate::driver::rfd900x::Rfd900x;
-use crate::driver::ublox_max_m10s::UbloxMaxM10s;
+use crate::driver::ublox_max_m10s::{UbloxMaxM10s, GpsError};
 use crate::driver::ads1015::Ads1015Sensor;
 use crate::driver::onboard_flash::OnboardFlash;
 
@@ -67,9 +67,14 @@ pub struct FlightState {
     // gps
     gps: UbloxMaxM10s<'static, I2cDevice<'static>>,
     gps_ok: bool,
+    gps_fail_count: u8,
+    gps_probe_count: u8,
 
     // imu
     imu: Lsm6dsoxSensor,
+    imu_ok: bool,
+    imu_fail_count: u8,
+    imu_probe_count: u8,
 
     // adc
     adc: Ads1015Sensor,
@@ -263,7 +268,12 @@ impl FlightState {
             altimeter_state: altimeter_init,
             gps: gps,
             gps_ok,
+            gps_fail_count: 0,
+            gps_probe_count: 0,
             imu: imu,
+            imu_ok: true,
+            imu_fail_count: 0,
+            imu_probe_count: 0,
             adc: adc,
             arming_switch: arming_switch,
             cfc_arm: cfc_arm,
@@ -383,6 +393,7 @@ impl FlightState {
         if self.gps_ok {
             match with_timeout(read_to, self.gps.read_into_packet(&mut self.packet)).await {
                 Ok(Ok(_)) => {
+                    self.gps_fail_count = 0;
                     log::info!(
                         "GPS | Lat = {:.6}°, Lon = {:.6}°, Sats = {}, Time = {:.0} s",
                         self.packet.latitude,
@@ -391,33 +402,96 @@ impl FlightState {
                         self.packet.timestamp
                     );
                 }
-                Ok(Err(e)) => {
-                    log::error!("Failed to read GPS: {:?}", e);
+                Ok(Err(GpsError::NoData)) => {
+                    // No fix yet — normal at 20 Hz vs 1 Hz GPS output; not an I2C fault.
+                }
+                Ok(Err(GpsError::I2cError)) => {
+                    log::error!("GPS: I2C error");
+                    self.gps_fail_count = self.gps_fail_count.saturating_add(1);
                 }
                 Err(_) => {
-                    log::error!("GPS read TIMEOUT — I2C bus may be locked");
+                    log::error!("GPS: read TIMEOUT");
+                    self.gps_fail_count = self.gps_fail_count.saturating_add(1);
+                }
+            }
+
+            if self.gps_fail_count >= 5 {
+                if matches!(self.flight_mode, FlightMode::Startup | FlightMode::Standby)
+                    && self.gps_probe_count < 20
+                {
+                    // Pre-flight: probe for reconnection and reboot if the device
+                    // comes back so the full init sequence runs fresh.
+                    self.gps_probe_count += 1;
+                    log::warn!("GPS: lost — probing ({}/20)...", self.gps_probe_count);
+                    match with_timeout(read_to, self.gps.probe()).await {
+                        Ok(true) => {
+                            log::warn!("GPS: reconnected — rebooting for fresh init");
+                            cortex_m::peripheral::SCB::sys_reset();
+                        }
+                        _ => {
+                            if self.gps_probe_count >= 20 {
+                                self.gps_ok = false;
+                                log::error!("GPS: permanently disabled after 20 failed probes");
+                            }
+                        }
+                    }
+                } else {
+                    // In flight: never reboot mid-flight, just disable reads.
+                    self.gps_ok = false;
+                    log::error!("GPS: disabled — I2C lost during flight");
                 }
             }
         }
 
-        // Read IMU and update packet
-        match with_timeout(read_to, self.imu.read_into_packet(&mut self.packet)).await {
-            Ok(Ok(_)) => {
-                log::info!(
-                    "IMU | Accel: X={:.2} Y={:.2} Z={:.2} m/s² | Gyro: X={:.2} Y={:.2} Z={:.2} °/s",
-                    self.packet.accel_x,
-                    self.packet.accel_y,
-                    self.packet.accel_z,
-                    self.packet.gyro_x,
-                    self.packet.gyro_y,
-                    self.packet.gyro_z
-                );
+        // Read IMU and update packet.
+        // read_into_packet() silently returns Ok(()) when !initialized, so errors
+        // here only fire when the sensor was working and then lost I2C contact.
+        if self.imu_ok {
+            match with_timeout(read_to, self.imu.read_into_packet(&mut self.packet)).await {
+                Ok(Ok(_)) => {
+                    self.imu_fail_count = 0;
+                    log::info!(
+                        "IMU | Accel: X={:.2} Y={:.2} Z={:.2} m/s² | Gyro: X={:.2} Y={:.2} Z={:.2} °/s",
+                        self.packet.accel_x,
+                        self.packet.accel_y,
+                        self.packet.accel_z,
+                        self.packet.gyro_x,
+                        self.packet.gyro_y,
+                        self.packet.gyro_z
+                    );
+                }
+                Ok(Err(e)) => {
+                    log::error!("IMU: I2C error: {:?}", e);
+                    self.imu_fail_count = self.imu_fail_count.saturating_add(1);
+                }
+                Err(_) => {
+                    log::error!("IMU: read TIMEOUT");
+                    self.imu_fail_count = self.imu_fail_count.saturating_add(1);
+                }
             }
-            Ok(Err(e)) => {
-                log::error!("Failed to read LSM6DSOX IMU: {:?}", e);
-            }
-            Err(_) => {
-                log::error!("LSM6DSOX IMU read TIMEOUT");
+
+            if self.imu_fail_count >= 5 {
+                if matches!(self.flight_mode, FlightMode::Startup | FlightMode::Standby)
+                    && self.imu_probe_count < 20
+                {
+                    self.imu_probe_count += 1;
+                    log::warn!("IMU: lost — probing ({}/20)...", self.imu_probe_count);
+                    match with_timeout(read_to, self.imu.probe()).await {
+                        Ok(true) => {
+                            log::warn!("IMU: reconnected — rebooting for fresh init");
+                            cortex_m::peripheral::SCB::sys_reset();
+                        }
+                        _ => {
+                            if self.imu_probe_count >= 20 {
+                                self.imu_ok = false;
+                                log::error!("IMU: permanently disabled after 20 failed probes");
+                            }
+                        }
+                    }
+                } else {
+                    self.imu_ok = false;
+                    log::error!("IMU: disabled — I2C lost during flight");
+                }
             }
         }
 
