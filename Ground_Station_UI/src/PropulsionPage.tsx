@@ -2,7 +2,6 @@ import Header from "./components/HeaderComponent";
 import ButtonComponent from "./components/ButtonComponent";
 import VentButtonComponent from "./components/VentButtonComponent";
 import FillButtonComponent from "./components/FillButtonComponent";
-import ButtonPanelComponent from "./components/ButtonPanelComponent";
 import HeaterPanelComponent from "./components/HeaterPanelComponent";
 import { useEffect, useRef, useState } from "react";
 import { createContext, useContext } from "react";
@@ -12,7 +11,7 @@ import { useAppContext } from "./App";
 export type FillState = 'INITIAL' | 'INTERVENE' | 'SAFE_PROCEDURE' | 'STOP_FILL';
 export type FlightMode = "....." | 'STANDBY';
 export type actuationLockType = "LOCKED" | "UNLOCKED";
-export type ActuationTypeIdentifier = 'OPEN' | 'CLOSE' | 'IGNITE' | 'EXTEND' | 'RETRACT';
+export type ActuationTypeIdentifier = 'OPEN' | 'CLOSE' | 'EXTEND' | 'RETRACT';
 export type interactionType = "ENABLED" | "DISABLED";
 
 
@@ -151,10 +150,6 @@ export function PropulsionPage() {
 
     //Igniter commands: get the continuity status of the igniters, likely will need to be reworked to fit the actual data being sent by the server and how we want to handle it. 
     //If we have continuity then we have the ability to ignite
-    const getIgniterContinuity1 = { "command": "get_igniter_continuity", "id": 1 }; //Just to log the continuity status of igniter 1 for now, but may want to use this information to update some state and display it on the page or use it for some logic in the future
-    const getIgniterContinuity2 = { "command": "get_igniter_continuity", "id": 2 }; //Just to log the continuity status of igniter 2 for now, but may want to use this information to update some state and display it on the page or use it for some logic in the future
-    const igniteCommand = { "command": "ignite" };
-
 
     //Solenoid Valve Commands: Get the information of the valve states on mount (so call in useEffect) so I can set my initial state of the valve buttons to 
     //match the actual state of the valves, and then also use these commands to get updated valve states after sending any command that would change the valve states.
@@ -337,20 +332,6 @@ export function PropulsionPage() {
                 }
                 break;
 
-            case "Igniter":
-                if (valveDataRef.current.IG1.continuity && valveDataRef.current.IG2.continuity) {
-                    sendCommandWithDelay(igniteCommand, buttondelay);
-                    console.log("Ignite command sent — continuity confirmed on both igniters");
-                } else {
-                    const missingContinuity = [
-                        !valveDataRef.current.IG1.continuity && "IG1",
-                        !valveDataRef.current.IG2.continuity && "IG2"
-                    ].filter(Boolean).join(", ");
-                    console.warn(`Ignite command blocked — no continuity on: ${missingContinuity}`);
-                    // TODO: surface this to the UI so the operator is clearly notified
-                }
-                break;
-
             default:
                 console.error("Unknown valve identifier:", valveIdentifier);
         }
@@ -482,8 +463,6 @@ export function PropulsionPage() {
             sendCommandWithDelay(getSVstate1, 0);
             sendCommandWithDelay(getBallValveState, 50);
             sendCommandWithDelay(getQdState, 100);
-            sendCommandWithDelay(getIgniterContinuity1, 150);
-            sendCommandWithDelay(getIgniterContinuity2, 200);
             sendCommandWithDelay(heartbeatCommand, 250);
             //sendCommandWithDelay(getSVstate2, 150);
             sendCommandWithDelay(() => {
@@ -510,8 +489,6 @@ export function PropulsionPage() {
                     sendCommandWithDelay(getSVstate1, 0);
                     sendCommandWithDelay(getBallValveState, 50);
                     sendCommandWithDelay(getQdState, 100);
-                    sendCommandWithDelay(getIgniterContinuity1, 150);
-                    sendCommandWithDelay(getIgniterContinuity2, 200);
                 }
             }, 3000);
         };
@@ -560,9 +537,6 @@ export function PropulsionPage() {
 
                         {/* VENT BUTTON */}
                         <VentButtonComponent />
-
-                        {/* Home Assistant Tank Heaters */}
-                        <HeaterPanelComponent />
                     </div>
 
                     {/* Right Column */}
@@ -574,15 +548,14 @@ export function PropulsionPage() {
                                 <ButtonComponent buttonName="Solenoid Valve 2" currentState={valveData.SV2.actuated} actuationLock='LOCKED' />
                                 <ButtonComponent buttonName="Ball Valve" currentState={valveData.BV.actuated} actuationLock='UNLOCKED' />
                                 <ButtonComponent buttonName="MAV" currentState={valveData.MAV.actuated} actuationLock='LOCKED' />
-                                <ButtonComponent buttonName="Igniter" currentState={valveData.IG1.continuity && valveData.IG2.continuity} actuationLock='LOCKED' />
                                 <ButtonComponent buttonName="Quick Disconnect" currentState={valveData.QD.retracted} actuationLock='UNLOCKED' />
                             </div>
                         </div>
 
 
 
-                        {/* Expand Button Panel */}
-                        <ButtonPanelComponent />
+                        {/* Home Assistant Tank Heaters */}
+                        <HeaterPanelComponent />
                     </div>
                 </div>
             </div>
