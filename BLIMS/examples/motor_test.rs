@@ -42,8 +42,8 @@ async fn main(spawner: Spawner) {
 
     let driver = Driver::new(p.USB, Irqs);
     spawner.spawn(logger_task(driver).expect("logger task failed to spawn"));
-    Timer::after(Duration::from_secs(2)).await;
-    defmt::info!("USB Serial initialized! Motor test starting...");
+    Timer::after(Duration::from_secs(10)).await;
+    log::info!("USB Serial initialized! Motor test starting...");
 
     let mut state_pin = Output::new(p.PIN_0, Level::High);
 
@@ -59,15 +59,15 @@ async fn main(spawner: Spawner) {
     Timer::after(Duration::from_secs(5)).await; 
 
     state_pin.set_low(); 
-    defmt::info!("pulse low");
+    log::info!("pulse low");
     Timer::after(Duration::from_millis(500)).await; 
 
     
-    // state_pin.set_high(); 
-    // log::info!("enable");
-    // Timer::after(Duration::from_secs(5)).await;
+    state_pin.set_high(); 
+    log::info!("enable");
+    Timer::after(Duration::from_secs(5)).await;
 
-    defmt::info!("entering test loop");
+    log::info!("entering test loop");
 
     loop {
         

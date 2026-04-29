@@ -21,6 +21,22 @@
 //!     lat,lon,target_lat,target_lon,heading,bearing,motor_pos,
 //!     timestamp_ms,P,I,phase,altitude,loiter_step
 
+/* Because we've had to push car tests, Will and I have been chatting and we've settled on 
+a slightly simpler set of goals for a BLiMS controller this weekend. We'd like to remove 
+the states that change logic based on altitude and just move to 2 behaviors:
+
+Main deploy at 2000ft
+Track a generally upwind target until 1000ft
+Track a generally downwind target until 200ft
+Neutral position the motor until touchdown
+
+The wind direction at URRG has been relatively consistent in the past so we can use 
+the forecast to make a guess on wind direction and try to choose targets that generally 
+align with what we think the wind will be. This control scheme will allow us to learn 
+more about the GPS-informed controller's ability to point upwind, but also minimizes 
+the amount of testing that we need to do. @Elizabeth Chen/@William Chen Can you pare down 
+the code to reflect this? Let me know if you have any questions on this. */
+
 #![no_std]
 #![no_main]
 
@@ -238,10 +254,8 @@ async fn i2c_scan(i2c: &mut I2c<'_, I2C0, embassy_rp::i2c::Async>) {
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
 
-    // ── USB logger (runs as a background task) ────────────────────────────────
-    // All log::info!() calls are routed through this over USB CDC-ACM.
-    // Open the Pico's USB serial port in any terminal to see output.
-    spawner.spawn(logger_task(Driver::new(p.USB, Irqs)).unwrap());
+    let driver = Driver::new(p.USB, Irqs);
+    spawner.spawn(logger_task(driver).unwrap());
 
     // Wait for the host to enumerate the USB device (~2 s is enough)
     Timer::after_millis(2000).await;
@@ -282,7 +296,7 @@ async fn main(spawner: Spawner) {
 
     // ── Banner ────────────────────────────────────────────────────────────────
     log::info!("# ================================================");
-    log::info!("# BLiMS Car Test (FSW begin/execute pattern)");
+    log::info!("# BLiMS Car Test Begin)");
     log::info!("# ================================================");
     {
         let mut s: String<64> = String::new();
