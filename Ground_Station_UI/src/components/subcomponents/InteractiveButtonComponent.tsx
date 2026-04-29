@@ -10,7 +10,7 @@ export default function InteractiveButtonComponent() {
   const { handleButtonClickRef } = usePropulsion();
   const { buttonName, showState, currentState, label, stateLabel, actuationLock } = useButton();
   const [openLabel, closeLabel] = label;
-  const openState: ActuationTypeIdentifier[] = ['OPEN', 'EXTEND', 'IGNITE']; // Define which actions correspond to "open" state
+  const openState: ActuationTypeIdentifier[] = ['OPEN', 'EXTEND']; // Define which actions correspond to "open" state
   const closedState: ActuationTypeIdentifier[] = ['CLOSE', 'RETRACT']; // Define which actions correspond to "close" state
 
   const toggleAction = (action: ActuationTypeIdentifier) => {
@@ -43,21 +43,6 @@ export default function InteractiveButtonComponent() {
         
         <div className="flex gap-2">
         <div className="flex flex-col gap-2 min-w-0 w-full">
-            {openLabel === closeLabel ? ( // Special case for buttons like "Igniter" and "Launch" where both states have the same label
-              <button
-                onClick={() => { //This is just a one time button click
-                  if(buttonName === "Igniter"){
-                    toggleAction('IGNITE'); // For igniter, we can still use OPEN/CLOSE as the action identifiers even though the labels are the same
-                  } else if (buttonName === "LAUNCH"){
-                    //run action for launch, which will be updated
-                    console.log("LAUNCH BUTTON PRESSED - RUN LAUNCH SEQUENCE ACTION HERE");
-                  }
-                }}
-                className="bg-[#555555] border-[6px] border-black rounded-2xl w-full py-3 font-inter font-bold text-2xl text-white"
-              >
-                {openLabel}
-              </button>
-            ) : (
               <>
                 <button
                   onClick={() => {
@@ -88,7 +73,6 @@ export default function InteractiveButtonComponent() {
                   {closeLabel}
                 </button>
               </>
-            )}
           </div>
 
           {showState && ( // Only show state indicator if showState is true - allows flexibility for buttons that don't need a state display like the backup launch button
