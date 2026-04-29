@@ -1,122 +1,177 @@
-INSERT INTO telemetry_data(
-    -- === Core Indexes ===
-    "time",
+INSERT INTO telemetry_data (
+    -- The Primary Live X-Axis Clock
+    time,
+    
+    -- Unit ID
     unit_id,
 
-    -- === Shared Data ===
-    ms_since_boot,
-    battery_voltage,
-    pt_3_pressure,
-    rtd_temperature,
-    altitude,
-
-    -- === Shared Metadata ===
-    metadata_altitude_armed,
-    metadata_altimeter_is_valid,
-    metadata_gps_is_valid,
-    metadata_imu_is_valid,
-    metadata_accelerometer_is_valid,
-    metadata_umbilical_lock,
-    metadata_adc_is_valid,
-    metadata_fram_is_valid,
-    metadata_sd_card_is_valid,
-    metadata_gps_message_fresh,
-    metadata_rocket_was_safed,
-    metadata_mav_state,
-    metadata_sv_state,
-    metadata_flight_mode,
-
-    -- === Shared Events ===
-    events,
-
-    -- === RATS-Specific Data ===
+    -- Top-Level Packet Info
     sync_word,
-    temperature,
+
+    -- Shared Telemetry (Rust 'Packet' Struct)
+    flight_mode,
+    pressure,
+    temp,
+    altitude,
     latitude,
     longitude,
-    satellites_in_view,
-    unix_time,
-    horizontal_accuracy,
-    pt_4_pressure,
-    acceleration_x,
-    acceleration_y,
-    acceleration_z,
+    num_satellites,
+    gps_time, 
+    mag_x,
+    mag_y,
+    mag_z,
+    accel_x,
+    accel_y,
+    accel_z,
     gyro_x,
     gyro_y,
     gyro_z,
-    orientation_x,
-    orientation_y,
-    orientation_z,
-    accelerometer_x,
-    accelerometer_y,
-    accelerometer_z,
-    motor_state,
+    pt3,
+    pt4,
+    rtd,
+    sv_2_open,
+    mav_open,
+    ms_since_boot_cfc,
 
-    -- === Umbilical-Specific Data ===
+    -- Event Flags
+    ssa_drogue_deployed,
+    ssa_main_deployed,
+    cmd_n1,
+    cmd_n2,
+    cmd_n3,
+    cmd_n4,
+    cmd_a1,
+    cmd_a2,
+    cmd_a3,
+
+    -- Airbrake & Control States
+    airbrake_state,
+    predicted_apogee,
+
+    -- Advanced GPS / U-Blox Metrics
+    h_acc,
+    v_acc,
+    vel_n,
+    vel_e,
+    vel_d,
+    g_speed,
+    s_acc,
+    head_acc,
+    fix_type,
+    head_mot,
+
+    -- BLiMS Outputs
+    blims_motor_position,
+    blims_phase_id,
+    blims_pid_p,
+    blims_pid_i,
+    blims_bearing,
+    blims_loiter_step,
+    blims_heading_des,
+    blims_heading_error,
+    blims_error_integral,
+    blims_dist_to_target_m,
+
+    -- BLiMS Config
+    blims_target_lat,
+    blims_target_lon,
+    blims_wind_from_deg,
+
+    -- Fill Station Specific (Umbilical)
     pt_1_pressure,
     pt_2_pressure,
     ball_valve_open,
+    sv_1_open,
     load_cell,
-    ignition
-)
-VALUES (
-    -- === Core Indexes ===
-    NOW(),
+    ignition,
+    qd_state,
+    ms_since_boot_fill
+) VALUES (
+    -- Convert EMQX's internal arrival clock into a standard PostgreSQL TIMESTAMPTZ
+    to_timestamp(${broker_arrival_ms} / 1000.0),
+    
+    -- Unit ID
     ${unit_id},
 
-    -- === Shared Data ===
-    ${ms_since_boot},
-    ${battery_voltage},
-    ${pt_3_pressure},
-    ${rtd_temperature},
-    ${altitude},
-
-    -- === Shared Metadata ===
-    ${metadata_altitude_armed},
-    ${metadata_altimeter_is_valid},
-    ${metadata_gps_is_valid},
-    ${metadata_imu_is_valid},
-    ${metadata_accelerometer_is_valid},
-    ${metadata_umbilical_lock},
-    ${metadata_adc_is_valid},
-    ${metadata_fram_is_valid},
-    ${metadata_sd_card_is_valid},
-    ${metadata_gps_message_fresh},
-    ${metadata_rocket_was_safed},
-    ${metadata_mav_state},
-    ${metadata_sv_state},
-    ${metadata_flight_mode},
-
-    -- === Shared Events ===
-    ${events},
-
-    -- === RATS-Specific Data ===
+    -- Top-Level Packet Info
     ${sync_word},
-    ${temperature},
+
+    -- Shared Telemetry
+    ${flight_mode},
+    ${pressure},
+    ${temp},
+    ${altitude},
     ${latitude},
     ${longitude},
-    ${satellites_in_view},
-    ${unix_time},
-    ${horizontal_accuracy},
-    ${pt_4_pressure},
-    ${acceleration_x},
-    ${acceleration_y},
-    ${acceleration_z},
+    ${num_satellites},
+    ${gps_time},
+    ${mag_x},
+    ${mag_y},
+    ${mag_z},
+    ${accel_x},
+    ${accel_y},
+    ${accel_z},
     ${gyro_x},
     ${gyro_y},
     ${gyro_z},
-    ${orientation_x},
-    ${orientation_y},
-    ${orientation_z},
-    ${accelerometer_x},
-    ${accelerometer_y},
-    ${accelerometer_z},
-    ${motor_state},
+    ${pt3},
+    ${pt4},
+    ${rtd},
+    ${sv_2_open},
+    ${mav_open},
+    ${ms_since_boot_cfc},
 
-    -- === Umbilical-Specific Data ===
+    -- Event Flags
+    ${ssa_drogue_deployed},
+    ${ssa_main_deployed},
+    ${cmd_n1},
+    ${cmd_n2},
+    ${cmd_n3},
+    ${cmd_n4},
+    ${cmd_a1},
+    ${cmd_a2},
+    ${cmd_a3},
+
+    -- Airbrake & Control States
+    ${airbrake_state},
+    ${predicted_apogee},
+
+    -- Advanced GPS / U-Blox Metrics
+    ${h_acc},
+    ${v_acc},
+    ${vel_n},
+    ${vel_e},
+    ${vel_d},
+    ${g_speed},
+    ${s_acc},
+    ${head_acc},
+    ${fix_type},
+    ${head_mot},
+
+    -- BLiMS Outputs
+    ${blims_motor_position},
+    ${blims_phase_id},
+    ${blims_pid_p},
+    ${blims_pid_i},
+    ${blims_bearing},
+    ${blims_loiter_step},
+    ${blims_heading_des},
+    ${blims_heading_error},
+    ${blims_error_integral},
+    ${blims_dist_to_target_m},
+
+    -- BLiMS Config
+    ${blims_target_lat},
+    ${blims_target_lon},
+    ${blims_wind_from_deg},
+
+    -- Fill Station Specific
     ${pt_1_pressure},
     ${pt_2_pressure},
     ${ball_valve_open},
+    ${sv_1_open},
     ${load_cell},
-    ${ignition}
-)
+    ${ignition},
+    ${qd_state},
+    ${ms_since_boot_fill}
+);

@@ -61,16 +61,22 @@ impl<E> From<E> for Ads1015Error<E> {
 /// ADS1015 12-bit ADC driver
 pub struct Ads1015Sensor {
     i2c: I2cDevice<'static>,
+    initialized: bool,
 }
 
 impl Ads1015Sensor {
+    pub fn unavailable(i2c_bus: &'static SharedI2c) -> Self {
+        Self { i2c: SharedI2cDevice::new(i2c_bus), initialized: false }
+    }
+
     pub async fn new(i2c_bus: &'static SharedI2c) -> Self {
         let mut sensor = Self {
             i2c: SharedI2cDevice::new(i2c_bus),
+            initialized: false,
         };
 
         match sensor.init().await {
-            Ok(_) => log::info!("ADS1015 initialized at address {:#04X}", constants::ADS1015_I2C_ADDR),
+            Ok(_) => { log::info!("ADS1015 initialized at address {:#04X}", constants::ADS1015_I2C_ADDR); sensor.initialized = true; }
             Err(_) => log::error!("Failed to initialize ADS1015"),
         }
 
@@ -140,6 +146,9 @@ impl Ads1015Sensor {
     /// Read channels 1, 2, and 3 into the packet.
     /// Stores scaled values.
     pub async fn read_into_packet(&mut self, packet: &mut Packet) -> Result<(), Ads1015Error<<I2cDevice<'static> as embedded_hal_async::i2c::ErrorType>::Error>> {
+        if !self.initialized {
+            return Ok(());
+        }
         let raw_rtd = self.read_channel(1).await?;
         let raw_pt4 = self.read_channel(2).await?;
         let raw_pt3 = self.read_channel(3).await?;
@@ -148,10 +157,10 @@ impl Ads1015Sensor {
         packet.rtd = raw_rtd as f32 * constants::ADS1015_RTD_SCALE_M + constants::ADS1015_RTD_SCALE_B;
 
         let scaled_pt4 = raw_pt4 as f32 * constants::ADS1015_PT4_SCALE_M + constants::ADS1015_PT4_SCALE_B;
-        packet.pt4 = if scaled_pt4 < 0.0 { -1.0 } else { scaled_pt4 };
+        packet.pt4 = scaled_pt4;
 
         let scaled_pt3 = raw_pt3 as f32 * constants::ADS1015_PT3_SCALE_M + constants::ADS1015_PT3_SCALE_B;
-        packet.pt3 = if scaled_pt3 < 0.0 { -1.0 } else { scaled_pt3 };
+        packet.pt3 = scaled_pt3;
 
         Ok(())
     }

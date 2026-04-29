@@ -508,108 +508,196 @@ pub async fn simulate_flash_storage(flight_loop: &mut FlightLoop) {
     Timer::after_millis(1000).await;
 }
 
-// Runs a Hardware physical simulation.
-// This executes the actual hardware `execute()` loop,
-// processes real USB umbilical commands (`<L>`, `<M>`, etc.), and toggles actuators
-// it overwrites the altimeter sensor data with the `TEST_ALTS_LST` array
-// to test the entire physical breadboard setup
-pub async fn simulate_flight_hsim(flight_loop: &mut FlightLoop) {
-    log::info!("\n--- STARTING HARDWARE SIMULATION ---");
-    log::info!("Insert Key Switch and Type <L> in Serial Monitor to Launch");
+// Reads live hardware sensors and injects TEST_ALTS_LST altitude, then calls
+// execute() — the identical code path used in normal flight. Every subsystem
+// (launch sequence, actuators, telemetry, flash logging, payload heartbeat)
+// runs exactly as it would in a real flight. The only delta from flight is that
+// the altimeter reading is replaced by pre-recorded data via sim_altitude_override
+// after read_sensors() inside execute().
+//
+// Flash with:  cargo build --release --features sim_real_flight
+// Release: insert key switch, type <L> over USB to launch.
+// Debug:   key + umbilical auto-asserted; launch fires after 5 standby cycles.
+pub async fn simulate_real_flight(flight_loop: &mut FlightLoop) {
+    log::info!("\n--- STARTING REAL FLIGHT SIMULATION (REBOOT RECOVERY MODE) ---");
+    log::info!("Altitude injected from TEST_ALTS_LST ({} points).", constants::TEST_ALTS_LST.len());
+    log::info!("Each mode dwells 60s — reboot during the dwell to test snapshot recovery.");
 
-    flight_loop.set_altimeter_state(SensorState::VALID);
-    let mut alt_index = 0;
+    // How long to pause after entering each new flight mode before advancing
+    // the altitude profile. 60 s gives plenty of time to power-cycle the board
+    // and confirm it recovers to the correct mode.
+    const DWELL_MS: u64 = 60_000;
 
-    #[cfg(debug_assertions)]
-    let mut debug_standby_cycles = 0;
+    let mut alt_index: usize = 0;
+    let mut sim_standby_cycles: u32 = 0;
+
+    // Sentinel value that won't match any real FlightMode, so the very first
+    // loop iteration always triggers the mode-entry banner and starts the dwell.
+    let mut last_mode = FlightMode::Fault;
+    let mut mode_entry_time: Option<Instant> = None;
+    // Altitude held fixed while dwelling so the mode doesn't spuriously advance.
+    let mut dwell_alt: f32 = 0.0;
 
     loop {
-        // 1. Read sensors (this will flag altimeter as INVALID if missing)
-        flight_loop.flight_state.read_sensors().await;
+        let current_mode = flight_loop.flight_state.flight_mode;
 
-        // FOR SIMULATION ONLY: Force the altimeter state back to VALID so the flight controller
-        // doesn't immediately abort into Fault mode when the physical sensor is unplugged.
-        flight_loop.set_altimeter_state(SensorState::VALID);
-
-        // 2. OVERWRITE the altitude sensor data before transition logic runs
-        // Start feeding altimeter data once the rocket enters Ascent mode
-        // type <L> in the serial console to launch
-        if flight_loop.flight_state.flight_mode == FlightMode::Ascent
-            || flight_loop.flight_state.flight_mode == FlightMode::Coast
-            || flight_loop.flight_state.flight_mode == FlightMode::DrogueDeployed
-            || flight_loop.flight_state.flight_mode == FlightMode::MainDeployed
-        {
-            if alt_index < constants::TEST_ALTS_LST.len() {
-                // OVERWRITE the real altimeter readings
-                flight_loop.set_altitude(constants::TEST_ALTS_LST[alt_index]);
-
-                log::info!(
-                    "[H SIM] Flying at Simulated Alt: {:.2}m",
-                    constants::TEST_ALTS_LST[alt_index]
-                );
-                alt_index += 1;
+        // ── Mode-entry detection ──────────────────────────────────────────────
+        if current_mode != last_mode {
+            log::info!("[SIM] ================================================");
+            log::info!("[SIM]  ENTERED MODE: {}", flight_loop.flight_state.flight_mode_name());
+            log::info!("[SIM]  REBOOT NOW to verify snapshot recovery.");
+            log::info!("[SIM]  Dwelling {}s before advancing altitude.", DWELL_MS / 1000);
+            log::info!("[SIM] ================================================");
+            mode_entry_time = Some(Instant::now());
+            // Freeze at the last altitude the profile produced, or 0 at launch.
+            dwell_alt = if alt_index == 0 {
+                0.0
             } else {
-                log::info!("\n[H SIM] Reached end of simulated altitude array");
-                break;
+                constants::TEST_ALTS_LST[(alt_index - 1).min(constants::TEST_ALTS_LST.len() - 1)]
+            };
+            last_mode = current_mode;
+        }
+
+        let elapsed_ms = mode_entry_time
+            .map(|t| t.elapsed().as_millis())
+            .unwrap_or(0);
+        let in_dwell = elapsed_ms < DWELL_MS;
+
+        // ── Altitude override ─────────────────────────────────────────────────
+        if in_dwell {
+            // Hold altitude fixed so the flight-mode logic doesn't auto-advance.
+            flight_loop.sim_altitude_override = Some(dwell_alt);
+
+            // Print a countdown every 10 s so the operator knows how long is left.
+            if elapsed_ms % 10_000 < 1_100 {
+                let secs_left = (DWELL_MS - elapsed_ms) / 1000;
+                log::info!(
+                    "[SIM] {} | {}s left in dwell | alt held {:.0}m",
+                    flight_loop.flight_state.flight_mode_name(),
+                    secs_left,
+                    dwell_alt
+                );
             }
         } else {
-            // While waiting on the launch pad in Startup/Standby, just keep it at 0m
-            flight_loop.set_altitude(0.0);
-        }
-
-        // 3. Process the rest of the hardware loop logic
-        flight_loop.flight_state.check_subsystem_health().await;
-
-        // OVERRIDE for DEBUG builds.
-        // In debug mode, the USB is used for logging, not the umbilical interface.
-        // Also, we likely don't have the physical key switch plugged into the debugger.
-        // We force these true so the state machine can transition from Startup -> Standby.
-        #[cfg(debug_assertions)]
-        {
-            flight_loop.flight_state.key_armed = true;
-
-            // Only force umbilical connected while on the pad.
-            // Disconnect it instantly when we launch so we don't fault in Ascent.
-            if flight_loop.flight_state.flight_mode == FlightMode::Startup
-                || flight_loop.flight_state.flight_mode == FlightMode::Standby
-            {
-                flight_loop.flight_state.umbilical_connected = true;
-                Timer::after_millis(2000).await;
-            } else {
-                flight_loop.flight_state.umbilical_connected = false;
-            }
-
-            // Automatically launch after 5 cycles in Standby since USB umbilical is unavailable in debug
-            if flight_loop.flight_state.flight_mode == FlightMode::Standby {
-                debug_standby_cycles += 1;
-                if debug_standby_cycles == 5 {
-                    log::info!("[H SIM DEBUG] Auto-injecting Launch Command...");
-                    flight_loop.set_launch_command(true);
+            // Advance the altitude profile only while in a flight mode.
+            if matches!(
+                current_mode,
+                FlightMode::Ascent
+                    | FlightMode::Coast
+                    | FlightMode::DrogueDeployed
+                    | FlightMode::MainDeployed
+            ) {
+                if alt_index < constants::TEST_ALTS_LST.len() {
+                    let alt = constants::TEST_ALTS_LST[alt_index];
+                    flight_loop.sim_altitude_override = Some(alt);
+                    if alt_index % 50 == 0 {
+                        log::info!(
+                            "[SIM] alt: {:.1}m  idx: {}  mode: {}",
+                            alt,
+                            alt_index,
+                            flight_loop.flight_state.flight_mode_name()
+                        );
+                    }
+                    alt_index += 1;
+                } else {
+                    log::info!("[SIM] End of TEST_ALTS_LST — simulation complete.");
+                    break;
                 }
+            } else {
+                flight_loop.sim_altitude_override = Some(0.0);
             }
         }
 
-        flight_loop.key_armed = flight_loop.flight_state.key_armed;
-        flight_loop.umbilical_state = flight_loop.flight_state.umbilical_connected;
+        // ── Hardware overrides (run every cycle, debug and release) ───────────
+        // Force key and umbilical so no physical hardware is required.
+        flight_loop.flight_state.key_armed = true;
+        if matches!(current_mode, FlightMode::Startup | FlightMode::Standby) {
+            flight_loop.flight_state.umbilical_connected = true;
+        } else {
+            flight_loop.flight_state.umbilical_connected = false;
+        }
+        // Launch only fires after the Standby dwell completes, giving the
+        // operator time to reboot and verify Standby recovery first.
+        if current_mode == FlightMode::Standby && !in_dwell {
+            sim_standby_cycles += 1;
+            if sim_standby_cycles == 3 {
+                log::info!("[SIM] Auto-injecting Launch Command...");
+                flight_loop.set_launch_command(true);
+            }
+        }
 
-        flight_loop.check_ground_commands().await;
-        flight_loop.check_umbilical_commands().await;
+        // ── Execute and sleep ─────────────────────────────────────────────────
+        flight_loop.execute().await;
+
+        // Slow cycle during dwell (snapshot ring still writes at 1 Hz regardless),
+        // normal 20 Hz once the dwell ends and the altitude profile is running.
+        Timer::after_millis(if in_dwell { 1_000 } else { constants::MAIN_LOOP_DELAY_MS }).await;
+    }
+
+    flight_loop.sim_altitude_override = None;
+}
+
+// Runs BLiMS parafoil guidance hardware against real GPS with the L3 Launch 4
+// real descent altitude profile (~2000 ft → ~58 ft AGL, 3072 samples at 20 Hz).
+//
+// Each cycle explicitly:
+//   1. Reads live sensors (real GPS lat/lon/heading, IMU)
+//   2. Injects descent altitude directly into the packet (no execute() indirection)
+//   3. Calls check_transitions() — this is where blims.execute() is called in
+//      the MainDeployed branch, which sets the ODrive PWM and moves the motor
+//   4. Transmits telemetry and logs to flash
+//
+// Prerequisites before calling:
+//   flight_loop.set_blims(blims);
+//   flight_loop.set_blims_target(lat, lon);
+//
+// Flash with:  cargo build --release --features sim_blims
+pub async fn simulate_blims_descent(flight_loop: &mut FlightLoop) {
+    use blims::sim_data::{DESCENT_ALT_FT, DESCENT_DATA_SIZE};
+
+    log::info!("\n--- STARTING BLiMS DESCENT SIMULATION ---");
+    log::info!("Real GPS + L3 Launch 4 descent profile ({} samples @ 20 Hz)", DESCENT_DATA_SIZE);
+    log::info!("BLiMS motor active ~2000 ft → ~58 ft AGL");
+
+    // Force into MainDeployed for the whole run so check_transitions always
+    // reaches the BLiMS branch.
+    flight_loop.set_flight_mode(FlightMode::MainDeployed);
+    flight_loop.main_chutes_deployed = true;
+
+    for (i, &alt_ft) in DESCENT_ALT_FT.iter().enumerate() {
+        // 1. Read real hardware: GPS provides live lat/lon/heading/velocity for BLiMS.
+        flight_loop.flight_state.read_sensors().await;
+
+        // 2. Inject simulated altitude directly — feet → meters, force VALID so
+        //    check_transitions doesn't abort to Fault on a missing barometer.
+        flight_loop.flight_state.packet.altitude = alt_ft / 3.28084_f32;
+        flight_loop.flight_state.altimeter_state = SensorState::VALID;
+
+        // 3. Run check_transitions. In MainDeployed mode this calls blims.execute()
+        //    which computes the motor command and writes it to the ODrive PWM pin.
         flight_loop.check_transitions().await;
+
+        // 4. Transmit telemetry over radio + USB and write to flash.
         flight_loop.flight_state.transmit().await;
-
-        log::info!(
-            "Current Flight Mode: {} on cycle {} \n",
-            flight_loop.flight_state.flight_mode_name(),
-            flight_loop.flight_state.cycle_count
-        );
-        flight_loop.flight_state.cycle_count += 1;
-
-        // Save packet to QSPI Flash
         flight_loop.flight_state.save_packet_to_flash().await;
 
-        // Delay to match the real timing cycle
+        if i % 20 == 0 {
+            let p = &flight_loop.flight_state.packet;
+            log::info!(
+                "[BLIMS SIM] i={:4}  alt={:.1}ft  motor={:.4}  phase={}  bearing={:.1}  dist={:.1}m",
+                i,
+                alt_ft,
+                p.blims_motor_position,
+                p.blims_phase_id,
+                p.blims_bearing,
+                p.blims_dist_to_target_m,
+            );
+        }
+
         Timer::after_millis(constants::MAIN_LOOP_DELAY_MS).await;
     }
+
+    log::info!("\n--- BLiMS DESCENT SIMULATION COMPLETE ({} cycles) ---", DESCENT_DATA_SIZE);
 }
 
 // Verifies the exact 4-stage launch sequence and apogee override
@@ -660,12 +748,12 @@ pub async fn simulate_launch_sequence(flight_loop: &mut FlightLoop) {
     Timer::after_millis(constants::MAV_OPEN_DURATION_MS + 100).await;
     flight_loop.simulate_cycle().await;
 
-    // --- STAGE 3: PostWait (10s) ---
-    if flight_loop.launch_sequence_stage == LaunchStage::PostWait
+    // --- STAGE 3: Done (sequence complete, MAV and SV both closed) ---
+    if flight_loop.launch_sequence_stage == LaunchStage::Done
         && !flight_loop.mav_open
         && !flight_loop.sv_open
     {
-        log::info!("[LAUNCH SIM] SUCCESS: Stage 3 (PostWait) active, MAV Closed, SV Closed.");
+        log::info!("[LAUNCH SIM] SUCCESS: Stage 3 (Done) active, MAV Closed, SV Closed.");
         if flight_loop.flight_state.flight_mode == FlightMode::Coast {
             log::info!("[LAUNCH SIM] SUCCESS: Transitioned to Coast during wait.");
         }
@@ -699,12 +787,14 @@ pub async fn simulate_launch_sequence(flight_loop: &mut FlightLoop) {
         flight_loop.simulate_cycle().await;
     }
 
-    if flight_loop.launch_sequence_stage == LaunchStage::FinalVent && flight_loop.sv_open {
-        log::info!("[LAUNCH SIM] SUCCESS: Apogee override triggered FinalVent and opened SV.");
+    // FinalVent no longer exists as a LaunchStage — SV now reopens via the one-shot
+    // recovery vent in check_transitions when entering DrogueDeployed/MainDeployed/Fault.
+    if flight_loop.flight_state.flight_mode == FlightMode::DrogueDeployed && flight_loop.sv_open {
+        log::info!("[LAUNCH SIM] SUCCESS: Apogee triggered DrogueDeployed and recovery vent opened SV.");
     } else {
         log::error!(
-            "[LAUNCH SIM] FAILED: Apogee override did not open SV. Stage: {:?}, SV: {}",
-            flight_loop.launch_sequence_stage,
+            "[LAUNCH SIM] FAILED: Apogee did not open SV. Mode: {:?}, SV: {}",
+            flight_loop.flight_state.flight_mode,
             flight_loop.sv_open
         );
     }
@@ -713,6 +803,7 @@ pub async fn simulate_launch_sequence(flight_loop: &mut FlightLoop) {
 }
 
 // Simulation for Payload Specialized Ground Commands
+#[cfg(feature = "sim_payload")]
 pub async fn simulate_payload_commands(flight_loop: &mut FlightLoop) {
     log::info!("\n--- STARTING PAYLOAD COMMAND SIMULATION ---");
 
@@ -754,7 +845,7 @@ pub async fn simulate_payload_commands(flight_loop: &mut FlightLoop) {
 
     // 5. Test ForceMode
     log::info!("[SIM] Testing ForceMode (Startup -> DrogueDeployed)...");
-    flight_loop.flight_state.sim_radio_command = Some(crate::packet::Command::ForceMode(FlightMode::DrogueDeployed.to_u32()));
+    flight_loop.flight_state.sim_radio_command = Some(crate::packet::Command::ForceMode(FlightMode::DrogueDeployed as u32));
     flight_loop.simulate_cycle().await;
     
     if flight_loop.flight_state.flight_mode == FlightMode::DrogueDeployed {

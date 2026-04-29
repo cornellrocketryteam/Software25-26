@@ -52,12 +52,21 @@ impl<'a> Bmp390Sensor<'a> {
         let sensor = self.sensor.as_mut().ok_or(bmp390_rs::error::Bmp390Error::NotConnected)?;
         let meas = sensor.read_sensor_data().await?;
 
-        packet.pressure = meas.pressure();
+        let pressure = meas.pressure();
+
+        // When the BMP390 is disconnected mid-flight, SPI reads "succeed" but MISO
+        // floats to 0xFF, producing garbage data with no protocol-level error.
+        // Reject readings outside the physically possible range to catch this case.
+        if !(crate::constants::PRESSURE_MIN_PA..=crate::constants::PRESSURE_MAX_PA).contains(&pressure) {
+            return Err(bmp390_rs::error::Bmp390Error::NotConnected);
+        }
+
+        packet.pressure = pressure;
         packet.temp = meas.temperature();
-        
+
         // Calculate altitude using the NOAA formula
-        let sea_level_pa = 101325.0; // Standard sea level pressure
-        packet.altitude = 44330.0 * (1.0 - libm::powf(packet.pressure / sea_level_pa, 0.190295));
+        let sea_level_pa = 101325.0;
+        packet.altitude = 44330.0 * (1.0 - libm::powf(pressure / sea_level_pa, 0.190295));
 
         Ok(())
     }
@@ -65,5 +74,14 @@ impl<'a> Bmp390Sensor<'a> {
     /// Check if the sensor was successfully initialized
     pub fn is_init(&self) -> bool {
         self.altimeter_init
+    }
+
+    /// Construct an "unavailable" BMP390 for cases where init timed out or
+    /// the bus is suspect. All reads will return `NotConnected`.
+    pub fn unavailable() -> Self {
+        Self {
+            sensor: None,
+            altimeter_init: false,
+        }
     }
 }

@@ -26,6 +26,10 @@ class FillStationClient:
         self.sv1_open = False
         self.sv1_continuity = False
 
+        # Ball valve + QD last-commanded state
+        self.bv_open = None   # None = unknown, True/False otherwise
+        self.qd_state = 0     # -1 retracted, 0 unknown, 1 extended
+
         # Igniters
         self.igniters = {1: False, 2: False}
 
@@ -80,6 +84,10 @@ class FillStationClient:
                     self.send_command({"command": "get_igniter_continuity", "id": 1})
                     time.sleep(0.05)
                     self.send_command({"command": "get_igniter_continuity", "id": 2})
+                    time.sleep(0.05)
+                    self.send_command({"command": "get_ball_valve_state"})
+                    time.sleep(0.05)
+                    self.send_command({"command": "get_qd_state"})
                 except Exception:
                     pass
             time.sleep(3)
@@ -93,6 +101,8 @@ class FillStationClient:
             time.sleep(0.02)
             self.send_command({"command": "get_igniter_continuity", "id": 1})
             self.send_command({"command": "get_igniter_continuity", "id": 2})
+            self.send_command({"command": "get_ball_valve_state"})
+            self.send_command({"command": "get_qd_state"})
 
         def on_message(ws, message):
             try:
@@ -117,6 +127,12 @@ class FillStationClient:
                     self.fsw_connected = data.get("connected", False)
                     self.fsw_flight_mode = data.get("flight_mode", "Unknown")
                     self.fsw_telemetry = data.get("telemetry", {})
+
+                elif msg_type == "ball_valve_state":
+                    self.bv_open = data.get("open", None)
+
+                elif msg_type == "qd_state":
+                    self.qd_state = data.get("state", 0)
 
             except Exception as e:
                 print(f"Error parsing message: {e}")
@@ -174,10 +190,9 @@ class FillStationClient:
             time.sleep(2)
             self.launch_status = "2s LAUNCH: Closing SV2..."
             self.send_command({"command": "fsw_close_sv"})
-            time.sleep(2)
             self.launch_status = "2s LAUNCH: MAV OPEN (7.88s)..."
             self.send_command({"command": "fsw_open_mav"})
-            time.sleep(7.88)
+            time.sleep(12)
             self.send_command({"command": "fsw_close_mav"})
             self.launch_status = None
         threading.Thread(target=sequence, daemon=True).start()
@@ -188,13 +203,13 @@ class FillStationClient:
             self.launch_status = "1s LAUNCH: Opening SV2 + Igniting..."
             self.send_command({"command": "fsw_open_sv"})
             self.send_command({"command": "ignite"})
-            time.sleep(2)
+            time.sleep(1)
             self.launch_status = "1s LAUNCH: Closing SV2..."
             self.send_command({"command": "fsw_close_sv"})
             time.sleep(1)
             self.launch_status = "1s LAUNCH: MAV OPEN (7.88s)..."
             self.send_command({"command": "fsw_open_mav"})
-            time.sleep(7.88)
+            time.sleep(12)
             self.send_command({"command": "fsw_close_mav"})
             self.launch_status = None
         threading.Thread(target=sequence, daemon=True).start()
@@ -259,33 +274,27 @@ with col_left:
 
     # --- Ball Valve ---
     st.subheader("Ball Valve")
+    if client.bv_open is None:
+        st.markdown("State: :gray[**UNKNOWN**]")
+    else:
+        bv_color = "green" if client.bv_open else "red"
+        bv_label = "OPEN" if client.bv_open else "CLOSED"
+        st.markdown(f"State (last cmd): :{bv_color}[**{bv_label}**]")
     bv_c1, bv_c2, bv_c3 = st.columns(3)
     if bv_c1.button("OPEN BV", type="primary", use_container_width=True):
-        client.send_command({"command": "bv_on_off", "state": "low"})
-        time.sleep(0.1)
-        client.send_command({"command": "bv_signal", "state": "high"})
+        client.send_command({"command": "bv_open"})
     if bv_c2.button("CLOSE BV", use_container_width=True):
-        client.send_command({"command": "bv_on_off", "state": "low"})
-        time.sleep(0.1)
-        client.send_command({"command": "bv_signal", "state": "low"})
+        client.send_command({"command": "bv_close"})
     if bv_c3.button("PAUSE BV", use_container_width=True):
         client.send_command({"command": "bv_on_off", "state": "high"})
-
-    st.caption("Manual Pins")
-    bvs1, bvs2 = st.columns(2)
-    if bvs1.button("Signal HIGH", use_container_width=True):
-        client.send_command({"command": "bv_signal", "state": "high"})
-    if bvs1.button("Signal LOW", use_container_width=True):
-        client.send_command({"command": "bv_signal", "state": "low"})
-    if bvs2.button("ON_OFF HIGH", use_container_width=True):
-        client.send_command({"command": "bv_on_off", "state": "high"})
-    if bvs2.button("ON_OFF LOW", use_container_width=True):
-        client.send_command({"command": "bv_on_off", "state": "low"})
 
     st.divider()
 
     # --- QD Stepper ---
     st.subheader("QD Stepper")
+    qd_label_map = {-1: ("RETRACTED", "green"), 1: ("EXTENDED", "red"), 0: ("UNKNOWN", "gray")}
+    qd_label, qd_color = qd_label_map.get(client.qd_state, ("UNKNOWN", "gray"))
+    st.markdown(f"Position (last cmd): :{qd_color}[**{qd_label}**]")
     qd_c1, qd_c2 = st.columns(2)
     if qd_c1.button("QD RETRACT", type="primary", use_container_width=True):
         client.send_command({"command": "qd_retract"})
@@ -394,10 +403,14 @@ with col_right:
     st.subheader("FSW Sensors (Telemetry)")
     if client.fsw_connected and client.fsw_telemetry:
         t = client.fsw_telemetry
+        airbrake_map = {0: "idle", 1: "deployed", 2: "retracted"}
+        ab = airbrake_map.get(t.get("airbrake_state", 0), "unknown")
         fsw_rows = [
             {"Sensor": "PT3", "Value": f"{t.get('pt3', 0):.2f}"},
             {"Sensor": "PT4", "Value": f"{t.get('pt4', 0):.2f}"},
             {"Sensor": "RTD", "Value": f"{t.get('rtd', 0):.2f}"},
+            {"Sensor": "Airbrake State", "Value": ab},
+            {"Sensor": "Predicted Apogee", "Value": f"{t.get('predicted_apogee', 0):.1f} m"},
         ]
         st.dataframe(pd.DataFrame(fsw_rows), hide_index=True, use_container_width=True)
     else:
@@ -417,35 +430,125 @@ st.markdown(f"**Umbilical:** :{fsw_color}[{fsw_status}] | **Flight Mode:** {clie
 if client.fsw_connected and client.fsw_telemetry:
     t = client.fsw_telemetry
 
-    fc1, fc2, fc3, fc4 = st.columns(4)
+    fix_type_map = {0: "No Fix", 2: "2D", 3: "3D", 4: "3D+DGPS"}
+    airbrake_map = {0: "idle", 1: "deployed", 2: "retracted"}
 
-    with fc1:
-        st.metric("Altitude", f"{t.get('altitude', 0):.1f} m")
-        st.metric("Pressure", f"{t.get('pressure', 0):.1f} Pa")
-        st.metric("Temperature", f"{t.get('temp', 0):.1f} C")
+    tab_state, tab_gps, tab_events, tab_blims = st.tabs(
+        ["State", "GPS (U-blox)", "Airbrake & Events", "BLiMS"]
+    )
 
-    with fc2:
-        st.metric("Latitude", f"{t.get('latitude', 0):.6f}")
-        st.metric("Longitude", f"{t.get('longitude', 0):.6f}")
-        st.metric("Satellites", f"{t.get('num_satellites', 0)}")
+    with tab_state:
+        fc1, fc2, fc3, fc4 = st.columns(4)
+        with fc1:
+            st.metric("Altitude", f"{t.get('altitude', 0):.1f} m")
+            st.metric("Pressure", f"{t.get('pressure', 0):.1f} Pa")
+            st.metric("Temperature", f"{t.get('temp', 0):.1f} C")
+        with fc2:
+            st.metric("Latitude", f"{t.get('latitude', 0):.6f}")
+            st.metric("Longitude", f"{t.get('longitude', 0):.6f}")
+            st.metric("Satellites", f"{t.get('num_satellites', 0)}")
+        with fc3:
+            imu_data = [
+                {"Axis": "X", "Accel (m/s2)": f"{t.get('accel_x', 0):.2f}", "Gyro (deg/s)": f"{t.get('gyro_x', 0):.2f}", "Mag (uT)": f"{t.get('mag_x', 0):.2f}"},
+                {"Axis": "Y", "Accel (m/s2)": f"{t.get('accel_y', 0):.2f}", "Gyro (deg/s)": f"{t.get('gyro_y', 0):.2f}", "Mag (uT)": f"{t.get('mag_y', 0):.2f}"},
+                {"Axis": "Z", "Accel (m/s2)": f"{t.get('accel_z', 0):.2f}", "Gyro (deg/s)": f"{t.get('gyro_z', 0):.2f}", "Mag (uT)": f"{t.get('mag_z', 0):.2f}"},
+            ]
+            st.caption("IMU")
+            st.dataframe(pd.DataFrame(imu_data), hide_index=True, use_container_width=True)
+        with fc4:
+            sv_open = t.get("sv_2_open", t.get("sv_open", False))
+            mav_open = t.get("mav_open", False)
+            sv_c = "green" if sv_open else "red"
+            mav_c = "green" if mav_open else "red"
+            st.markdown(f"**SV2-Rocket:** :{sv_c}[{'OPEN' if sv_open else 'CLOSED'}]")
+            st.markdown(f"**FSW MAV:** :{mav_c}[{'OPEN' if mav_open else 'CLOSED'}]")
 
-    with fc3:
-        imu_data = [
-            {"Axis": "X", "Accel (m/s2)": f"{t.get('accel_x', 0):.2f}", "Gyro (deg/s)": f"{t.get('gyro_x', 0):.2f}", "Mag (uT)": f"{t.get('mag_x', 0):.2f}"},
-            {"Axis": "Y", "Accel (m/s2)": f"{t.get('accel_y', 0):.2f}", "Gyro (deg/s)": f"{t.get('gyro_y', 0):.2f}", "Mag (uT)": f"{t.get('mag_y', 0):.2f}"},
-            {"Axis": "Z", "Accel (m/s2)": f"{t.get('accel_z', 0):.2f}", "Gyro (deg/s)": f"{t.get('gyro_z', 0):.2f}", "Mag (uT)": f"{t.get('mag_z', 0):.2f}"},
-        ]
-        st.caption("IMU")
-        st.dataframe(pd.DataFrame(imu_data), hide_index=True, use_container_width=True)
+    with tab_gps:
+        g1, g2, g3 = st.columns(3)
+        with g1:
+            st.metric("Fix Type", fix_type_map.get(t.get("fix_type", 0), f"? ({t.get('fix_type', 0)})"))
+            st.metric("H Accuracy", f"{t.get('h_acc', 0)/1000:.2f} m")
+            st.metric("V Accuracy", f"{t.get('v_acc', 0)/1000:.2f} m")
+        with g2:
+            st.metric("Ground Speed", f"{t.get('g_speed', 0):.2f} m/s")
+            st.metric("Speed Acc", f"{t.get('s_acc', 0)/1000:.2f} m/s")
+            st.metric("Heading of Motion", f"{t.get('head_mot', 0)/1e5:.2f} deg")
+        with g3:
+            st.metric("Heading Acc", f"{t.get('head_acc', 0)/1e5:.4f} deg")
+            vel_data = [
+                {"Axis": "N", "Velocity (m/s)": f"{t.get('vel_n', 0):.2f}"},
+                {"Axis": "E", "Velocity (m/s)": f"{t.get('vel_e', 0):.2f}"},
+                {"Axis": "D", "Velocity (m/s)": f"{t.get('vel_d', 0):.2f}"},
+            ]
+            st.caption("Velocity (NED)")
+            st.dataframe(pd.DataFrame(vel_data), hide_index=True, use_container_width=True)
 
-    with fc4:
-        # Valve states from FSW
-        sv_open = t.get("sv_open", False)
-        mav_open = t.get("mav_open", False)
-        sv_c = "green" if sv_open else "red"
-        mav_c = "green" if mav_open else "red"
-        st.markdown(f"**SV2-Rocket:** :{sv_c}[{'OPEN' if sv_open else 'CLOSED'}]")
-        st.markdown(f"**FSW MAV:** :{mav_c}[{'OPEN' if mav_open else 'CLOSED'}]")
+    with tab_events:
+        e1, e2 = st.columns([1, 2])
+        with e1:
+            st.caption("Airbrake")
+            st.markdown(f"**State:** {airbrake_map.get(t.get('airbrake_state', 0), 'unknown')}")
+            st.metric("Predicted Apogee", f"{t.get('predicted_apogee', 0):.1f} m")
+        with e2:
+            st.caption("Event Flags")
+            flag_keys = [
+                ("Drogue Deployed", "ssa_drogue_deployed"),
+                ("Main Deployed",   "ssa_main_deployed"),
+                ("CMD N1", "cmd_n1"), ("CMD N2", "cmd_n2"),
+                ("CMD N3", "cmd_n3"), ("CMD N4", "cmd_n4"),
+                ("CMD A1", "cmd_a1"), ("CMD A2", "cmd_a2"), ("CMD A3", "cmd_a3"),
+            ]
+            flag_rows = [
+                {"Flag": label, "Fired": "YES" if t.get(key, 0) else "no"}
+                for label, key in flag_keys
+            ]
+            st.dataframe(pd.DataFrame(flag_rows), hide_index=True, use_container_width=True)
+
+    with tab_blims:
+        b1, b2 = st.columns(2)
+        with b1:
+            st.caption("Outputs")
+            out_rows = [
+                {"Field": "Phase ID", "Value": f"{t.get('blims_phase_id', 0)}"},
+                {"Field": "Motor Position", "Value": f"{t.get('blims_motor_position', 0):.3f}"},
+                {"Field": "Bearing", "Value": f"{t.get('blims_bearing', 0):.2f}"},
+                {"Field": "Heading Desired", "Value": f"{t.get('blims_heading_des', 0):.2f}"},
+                {"Field": "Heading Error", "Value": f"{t.get('blims_heading_error', 0):.2f}"},
+                {"Field": "Error Integral", "Value": f"{t.get('blims_error_integral', 0):.3f}"},
+                {"Field": "PID P", "Value": f"{t.get('blims_pid_p', 0):.3f}"},
+                {"Field": "PID I", "Value": f"{t.get('blims_pid_i', 0):.3f}"},
+                {"Field": "Loiter Step", "Value": f"{t.get('blims_loiter_step', 0)}"},
+                {"Field": "Dist to Target", "Value": f"{t.get('blims_dist_to_target_m', 0):.2f} m"},
+            ]
+            st.dataframe(pd.DataFrame(out_rows), hide_index=True, use_container_width=True)
+        with b2:
+            st.caption("Config")
+            cfg_rows = [
+                {"Field": "Target Lat", "Value": f"{t.get('blims_target_lat', 0):.6f}"},
+                {"Field": "Target Lon", "Value": f"{t.get('blims_target_lon', 0):.6f}"},
+                {"Field": "Wind From", "Value": f"{t.get('blims_wind_from_deg', 0):.1f} deg"},
+            ]
+            st.dataframe(pd.DataFrame(cfg_rows), hide_index=True, use_container_width=True)
+
+            st.caption("Set BLiMS Target")
+            tgt_lat = st.number_input(
+                "Target Latitude (deg)",
+                min_value=-90.0, max_value=90.0,
+                value=float(t.get("blims_target_lat", 0.0)),
+                format="%.7f", key="blims_target_lat_input",
+            )
+            tgt_lon = st.number_input(
+                "Target Longitude (deg)",
+                min_value=-180.0, max_value=180.0,
+                value=float(t.get("blims_target_lon", 0.0)),
+                format="%.7f", key="blims_target_lon_input",
+            )
+            if st.button("Set BLiMS Target", use_container_width=True):
+                client.send_command({
+                    "command": "fsw_set_blims_target",
+                    "lat": float(tgt_lat),
+                    "lon": float(tgt_lon),
+                })
 
 # --- All FSW Umbilical Commands ---
 st.caption("FSW Umbilical Commands")
@@ -464,8 +567,6 @@ if row1[5].button("FSW Safe", use_container_width=True):
     client.send_command({"command": "fsw_safe"})
 if row1[6].button("Reset FRAM", use_container_width=True):
     client.send_command({"command": "fsw_reset_fram"})
-if row1[7].button("Reset Card", use_container_width=True):
-    client.send_command({"command": "fsw_reset_card"})
 
 row2 = st.columns(8)
 if row2[0].button("FSW Reboot", use_container_width=True):
@@ -484,5 +585,27 @@ if row2[6].button("Payload N3", use_container_width=True):
     client.send_command({"command": "fsw_payload_n3"})
 if row2[7].button("Payload N4", use_container_width=True):
     client.send_command({"command": "fsw_payload_n4"})
+
+row3 = st.columns(8)
+if row3[0].button("Dump FRAM", use_container_width=True):
+    client.send_command({"command": "fsw_dump_fram"})
+if row3[1].button("Wipe FRAM + Reboot", use_container_width=True):
+    client.send_command({"command": "fsw_wipe_fram_reboot"})
+if row3[2].button("Key Arm", use_container_width=True):
+    client.send_command({"command": "fsw_key_arm"})
+if row3[3].button("Key Disarm", use_container_width=True):
+    client.send_command({"command": "fsw_key_disarm"})
+if row3[4].button("Payload A1", use_container_width=True):
+    client.send_command({"command": "fsw_payload_a1"})
+if row3[5].button("Payload A2", use_container_width=True):
+    client.send_command({"command": "fsw_payload_a2"})
+if row3[6].button("Payload A3", use_container_width=True):
+    client.send_command({"command": "fsw_payload_a3"})
+if row3[7].button("⚠ Trigger Drogue", use_container_width=True):
+    client.send_command({"command": "fsw_trigger_drogue"})
+
+row4 = st.columns(8)
+if row4[0].button("⚠ Trigger Main", use_container_width=True):
+    client.send_command({"command": "fsw_trigger_main"})
 
 st.rerun()

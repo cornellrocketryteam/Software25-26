@@ -1,5 +1,27 @@
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, AtomicI16};
+use std::time::Instant;
 use crate::components::umbilical::FswTelemetry;
+
+/// Last commanded state of fill-station actuators that we can't read back from
+/// hardware. Updated by the command handler, read by the MQTT publisher (and
+/// anything else that wants the most recent intent).
+///
+/// `qd_state`: -1 = retracted, 0 = unknown/initial, 1 = extended.
+#[derive(Debug)]
+pub struct ActuatorState {
+    pub ball_valve_open: AtomicBool,
+    pub qd_state: AtomicI16,
+}
+
+impl Default for ActuatorState {
+    fn default() -> Self {
+        Self {
+            ball_valve_open: AtomicBool::new(false),
+            qd_state: AtomicI16::new(0),
+        }
+    }
+}
 
 /// All supported commands for the fill station
 #[derive(Debug, Serialize, Deserialize)]
@@ -41,6 +63,10 @@ pub enum Command {
     QdRetract,
     /// Extend QD using preset steps (CCW)
     QdExtend,
+    /// Query last-commanded ball valve state
+    GetBallValveState,
+    /// Query last-commanded QD position state
+    GetQdState,
 
     /// Client heartbeat to indicate connection is alive
     Heartbeat,
@@ -48,6 +74,10 @@ pub enum Command {
     // FSW Umbilical Commands
     /// Send launch command to FSW
     FswLaunch,
+    /// Trigger drogue deploy on FSW (test only)
+    FswTriggerDrogue,
+    /// Trigger main deploy on FSW (test only)
+    FswTriggerMain,
     /// Open MAV on FSW
     FswOpenMav,
     /// Close MAV on FSW
@@ -60,8 +90,10 @@ pub enum Command {
     FswSafe,
     /// Reset FRAM on FSW
     FswResetFram,
-    /// Reset SD card on FSW
-    FswResetCard,
+    /// Dump FRAM contents on FSW
+    FswDumpFram,
+    /// Wipe FRAM snapshot ring and reboot FSW
+    FswWipeFramReboot,
     /// Reboot FSW
     FswReboot,
     /// Dump flash memory on FSW
@@ -78,10 +110,22 @@ pub enum Command {
     FswPayloadN3,
     /// Trigger payload event N4 on FSW
     FswPayloadN4,
+    /// Trigger payload event A1 on FSW
+    FswPayloadA1,
+    /// Trigger payload event A2 on FSW
+    FswPayloadA2,
+    /// Trigger payload event A3 on FSW
+    FswPayloadA3,
     /// Start streaming FSW telemetry to this client
     StartFswStream,
     /// Stop streaming FSW telemetry to this client
     StopFswStream,
+    /// Arm the FSW key (allow Startup → Standby transition)
+    FswKeyArm,
+    /// Disarm the FSW key (force Standby → Startup)
+    FswKeyDisarm,
+    /// Set the BLiMS landing-zone target (latitude/longitude in decimal degrees)
+    FswSetBlimsTarget { lat: f32, lon: f32 },
 }
 
 /// Response sent back to WebSocket clients after command execution
@@ -115,6 +159,10 @@ pub enum CommandResponse {
         flight_mode: String,
         telemetry: FswTelemetry,
     },
+    /// Last-commanded ball valve state
+    BallValveState { open: bool },
+    /// Last-commanded QD state (-1 retracted, 0 unknown, 1 extended)
+    QdState { state: i16 },
 }
 
 /// Single ADC channel reading with all relevant data
@@ -145,12 +193,20 @@ impl Default for AdcReadings {
     }
 }
 
-/// Shared FSW telemetry readings from umbilical, accessible across tasks
+/// Shared FSW telemetry readings from umbilical, accessible across tasks.
+///
+/// `connected` is derived from telemetry freshness: the safety monitor sets it
+/// true iff `last_telem_instant` is within `TELEM_FRESHNESS_MS`. The serial
+/// port being open is *not* sufficient — a hung FSW with a live USB CDC port
+/// would otherwise read as connected forever.
 #[derive(Debug, Clone)]
 pub struct UmbilicalReadings {
     pub timestamp_ms: u64,
     pub connected: bool,
     pub telemetry: FswTelemetry,
+    /// Monotonic instant of the most recent successful `$TELEM` parse.
+    /// `None` means no telemetry has been received since boot/last reconnect.
+    pub last_telem_instant: Option<Instant>,
 }
 
 impl Default for UmbilicalReadings {
@@ -159,6 +215,7 @@ impl Default for UmbilicalReadings {
             timestamp_ms: 0,
             connected: false,
             telemetry: FswTelemetry::default(),
+            last_telem_instant: None,
         }
     }
 }

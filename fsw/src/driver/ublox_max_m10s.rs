@@ -161,6 +161,16 @@ where
         Ok(())
     }
 
+    /// Lightweight presence check: read the bytes-available register (0xFD).
+    /// Returns true if the GPS I2C bus responds without error.
+    pub async fn probe(&mut self) -> bool {
+        let mut buf = [0u8; 2];
+        self.i2c
+            .write_read(GPS_I2C_ADDR, &[0xFD], &mut buf)
+            .await
+            .is_ok()
+    }
+
     /// Read available bytes from GPS module via I2C
     async fn read_bytes(&mut self, buffer: &mut [u8]) -> Result<usize, GpsError> {
         // First, read 2 bytes to get number of available bytes
@@ -230,6 +240,17 @@ where
                                 + (pvt.sec() as f32);
 
                             found_packet = true;
+                            packet.h_acc     = pvt.horiz_accuracy();
+                            packet.v_acc     = pvt.vert_accuracy();
+                            packet.vel_n     = pvt.vel_north();
+                            packet.vel_e     = pvt.vel_east();
+                            packet.vel_d     = pvt.vel_down();
+                            packet.g_speed   = pvt.ground_speed() as f64;
+                            packet.s_acc     = pvt.speed_accuracy_estimate() as u32;
+                            packet.head_acc  = pvt.heading_accuracy_estimate() as u32;
+                            packet.fix_type  = pvt.fix_type() as u8;
+                            // heading of motion: ublox gives degrees, BlimsDataIn wants deg*1e5
+                            packet.head_mot  = (pvt.heading_degrees() * 1e5) as i32;
                         }
                         _ => {
                             // Ignore other packet types

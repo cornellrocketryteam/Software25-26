@@ -14,23 +14,13 @@ uint32_t SDLogger::total_bytes_written = 0;
 uint32_t SDLogger::write_error_count = 0;
 void* SDLogger::file_handle = nullptr;
 
-// FatFS file object
+// FatFS file object and filesystem
 static FIL fil;
+static FATFS fs;
 static sd_card_t *pSD = nullptr;
-
-// Stub function for FatFS - RP2350 doesn't have hardware RTC
-// Returns a dummy timestamp (Jan 1, 2025, 00:00:00)
-extern "C" DWORD get_fattime(void) {
-    // FAT timestamp format: bits 0-4=day, 5-8=month, 9-15=year from 1980
-    // bits 16-20=second/2, 21-26=minute, 27-31=hour
-    // Year 2025 = 45 years since 1980
-    return ((DWORD)(2025 - 1980) << 25) | ((DWORD)1 << 21) | ((DWORD)1 << 16);
-}
 
 bool SDLogger::init() {
     printf("[SD] Initializing SD card on SPI1...\n");
-
-    // Note: RP2350 doesn't have hardware RTC, using boot time for filenames
 
     // Get SD card object (configured in hw_config.c)
     pSD = sd_get_by_num(0);
@@ -39,8 +29,8 @@ bool SDLogger::init() {
         return false;
     }
 
-    // Mount the filesystem
-    FRESULT fr = f_mount(&pSD->fatfs, pSD->pcName, 1);
+    // Mount the filesystem (empty string "" for default drive)
+    FRESULT fr = f_mount(&fs, "", 1);
     if (fr != FR_OK) {
         printf("[SD] Failed to mount filesystem: %s (%d)\n", FRESULT_str(fr), fr);
         return false;
@@ -55,7 +45,7 @@ bool SDLogger::init() {
     if (fr != FR_OK) {
         printf("[SD] Failed to create file '%s': %s (%d)\n",
                current_filename, FRESULT_str(fr), fr);
-        f_unmount(pSD->pcName);
+        f_unmount("");
         return false;
     }
 
@@ -64,8 +54,13 @@ bool SDLogger::init() {
 
     printf("[SD] Created log file: %s\n", current_filename);
 
-    // TEMPORARY: Write simplified CSV header for test packet structure
-    const char* header = "flight_mode,pt3_pressure,temperature,altitude,latitude_deg,longitude_deg,num_satellites,ms_since_boot\n";
+    // Write CSV header for ALL telemetry data fields
+    const char* header = "sync_word,metadata,ms_since_boot,events,altitude,temperature,"
+                        "latitude_deg,longitude_deg,num_satellites,gps_unix_time,gps_horizontal_accuracy,"
+                        "imu_accel_x,imu_accel_y,imu_accel_z,imu_gyro_x,imu_gyro_y,imu_gyro_z,"
+                        "imu_orient_x,imu_orient_y,imu_orient_z,"
+                        "accel_x,accel_y,accel_z,"
+                        "battery_voltage,pt3_pressure,pt4_pressure,rtd_temperature,blims_motor_state\n";
 
     if (!writeString(header)) {
         printf("[SD] Failed to write header\n");
@@ -87,22 +82,46 @@ bool SDLogger::logPacket(const RadioPacket& packet) {
         return false;
     }
 
-    // TEMPORARY: Format simplified test packet as CSV line
-    char line[128];
-    uint8_t flight_mode = (packet.metadata >> 13) & 0x07;
+    // Format packet data as CSV line with ALL fields
+    char line[512];  // Increased buffer for all fields
     float lat_deg = packet.latitude / 1000000.0f;
     float lon_deg = packet.longitude / 1000000.0f;
 
     int len = snprintf(line, sizeof(line),
-        "%u,%.2f,%.2f,%.2f,%.6f,%.6f,%u,%u\n",
-        flight_mode,
-        packet.pt3_pressure,
-        packet.temperature,
+        "0x%08X,%u,%u,0x%08X,%.2f,%.2f,"  // sync, metadata, ms, events, alt, temp
+        "%.6f,%.6f,%u,%u,%u,"              // lat, lon, sats, gps_time, gps_acc
+        "%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,"   // imu accel, gyro
+        "%.2f,%.2f,%.2f,"                   // imu orient
+        "%.3f,%.3f,%.3f,"                   // accel
+        "%.3f,%.2f,%.2f,%.2f,%.3f\n",      // battery, pressures, rtd, blims
+        packet.sync_word,
+        packet.metadata,
+        packet.ms_since_boot,
+        packet.events,
         packet.altitude,
+        packet.temperature,
         lat_deg,
         lon_deg,
         packet.num_satellites,
-        packet.ms_since_boot
+        packet.gps_unix_time,
+        packet.gps_horizontal_accuracy,
+        packet.imu_accel_x,
+        packet.imu_accel_y,
+        packet.imu_accel_z,
+        packet.imu_gyro_x,
+        packet.imu_gyro_y,
+        packet.imu_gyro_z,
+        packet.imu_orient_x,
+        packet.imu_orient_y,
+        packet.imu_orient_z,
+        packet.accel_x,
+        packet.accel_y,
+        packet.accel_z,
+        packet.battery_voltage,
+        packet.pt3_pressure,
+        packet.pt4_pressure,
+        packet.rtd_temperature,
+        packet.blims_motor_state
     );
 
     if (len < 0 || len >= (int)sizeof(line)) {
@@ -149,8 +168,8 @@ void SDLogger::close() {
         file_handle = nullptr;
     }
 
-    if (sd_mounted && pSD) {
-        f_unmount(pSD->pcName);
+    if (sd_mounted) {
+        f_unmount("");
         sd_mounted = false;
     }
 

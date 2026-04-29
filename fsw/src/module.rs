@@ -6,9 +6,9 @@ use embassy_rp::dma::InterruptHandler as DmaInterruptHandler;
 use embassy_rp::gpio::Output;
 use embassy_rp::i2c::{Config as I2cConfig, I2c, InterruptHandler as I2cInterruptHandler};
 use embassy_rp::peripherals::{
-    DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, DMA_CH4, DMA_CH5, DMA_CH6, I2C0, PIN_0, PIN_1,
-    PIN_2, PIN_3, PIN_4, PIN_8, PIN_9, PIN_21, PIN_32, PIN_33, PIN_36, PIN_39, PIN_40, PIN_47,
-    PWM_SLICE8, SPI0, UART0, UART1, USB,
+    DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, DMA_CH4, DMA_CH5, DMA_CH6, I2C0, PIN_0, PIN_1, PIN_2,
+    PIN_3, PIN_4, PIN_8, PIN_9, PIN_21, PIN_32, PIN_33, PIN_34, PIN_35, PIN_36, PIN_37, PIN_38,
+    PIN_39, PIN_40, PIN_47, PWM_SLICE2, PWM_SLICE9, PWM_SLICE8, PWM_SLICE11, SPI0, UART0, UART1, USB,
 };
 use embassy_rp::spi::{Config as SpiConfig, Spi};
 use embassy_rp::uart::{Config as UartConfig, InterruptHandler as UartInterruptHandler, Uart};
@@ -175,9 +175,16 @@ pub fn init_ssa(
 
 use crate::actuator::Buzzer;
 
-// Initialize Buzzer
-pub fn init_buzzer(pin: Peri<'static, PIN_21>) -> Buzzer<'static> {
-    Buzzer::new(Output::new(pin, embassy_rp::gpio::Level::Low))
+/// GPIO 21 = CFC_ARM_Indicator, PWM at 4 kHz (drives buzzer + LED).
+/// GPIO 41 = CFC_ARM, Input::new(p.PIN_41, Pull::Down) — handled in main.rs.
+pub fn init_buzzer(slice: Peri<'static, PWM_SLICE2>, pin: Peri<'static, PIN_21>) -> Buzzer<'static> {
+    let mut config = PwmConfig::default();
+    // 4 kHz: 150 MHz / (6 * (6249 + 1)) = 4000 Hz — matches PS1440P02BT resonant frequency
+    // GPIO 21 is output B of PWM slice 10
+    config.top = 6249;
+    config.divider = 6.into();
+    let pwm = Pwm::new_output_b(slice, pin, config);
+    Buzzer::new(pwm)
 }
 
 use crate::actuator::Mav;
@@ -198,6 +205,28 @@ pub fn init_mav(slice: Peri<'static, PWM_SLICE8>, pin: Peri<'static, PIN_40>) ->
     Mav::new(pwm)
 }
 
+use crate::actuator::AirbrakeActuator;
+
+// Initialize AirbrakeActuator
+//
+// GPIO 37 = ENABLE (active high → ODrive enabled)
+// GPIO 38 = RC PWM signal to ODrive S1 isolated IO (G08)
+// PWM config: 50 Hz at 150 MHz sysclk → divider=50, top=59999
+//   freq = 150_000_000 / (50 * (59999 + 1)) = 50 Hz
+pub fn init_airbrake(
+    enable_pin: Peri<'static, PIN_37>,
+    pwm_slice: Peri<'static, PWM_SLICE11>,
+    pwm_pin: Peri<'static, PIN_38>,
+) -> AirbrakeActuator<'static> {
+    let enable = Output::new(enable_pin, embassy_rp::gpio::Level::Low); // disabled until armed
+    let mut config = PwmConfig::default();
+    // 50 Hz: 150 MHz / (50 * (59999 + 1)) = 50 Hz
+    config.top = 59999;
+    config.divider = 50.into();
+    let pwm = Pwm::new_output_a(pwm_slice, pwm_pin, config);
+    AirbrakeActuator::new(enable, pwm)
+}
+
 use crate::actuator::SV;
 
 // Initialize SV
@@ -205,22 +234,47 @@ pub fn init_sv(pin: Peri<'static, PIN_47>) -> SV<'static> {
     SV::new(Output::new(pin, embassy_rp::gpio::Level::High)) // Active Low, so now High (Closed)
 }
 
-// Initialize all actuators
+// Initialize all actuators.
+// `buzzer_slice` = PWM_SLICE10, `buzzer_pin` = GPIO 21 (CFC_ARM_Indicator, 400 Hz PWM)
+// CFC_ARM (GPIO 41) is an Input — initialized separately in main.rs
 pub fn init_actuators(
     drogue_pin: Peri<'static, PIN_36>,
     main_pin: Peri<'static, PIN_39>,
+    buzzer_slice: Peri<'static, PWM_SLICE2>,
     buzzer_pin: Peri<'static, PIN_21>,
     mav_slice: Peri<'static, PWM_SLICE8>,
     mav_pin: Peri<'static, PIN_40>,
     sv_pin: Peri<'static, PIN_47>,
 ) -> (Ssa<'static>, Buzzer<'static>, Mav<'static>, SV<'static>) {
     let ssa = init_ssa(drogue_pin, main_pin);
-    let buzzer = init_buzzer(buzzer_pin);
+    let buzzer = init_buzzer(buzzer_slice, buzzer_pin);
     let mav = init_mav(mav_slice, mav_pin);
     let sv = init_sv(sv_pin);
 
     (ssa, buzzer, mav, sv)
 }
+/// Initialize BLiMS 
+///
+/// GPIO 34 = enable (active high)
+/// GPIO 35 = PWM signal to servo (50 Hz RC PWM)
+/// GPIO 35 = PWM_SLICE9 channel B
+pub fn init_blims(
+    enable_pin: Peri<'static, PIN_34>,
+    pwm_slice:  Peri<'static, PWM_SLICE9>,
+    pwm_pin:    Peri<'static, PIN_35>,
+) -> blims::Blims<'static> {
+    use blims::blims_constants::WRAP_CYCLE_COUNT;
+
+    let enable = Output::new(enable_pin, embassy_rp::gpio::Level::Low);
+    let mut config = PwmConfig::default();
+    // 50 Hz at 150 MHz sysclk with top = WRAP_CYCLE_COUNT (65535):
+    //   divider = 150_000_000 / (50 * 65536) = 45.78 round up to 46
+    config.top = WRAP_CYCLE_COUNT;
+    config.divider = 46u8.into();
+    let pwm = Pwm::new_output_b(pwm_slice, pwm_pin, config.clone());
+    blims::Blims::new(pwm, config, enable)
+}
+
 /// Initialize onboard SPI flash for packet storage
 ///
 /// Returns an OnboardFlash driver for reading/writing packets
