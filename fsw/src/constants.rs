@@ -64,6 +64,12 @@ pub const SV_PIN: u8 = 47;
 /// Main loop cycle time in milliseconds
 pub const MAIN_LOOP_DELAY_MS: u64 = 50; // 20 Hz
 
+// sim_blims target offset from GPS fix position.
+// Edit these before each car test — target = (fix_lat + LAT, fix_lon + LON).
+// 0.001 deg ≈ 111 m lat, ≈ 80 m lon at 42° N.
+pub const BLIMS_SIM_TARGET_LAT_OFFSET_DEG: f32 = 0.004;  // ~440 m north
+pub const BLIMS_SIM_TARGET_LON_OFFSET_DEG: f32 = 0.0;
+
 /// Maximum allowed time for one execute() call before logging an overrun warning
 pub const LOOP_BUDGET_MS: u64 = 100;
 

@@ -647,6 +647,10 @@ pub async fn simulate_real_flight(flight_loop: &mut FlightLoop) {
 //      the MainDeployed branch, which sets the ODrive PWM and moves the motor
 //   4. Transmits telemetry and logs to flash
 //
+// CSV output matches BLIMS/examples/blims_car_test/car_test.rs exactly:
+//   lat,lon,target_lat,target_lon,heading,bearing,motor_pos,
+//   timestamp_ms,P,I,phase,altitude,loiter_step
+//
 // Prerequisites before calling:
 //   flight_loop.set_blims(blims);
 //   flight_loop.set_blims_target(lat, lon);
@@ -655,18 +659,62 @@ pub async fn simulate_real_flight(flight_loop: &mut FlightLoop) {
 pub async fn simulate_blims_descent(flight_loop: &mut FlightLoop) {
     use blims::sim_data::{DESCENT_ALT_FT, DESCENT_DATA_SIZE};
 
-    log::info!("\n--- STARTING BLiMS DESCENT SIMULATION ---");
-    log::info!("Real GPS + L3 Launch 4 descent profile ({} samples @ 20 Hz)", DESCENT_DATA_SIZE);
-    log::info!("BLiMS motor active ~2000 ft → ~58 ft AGL");
+    log::info!("# ================================================");
+    log::info!("# BLiMS Descent Simulation (FSW sim_blims)");
+    log::info!("# ================================================");
+    log::info!("# Real GPS + L3 Launch 4 descent profile ({} samples @ 20 Hz)", DESCENT_DATA_SIZE);
+    log::info!("# BLiMS motor active ~2000 ft -> ~58 ft AGL");
+    {
+        let p = &flight_loop.flight_state.packet;
+        log::info!("# Target:  {:.6}, {:.6}", p.blims_target_lat, p.blims_target_lon);
+    }
+    log::info!("# CSV: lat,lon,target_lat,target_lon,heading,bearing,motor_pos,timestamp_ms,P,I,phase,altitude,loiter_step");
+    log::info!("# ================================================");
+    log::info!("# Waiting for GPS fix before starting descent...");
+
+    // Poll until we have a real GPS fix, then set the target from that position.
+    let mut last_no_fix_log = Instant::now();
+    loop {
+        flight_loop.flight_state.read_sensors().await;
+        // Copy fields out before dropping the borrow so we can call set_blims_target.
+        let fix_type = flight_loop.flight_state.packet.fix_type;
+        let fix_lat  = flight_loop.flight_state.packet.latitude;
+        let fix_lon  = flight_loop.flight_state.packet.longitude;
+        if fix_type >= 2 {
+            let target_lat = fix_lat + constants::BLIMS_SIM_TARGET_LAT_OFFSET_DEG;
+            let target_lon = fix_lon + constants::BLIMS_SIM_TARGET_LON_OFFSET_DEG;
+            flight_loop.set_blims_target(target_lat, target_lon);
+            log::info!("# GPS FIX: lat={:.6} lon={:.6} (type={})", fix_lat, fix_lon, fix_type);
+            log::info!("# TARGET:  lat={:.6} lon={:.6}  (offset {:.3},{:.3} deg)",
+                target_lat, target_lon,
+                constants::BLIMS_SIM_TARGET_LAT_OFFSET_DEG,
+                constants::BLIMS_SIM_TARGET_LON_OFFSET_DEG,
+            );
+            log::info!("# DESCENT STARTING -- {} samples @ 20 Hz", DESCENT_DATA_SIZE);
+            break;
+        }
+        if last_no_fix_log.elapsed().as_millis() >= 5_000 {
+            log::info!("# No fix yet (type={}) -- waiting...", fix_type);
+            last_no_fix_log = Instant::now();
+        }
+        Timer::after_millis(200).await;
+    }
 
     // Force into MainDeployed for the whole run so check_transitions always
     // reaches the BLiMS branch.
     flight_loop.set_flight_mode(FlightMode::MainDeployed);
     flight_loop.main_chutes_deployed = true;
 
+    let mut last_phase_id: i8 = -1;
+
     for (i, &alt_ft) in DESCENT_ALT_FT.iter().enumerate() {
+        let cycle_start = Instant::now();
+
         // 1. Read real hardware: GPS provides live lat/lon/heading/velocity for BLiMS.
         flight_loop.flight_state.read_sensors().await;
+
+        let fix_type = flight_loop.flight_state.packet.fix_type;
+        let gps_valid = fix_type >= 2;
 
         // 2. Inject simulated altitude directly — feet → meters, force VALID so
         //    check_transitions doesn't abort to Fault on a missing barometer.
@@ -681,23 +729,60 @@ pub async fn simulate_blims_descent(flight_loop: &mut FlightLoop) {
         flight_loop.flight_state.transmit().await;
         flight_loop.flight_state.save_packet_to_flash().await;
 
-        if i % 20 == 0 {
+        // 5. Log — matches car_test.rs output format.
+        {
             let p = &flight_loop.flight_state.packet;
-            log::info!(
-                "[BLIMS SIM] i={:4}  alt={:.1}ft  motor={:.4}  phase={}  bearing={:.1}  dist={:.1}m",
-                i,
-                alt_ft,
-                p.blims_motor_position,
-                p.blims_phase_id,
-                p.blims_bearing,
-                p.blims_dist_to_target_m,
-            );
+
+            // Phase-change banner
+            if p.blims_phase_id != last_phase_id {
+                log::info!(
+                    "# PHASE: {} (alt={:.1} ft, sample {}/{})",
+                    p.blims_phase_id,
+                    alt_ft,
+                    i,
+                    DESCENT_DATA_SIZE,
+                );
+                last_phase_id = p.blims_phase_id;
+            }
+
+            if gps_valid {
+                let heading_deg = p.head_mot as f32 * 1e-5_f32;
+                let now_ms = Instant::now().as_millis();
+                // CSV: lat,lon,target_lat,target_lon,heading,bearing,motor_pos,
+                //      timestamp_ms,P,I,phase,altitude,loiter_step
+                log::info!(
+                    "{:.7},{:.7},{:.6},{:.6},{:.5},{:.5},{:.4},{},{:.6},{:.6},{},{:.2},{}",
+                    p.latitude,
+                    p.longitude,
+                    p.blims_target_lat,
+                    p.blims_target_lon,
+                    heading_deg,
+                    p.blims_bearing,
+                    p.blims_motor_position,
+                    now_ms,
+                    p.blims_pid_p,
+                    p.blims_pid_i,
+                    p.blims_phase_id,
+                    alt_ft,
+                    p.blims_loiter_step,
+                );
+            } else {
+                log::info!("# No fix (type={})", fix_type);
+            }
         }
 
-        Timer::after_millis(constants::MAIN_LOOP_DELAY_MS).await;
+        // 6. Cycle timing — sleep only remaining time, warn on overrun.
+        let elapsed_ms = cycle_start.elapsed().as_millis();
+        if elapsed_ms < constants::MAIN_LOOP_DELAY_MS {
+            Timer::after_millis(constants::MAIN_LOOP_DELAY_MS - elapsed_ms).await;
+        } else {
+            log::warn!("# WARN: cycle overrun {} ms", elapsed_ms);
+        }
     }
 
-    log::info!("\n--- BLiMS DESCENT SIMULATION COMPLETE ({} cycles) ---", DESCENT_DATA_SIZE);
+    log::info!("# ================================================");
+    log::info!("# BLiMS DESCENT SIMULATION COMPLETE ({} cycles)", DESCENT_DATA_SIZE);
+    log::info!("# ================================================");
 }
 
 // Verifies the exact 4-stage launch sequence and apogee override

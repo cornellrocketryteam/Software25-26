@@ -157,6 +157,8 @@ async fn main(spawner: Spawner) {
     //flight_state.reset_fram().await;
 
     // BLiMS: GPIO 34 = enable, GPIO 35 = PWM (PWM_SLICE5B, 50 Hz)
+    // test_blims_simple initialises BLiMS itself so the peripherals stay free.
+    #[cfg(not(feature = "test_blims_simple"))]
     let blims = module::init_blims(p.PIN_34, p.PWM_SLICE9, p.PIN_35);
 
     // --- FLIGHT SIMULATIONS --- //
@@ -223,25 +225,8 @@ async fn main(spawner: Spawner) {
         {
             log::info!("Starting BLiMS Descent Simulation...");
             flight_loop.set_blims(blims);
-
-            // Pick a pseudo-random landing-zone target within ~500 m of the base
-            // coordinates each run. LCG seeded from boot time so it varies.
-            const BASE_LAT: f32 = 42.446610;
-            const BASE_LON: f32 = -76.461304;
-            let seed = Instant::now().as_millis() as u32;
-            let r1 = 1664525_u32.wrapping_mul(seed).wrapping_add(1013904223);
-            let r2 = 1664525_u32.wrapping_mul(r1).wrapping_add(1013904223);
-            // Map each u32 to [-0.005, +0.005] degrees (~500 m per axis).
-            let lat_off = ((r1 % 1001) as f32 / 1000.0 - 0.5) * 0.01;
-            let lon_off = ((r2 % 1001) as f32 / 1000.0 - 0.5) * 0.01;
-            let target_lat = BASE_LAT + lat_off;
-            let target_lon = BASE_LON + lon_off;
-            log::info!(
-                "BLiMS random target: lat={:.6} lon={:.6} (offset {:.4},{:.4} deg)",
-                target_lat, target_lon, lat_off, lon_off
-            );
-            flight_loop.set_blims_target(target_lat, target_lon);
-
+            // Target is set automatically once GPS fix is acquired inside simulate_blims_descent.
+            // Edit BLIMS_SIM_TARGET_LAT/LON_OFFSET_DEG in constants.rs before each run.
             flight_sim::simulate_blims_descent(&mut flight_loop).await;
             log::info!("Simulation Complete.");
         }
@@ -679,6 +664,44 @@ async fn main(spawner: Spawner) {
         }
     }
 
+    // --- BLIMS SIMPLE MOTOR TEST --- //
+    // Replicates BLIMS/tests/simpleMotorTest.rs in Embassy/Rust.
+    // Loops forever: position 0.0 → 0.5 → 1.0, 3 s each.
+    // 0.0 = minimum, 0.5 = neutral, 1.0 = maximum.
+    //
+    // Flash with:  cargo build --release --features test_blims_simple
+    //
+    // Hardware:
+    //   PIN_34 = enable (driven HIGH to power up the ODrive)
+    //   PIN_35 = PWM output (50 Hz, via PWM_SLICE9)
+    #[cfg(feature = "test_blims_simple")]
+    {
+        log::info!("=== BLiMS Simple Motor Test ===");
+        log::info!("Replicates simpleMotorTest.rs: 0.0 -> 0.5 -> 1.0, 3 s each");
+        log::info!("0.0=min  0.5=neutral  1.0=max");
+
+        // Init here so enable goes low → high right before the test starts.
+        let mut b = module::init_blims(p.PIN_34, p.PWM_SLICE9, p.PIN_35);
+
+        // Give the ODrive 3 seconds to power up before the first command.
+        Timer::after_millis(3000).await;
+
+        loop {
+            log::info!("start sequence");
+
+            b.set_motor_raw(0.0);
+            Timer::after_millis(3000).await;
+            log::info!("finish turn 1");
+
+            b.set_motor_raw(0.5);
+            Timer::after_millis(3000).await;
+
+            b.set_motor_raw(1.0);
+            Timer::after_millis(3000).await;
+            log::info!("finish sequence");
+        }
+    }
+
     // --- WATCHDOG TEST --- //
     // Verifies the hardware watchdog fires correctly when execute() hangs.
     //
@@ -761,6 +784,7 @@ async fn main(spawner: Spawner) {
         feature = "test_payload_uart",
         feature = "test_airbrakes",
         feature = "test_blims",
+        feature = "test_blims_simple",
         feature = "test_watchdog",
         feature = "sim_simple",
         feature = "sim_fault",
