@@ -62,6 +62,7 @@ pub struct FlightLoop {
 
     // Flash logging timing
     last_flash_log: Option<Instant>,
+    last_full_log: Option<Instant>,
     last_heartbeat: Option<Instant>,
 
     // Launch sequence
@@ -152,6 +153,7 @@ impl FlightLoop {
             umbilical_prev: false,
             cfc_arm_prev: false,
             last_flash_log: None,
+            last_full_log: None,
             last_heartbeat: None,
             launch_sequence_stage: LaunchStage::None,
             launch_stage_start_time: None,
@@ -260,8 +262,17 @@ impl FlightLoop {
         };
 
         if should_log {
-            self.flight_state.save_packet_to_flash().await;
+            let write_full = match self.last_full_log {
+                None => true,
+                Some(last) => {
+                    now.duration_since(last).as_millis() >= constants::FULL_LOGGING_PERIOD_MS
+                }
+            };
+            self.flight_state.save_packet_to_flash(write_full).await;
             self.last_flash_log = Some(now);
+            if write_full {
+                self.last_full_log = Some(now);
+            }
         }
 
         // Snapshot ring: throttled to 1 Hz internally, runs in every mode.

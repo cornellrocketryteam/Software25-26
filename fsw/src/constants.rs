@@ -77,7 +77,9 @@ pub const WATCHDOG_TIMEOUT_MS: u32 = 120;
 /// Must be > WATCHDOG_TIMEOUT_MS so the chip resets during the stall.
 pub const WATCHDOG_TEST_STALL_MS: u64 = 200;
 
-pub const FLASH_LOGGING_PERIOD_MS: u64 = 50; // Log every cycle at 20 Hz
+pub const FLASH_LOGGING_PERIOD_MS: u64 = 50;   // Fast record rate: 20 Hz
+pub const FULL_LOGGING_PERIOD_MS:  u64 = 1000; // Full record rate:  1 Hz
+pub const SNAPSHOT_LOGGING_PERIOD_MS: u64 = 200; // Snapshot ring rate: 5 Hz
 
 // I²C/SPI timeouts: if a bus transaction hangs (e.g. GPS NACK holds SDA low),
 // bail out instead of blocking the flight loop forever.
@@ -123,7 +125,7 @@ pub const UMBILICAL_TIMEOUT_MS: u64 = 15_000; // 15 seconds
 /// Maximum age of the most recent umbilical heartbeat (`<H>`) before the link
 /// is considered down. Independent of `UMBILICAL_TIMEOUT_MS`, which gates the
 /// vent-on-disconnect action.
-pub const HEARTBEAT_TIMEOUT_MS: u64 = 3_000;
+pub const HEARTBEAT_TIMEOUT_MS: u64 = 5_000; // 5 s — 3 s was too tight for USB CDC jitter
 pub const MAV_OPEN_DURATION_MS: u64 = 12000; // 4 seconds for L3 - 7.88 for LV - 12 for Wet Dress
 pub const LAUNCH_SV_PREVENT_MS: u64 = 2_000;  // 2 s SV open before closing
 pub const LAUNCH_SV_TO_MAV_WAIT_MS: u64 = 1_000; // 1 s wait between SV close and MAV open

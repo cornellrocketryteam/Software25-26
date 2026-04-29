@@ -1,4 +1,4 @@
-# BLiMS Reference (Balloon-Launched Intelligent Mechanism System)
+# BLiMS Reference (Break Line Manipulation System)
 
 > Living document — update whenever the BLiMS control logic, state machine, or hardware interfacing changes.
 

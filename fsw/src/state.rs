@@ -1,7 +1,7 @@
 use crate::constants;
 use crate::module::*;
 
-use crate::packet::Packet;
+use crate::packet::{Packet, FastRecord};
 
 use crate::driver::bmp390::Bmp390Sensor;
 use crate::driver::lsm6dsox::Lsm6dsoxSensor;
@@ -167,15 +167,20 @@ impl FlightState {
         let scan_to = Duration::from_millis(constants::SNAPSHOT_SCAN_TIMEOUT_MS);
         let mut stored_mode = FlightMode::Startup;
         let mut stored_cycle_count = 0u32;
+        let mut stored_mav_open = false; // MAV defaults closed (matches Mav::new())
+        let mut stored_sv_open  = true;  // SV  defaults open  (matches SV::new())
         if flash_ok {
             match with_timeout(scan_to, flash.initialize_snapshot_ring()).await {
                 Ok(Ok(_)) => match with_timeout(scan_to, flash.read_latest_snapshot()).await {
                     Ok(Ok(Some(snap))) => {
-                        stored_mode = FlightMode::from_u32(snap.flight_mode);
+                        stored_mode      = FlightMode::from_u32(snap.flight_mode);
                         stored_cycle_count = snap.cycle_count;
+                        stored_mav_open  = snap.mav_open != 0;
+                        stored_sv_open   = snap.sv_open  != 0;
                         log::info!(
-                            "Snapshot recovered: mode={:?} cycle={} alt={:.2}",
-                            stored_mode, stored_cycle_count, snap.altitude
+                            "Snapshot recovered: mode={:?} cycle={} alt={:.2} mav={} sv={}",
+                            stored_mode, stored_cycle_count, snap.altitude,
+                            stored_mav_open, stored_sv_open
                         );
                     }
                     Ok(Ok(None)) => log::info!("Snapshot ring empty — starting fresh."),
@@ -267,6 +272,14 @@ impl FlightState {
         log::info!("STATE: Initializing radio (RFD900x)...");
         let radio = Rfd900x::new(uart);
         log::info!("STATE: Radio ready");
+
+        // Restore actuator states from the most recent snapshot so a mid-flight
+        // reboot doesn't leave MAV/SV in their power-on defaults.
+        let mut mav = mav;
+        let mut sv  = sv;
+        if stored_mav_open { mav.open(0); } else { mav.close(); }
+        if stored_sv_open  { sv.open(0);  } else { sv.close();  }
+        log::info!("Actuator state restored: mav={} sv={}", stored_mav_open, stored_sv_open);
 
         Self {
             packet: packet,
@@ -597,15 +610,25 @@ impl FlightState {
     }
 
     // Appends the current packet as CSV to the onboard QSPI Flash memory
-    pub async fn save_packet_to_flash(&mut self) {
+    /// Write a fast (20 Hz) or full (1 Hz) binary record to flash.
+    pub async fn save_packet_to_flash(&mut self, full: bool) {
         if !self.flash.flash_ok || self.flash.storage_full {
             return;
         }
         let to = Duration::from_millis(constants::FLASH_TIMEOUT_MS);
-        match with_timeout(to, self.flash.append_packet_csv(&self.packet)).await {
-            Ok(Ok(_)) => {}
-            Ok(Err(e)) => log::warn!("Failed to append packet CSV to QSPI Flash: {:?}", e),
-            Err(_) => log::warn!("QSPI Flash append TIMEOUT"),
+        if full {
+            match with_timeout(to, self.flash.append_full_record(&self.packet)).await {
+                Ok(Ok(_)) => {}
+                Ok(Err(e)) => log::warn!("Flash full-record append failed: {:?}", e),
+                Err(_) => log::warn!("Flash full-record append TIMEOUT"),
+            }
+        } else {
+            let fast = FastRecord::from_packet(&self.packet);
+            match with_timeout(to, self.flash.append_fast_record(&fast)).await {
+                Ok(Ok(_)) => {}
+                Ok(Err(e)) => log::warn!("Flash fast-record append failed: {:?}", e),
+                Err(_) => log::warn!("Flash fast-record append TIMEOUT"),
+            }
         }
     }
 
@@ -626,11 +649,12 @@ impl FlightState {
         }
     }
 
-    /// Periodic snapshot, throttled to 1 Hz. Replaces FRAM periodic logging.
-    /// Flash can't absorb 100 Hz writes — erase stalls would block the loop.
+    /// Periodic snapshot, throttled to 5 Hz. Sector erases (every 64 records)
+    /// take up to 400 ms but the watchdog is fed inside erase_sector, so they
+    /// are safe — just slow. At 5 Hz an erase fires every ~12 s.
     pub async fn log_to_fram(&mut self) {
         let now = Instant::now();
-        if now.duration_since(self.last_snapshot_log) < Duration::from_millis(1000) {
+        if now.duration_since(self.last_snapshot_log) < Duration::from_millis(constants::SNAPSHOT_LOGGING_PERIOD_MS) {
             return;
         }
         self.last_snapshot_log = now;
@@ -703,14 +727,14 @@ impl FlightState {
         }
     }
 
-    /// Reads all stored CSV data from flash and prints it to the log
+    /// Reads all stored binary data from flash and sends it to the host.
     pub async fn print_flash_dump(&mut self) {
-        log::info!("--- BEGIN FLASH CSV DUMP ---");
+        log::info!("--- BEGIN FLASH BINARY DUMP ---");
         // Suppress telemetry while the dump is on the wire so $TELEM lines
         // can't interleave with raw flash bytes and so telemetry doesn't
         // back-pressure the dump.
         crate::umbilical::begin_dump();
-        crate::umbilical::print_str("--- BEGIN FLASH CSV DUMP ---\n");
+        crate::umbilical::print_str("--- BEGIN FLASH BINARY DUMP ---\n");
         let start = self.flash.get_storage_offset();
         let end = self.flash.get_write_offset();
         let mut offset = start;
@@ -731,16 +755,22 @@ impl FlightState {
                 }
             }
 
-            // Async send — back-pressures to USB speed so no data is dropped
-            crate::umbilical::print_bytes_async(&buffer[..chunk_size]).await;
+            // Async send — back-pressures to USB speed so no data is dropped.
+            // Timeout guards against USB stall (e.g. cable yanked mid-dump)
+            // freezing the flight loop indefinitely.
+            let send_to = Duration::from_millis(5000);
+            if with_timeout(send_to, crate::umbilical::print_bytes_async(&buffer[..chunk_size])).await.is_err() {
+                log::error!("Flash dump USB send TIMEOUT — aborting dump");
+                break;
+            }
             // Keep the watchdog fed; a full-flash dump at USB-CDC speeds can
             // easily exceed the flight loop timeout.
             crate::watchdog::feed();
 
             offset += chunk_size as u32;
         }
-        log::info!("--- END FLASH CSV DUMP ---");
-        crate::umbilical::print_str("--- END FLASH CSV DUMP ---\n");
+        log::info!("--- END FLASH BINARY DUMP ---");
+        crate::umbilical::print_str("--- END FLASH BINARY DUMP ---\n");
         crate::umbilical::end_dump();
     }
 

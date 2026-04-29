@@ -289,6 +289,122 @@ impl Packet {
     }
 }
 
+/// Tag byte written before each binary record in the data-log region.
+pub const FAST_RECORD_TAG: u8 = 0xFA;
+pub const FULL_RECORD_TAG: u8 = 0xFB;
+
+/// High-rate record written at 20 Hz. Contains only sensors that update at
+/// ≥20 Hz (IMU, baro, ADC, valves, events, airbrakes). GPS and BLiMS are
+/// excluded — they update at ≤1 Hz and are covered by the full record.
+#[derive(Default)]
+pub struct FastRecord {
+    pub ms_since_boot_cfc: u32,
+    pub flight_mode: u32,
+    pub pressure: f32,
+    pub temp: f32,
+    pub altitude: f32,
+    pub mag_x: f32,
+    pub mag_y: f32,
+    pub mag_z: f32,
+    pub accel_x: f32,
+    pub accel_y: f32,
+    pub accel_z: f32,
+    pub gyro_x: f32,
+    pub gyro_y: f32,
+    pub gyro_z: f32,
+    pub pt3: f32,
+    pub pt4: f32,
+    pub rtd: f32,
+    pub sv_open: bool,
+    pub mav_open: bool,
+    pub ssa_drogue_deployed: u8,
+    pub ssa_main_deployed: u8,
+    pub cmd_n1: u8,
+    pub cmd_n2: u8,
+    pub cmd_n3: u8,
+    pub cmd_n4: u8,
+    pub cmd_a1: u8,
+    pub cmd_a2: u8,
+    pub cmd_a3: u8,
+    pub airbrake_state: u8,
+    pub predicted_apogee: f32,
+}
+
+impl FastRecord {
+    /// Byte length of the serialised payload (tag byte not included).
+    pub const SIZE: usize = 84;
+
+    pub fn from_packet(p: &Packet) -> Self {
+        Self {
+            ms_since_boot_cfc: p.ms_since_boot_cfc,
+            flight_mode: p.flight_mode,
+            pressure: p.pressure,
+            temp: p.temp,
+            altitude: p.altitude,
+            mag_x: p.mag_x,
+            mag_y: p.mag_y,
+            mag_z: p.mag_z,
+            accel_x: p.accel_x,
+            accel_y: p.accel_y,
+            accel_z: p.accel_z,
+            gyro_x: p.gyro_x,
+            gyro_y: p.gyro_y,
+            gyro_z: p.gyro_z,
+            pt3: p.pt3,
+            pt4: p.pt4,
+            rtd: p.rtd,
+            sv_open: p.sv_open,
+            mav_open: p.mav_open,
+            ssa_drogue_deployed: p.ssa_drogue_deployed,
+            ssa_main_deployed: p.ssa_main_deployed,
+            cmd_n1: p.cmd_n1,
+            cmd_n2: p.cmd_n2,
+            cmd_n3: p.cmd_n3,
+            cmd_n4: p.cmd_n4,
+            cmd_a1: p.cmd_a1,
+            cmd_a2: p.cmd_a2,
+            cmd_a3: p.cmd_a3,
+            airbrake_state: p.airbrake_state,
+            predicted_apogee: p.predicted_apogee,
+        }
+    }
+
+    pub fn to_bytes(&self) -> [u8; Self::SIZE] {
+        let mut d = [0u8; Self::SIZE];
+        d[0..4].copy_from_slice(&self.ms_since_boot_cfc.to_le_bytes());
+        d[4..8].copy_from_slice(&self.flight_mode.to_le_bytes());
+        d[8..12].copy_from_slice(&self.pressure.to_le_bytes());
+        d[12..16].copy_from_slice(&self.temp.to_le_bytes());
+        d[16..20].copy_from_slice(&self.altitude.to_le_bytes());
+        d[20..24].copy_from_slice(&self.mag_x.to_le_bytes());
+        d[24..28].copy_from_slice(&self.mag_y.to_le_bytes());
+        d[28..32].copy_from_slice(&self.mag_z.to_le_bytes());
+        d[32..36].copy_from_slice(&self.accel_x.to_le_bytes());
+        d[36..40].copy_from_slice(&self.accel_y.to_le_bytes());
+        d[40..44].copy_from_slice(&self.accel_z.to_le_bytes());
+        d[44..48].copy_from_slice(&self.gyro_x.to_le_bytes());
+        d[48..52].copy_from_slice(&self.gyro_y.to_le_bytes());
+        d[52..56].copy_from_slice(&self.gyro_z.to_le_bytes());
+        d[56..60].copy_from_slice(&self.pt3.to_le_bytes());
+        d[60..64].copy_from_slice(&self.pt4.to_le_bytes());
+        d[64..68].copy_from_slice(&self.rtd.to_le_bytes());
+        d[68] = self.sv_open as u8;
+        d[69] = self.mav_open as u8;
+        d[70] = self.ssa_drogue_deployed;
+        d[71] = self.ssa_main_deployed;
+        d[72] = self.cmd_n1;
+        d[73] = self.cmd_n2;
+        d[74] = self.cmd_n3;
+        d[75] = self.cmd_n4;
+        d[76] = self.cmd_a1;
+        d[77] = self.cmd_a2;
+        d[78] = self.cmd_a3;
+        d[79] = self.airbrake_state;
+        d[80..84].copy_from_slice(&self.predicted_apogee.to_le_bytes());
+        d
+    }
+}
+
 struct WriteWrapper<'a> {
     buf: &'a mut [u8],
     offset: usize,

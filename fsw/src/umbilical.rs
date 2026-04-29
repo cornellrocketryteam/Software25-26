@@ -263,6 +263,10 @@ impl log::Log for UsbSerialLogger {
         if !self.enabled(record.metadata()) {
             return;
         }
+        // Never inject log text into the binary stream during a flash dump.
+        if DUMP_IN_PROGRESS.load(Ordering::Acquire) {
+            return;
+        }
         let mut buf = [0u8; 256];
         let len = {
             use core::fmt::Write;

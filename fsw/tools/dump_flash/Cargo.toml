@@ -2,7 +2,7 @@
 name = "dump_flash"
 version = "0.1.0"
 edition = "2021"
-description = "Host-side tool: dumps onboard QSPI flash CSV over USB umbilical"
+description = "Host-side tool: dumps onboard QSPI flash over USB umbilical and decodes binary records to CSV"
 
 [dependencies]
 serialport = "4"

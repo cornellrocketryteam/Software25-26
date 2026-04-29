@@ -7,7 +7,7 @@
 //! - Shared SPI bus support with embassy-embedded-hal
 
 use embedded_hal_async::spi::SpiDevice;
-use crate::packet::Packet;
+use crate::packet::{Packet, FastRecord, FAST_RECORD_TAG, FULL_RECORD_TAG};
 use crate::module::SpiDevice as SpiDeviceType;
 
 /// Total flash size: 16 MiB
@@ -113,7 +113,6 @@ impl Snapshot {
 pub struct OnboardFlash<'a> {
     spi: SpiDeviceType<'a>,
     write_offset: u32,
-    needs_header: bool,
     /// True iff the flash chip is accessible (JEDEC ID responded).
     /// Snapshot ring reads/writes are gated on this flag.
     pub flash_ok: bool,
@@ -137,7 +136,6 @@ impl<'a> OnboardFlash<'a> {
         Self {
             spi,
             write_offset: STORAGE_OFFSET,
-            needs_header: true,
             flash_ok: false,
             storage_full: false,
             snapshot_offset: SNAPSHOT_RING_BASE,
@@ -193,7 +191,6 @@ impl<'a> OnboardFlash<'a> {
             if buffer.iter().all(|&x| x == 0xFF) {
                 if mid == STORAGE_OFFSET {
                     self.write_offset = STORAGE_OFFSET;
-                    self.needs_header = true;
                     return Ok(());
                 }
                 high = mid - PAGE_SIZE;
@@ -203,8 +200,7 @@ impl<'a> OnboardFlash<'a> {
         }
 
         self.write_offset = low;
-        self.needs_header = self.write_offset == STORAGE_OFFSET;
-        
+
         log::info!("Flash: Offset set to {:#x}", self.write_offset);
 
         if self.write_offset >= STORAGE_OFFSET + STORAGE_SIZE {
@@ -213,15 +209,22 @@ impl<'a> OnboardFlash<'a> {
         Ok(())
     }
 
-    pub async fn append_packet_csv(&mut self, packet: &Packet) -> Result<(), Error> {
-        if self.needs_header {
-            let header = Packet::CSV_HEADER;
-            self.append_raw(header.as_bytes()).await?;
-            self.needs_header = false;
-        }
-        let mut buf = [0u8; 256];
-        let len = packet.to_csv(&mut buf);
-        self.append_raw(&buf[..len]).await
+    /// Append a 20 Hz fast record (tag byte + 84 payload bytes = 85 bytes total).
+    pub async fn append_fast_record(&mut self, fast: &FastRecord) -> Result<(), Error> {
+        let payload = fast.to_bytes();
+        let mut buf = [0u8; 1 + FastRecord::SIZE];
+        buf[0] = FAST_RECORD_TAG;
+        buf[1..].copy_from_slice(&payload);
+        self.append_raw(&buf).await
+    }
+
+    /// Append a 1 Hz full record (tag byte + 199 payload bytes = 200 bytes total).
+    pub async fn append_full_record(&mut self, packet: &Packet) -> Result<(), Error> {
+        let payload = packet.to_bytes();
+        let mut buf = [0u8; 1 + Packet::SIZE];
+        buf[0] = FULL_RECORD_TAG;
+        buf[1..].copy_from_slice(&payload);
+        self.append_raw(&buf).await
     }
 
     async fn append_raw(&mut self, data: &[u8]) -> Result<(), Error> {
@@ -446,7 +449,6 @@ impl<'a> OnboardFlash<'a> {
             }
         }
         self.write_offset = STORAGE_OFFSET;
-        self.needs_header = true;
         Ok(())
     }
 }
