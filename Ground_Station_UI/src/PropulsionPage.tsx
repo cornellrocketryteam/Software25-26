@@ -25,8 +25,6 @@ type ValveData = {
 }
 
 type PropulsionContextType = {
-    thresholdPressure: number;
-    setThresholdPressure: (pressure: number) => void;
     ventUIActive: boolean;
     setVentUIActive: (active: boolean) => void;
     fillUIActive: boolean;
@@ -113,7 +111,6 @@ export function PropulsionPage() {
     const [fillState, setFillState] = useState<FillState>('INITIAL');
     const [ventSeconds, setVentSeconds] = useState(0);
     const [confirmedVentSeconds, setConfirmedVentSeconds] = useState(0);
-    const [thresholdPressure, setThresholdPressure] = useState(600);
     const [ventUIActive, setVentUIActive] = useState(false); // State to control whether the vent UI is active and visible
     const [fillUIActive, setFillUIActive] = useState(false); // State to control whether the fill UI is active and visible
     const [buttonInteractionState, setButtonInteractionState] = useState<interactionType>("DISABLED"); // State to control whether buttons can be interacted with, to prevent spamming commands while waiting for server responses
@@ -151,7 +148,11 @@ export function PropulsionPage() {
     //Igniter commands: get the continuity status of the igniters, likely will need to be reworked to fit the actual data being sent by the server and how we want to handle it. 
     //If we have continuity then we have the ability to ignite
 
-    //Solenoid Valve Commands: Get the information of the valve states on mount (so call in useEffect) so I can set my initial state of the valve buttons to 
+    //Igniter commands:
+    const getIgniterContinuity1 = { "command": "get_igniter_continuity", "id": 1 };
+    const getIgniterContinuity2 = { "command": "get_igniter_continuity", "id": 2 };
+
+    //Solenoid Valve Commands: Get the information of the valve states on mount (so call in useEffect) so I can set my initial state of the valve buttons to
     //match the actual state of the valves, and then also use these commands to get updated valve states after sending any command that would change the valve states.
     const getSVstate1 = { "command": "get_valve_state", "valve": "SV1" };
     const actuateSV1Open = { "command": "actuate_valve", "valve": "SV1", "open": true };
@@ -359,15 +360,14 @@ export function PropulsionPage() {
                 }
 
 
-                const lastPressure = umbilicalDataRef.current.at(-1)?.telemetry.pt3 ?? 0;
-
-                if (isFillingRef.current && !isVentingRef.current) {
-                    data.telemetry.pt3 = lastPressure + (Math.random() * 4 + 1); // Random increase between 1-5 during fill
-                } else if (isVentingRef.current || (valveDataRef.current.SV2.venting && valveDataRef.current.BV.actuated)) {
-                    data.telemetry.pt3 = Math.max(0, lastPressure - (Math.random() * 15 + 10)); // Random decrease between 10-25 during vent
-                } else {
-                    data.telemetry.pt3 = lastPressure; // Hold when idle
-                }
+                // const lastPressure = umbilicalDataRef.current.at(-1)?.telemetry.pt3 ?? 0;
+                // if (isFillingRef.current && !isVentingRef.current) {
+                //     data.telemetry.pt3 = lastPressure + (Math.random() * 4 + 1);
+                // } else if (isVentingRef.current || (valveDataRef.current.SV2.venting && valveDataRef.current.BV.actuated)) {
+                //     data.telemetry.pt3 = Math.max(0, lastPressure - (Math.random() * 15 + 10));
+                // } else {
+                //     data.telemetry.pt3 = lastPressure;
+                // }
 
                 console.log("Pressure:", new Date().toISOString(), "PSI:", data.telemetry.pt3);
 
@@ -386,9 +386,8 @@ export function PropulsionPage() {
                 // Update SV2 state based on telemetry, including venting status and continuity if available
                 if (data.telemetry && data.telemetry.sv_open !== undefined) {
                     updateValveData(prevState => ({
-                        ...prevState, //Spread the previous state to keep other valves' data unchanged
-                        SV2: { "actuated": data.telemetry.sv_open, "venting": data.telemetry.sv_open, "continuity": data.continuity }
-                        //Adjust as needed based on actual response data and what information we want to track
+                        ...prevState,
+                        SV2: { ...prevState.SV2, "actuated": data.telemetry.sv_open, "venting": data.telemetry.sv_open }
                     }));
                 }
                 break;
@@ -464,16 +463,6 @@ export function PropulsionPage() {
             sendCommandWithDelay(getBallValveState, 50);
             sendCommandWithDelay(getQdState, 100);
             sendCommandWithDelay(heartbeatCommand, 250);
-            //sendCommandWithDelay(getSVstate2, 150);
-            sendCommandWithDelay(() => {
-                if (!valveDataRef.current.SV2.actuated) {
-                    wsRef.current?.send(JSON.stringify(actuateSV2Open));
-                    //sendCommandWithDelay(getSVstate2, 50);
-                }
-                if (valveDataRef.current.MAV.actuated) {
-                    wsRef.current?.send(JSON.stringify(actuateMavClose));
-                }
-            }, 400);
             sendCommandWithDelay(startADCStream, 333);
             sendCommandWithDelay(startFSWStream, 333);
             console.log("Command batch finished");
@@ -489,6 +478,8 @@ export function PropulsionPage() {
                     sendCommandWithDelay(getSVstate1, 0);
                     sendCommandWithDelay(getBallValveState, 50);
                     sendCommandWithDelay(getQdState, 100);
+                    sendCommandWithDelay(getIgniterContinuity1, 150);
+                    sendCommandWithDelay(getIgniterContinuity2, 200);
                 }
             }, 3000);
         };
@@ -516,7 +507,7 @@ export function PropulsionPage() {
     }, [wsReady]); // Re-run effect if WebSocket connection status changes
 
     return (
-        <PropulsionContext.Provider value={{ confirmedVentSecondsRef, canInteractRef, buttonInteractionState, setButtonInteractionState, valveDataRef, fillUIActive, setFillUIActive, ventUIActive, setVentUIActive, isVentingRef, isFillingRef, manualVentRef, handleButtonClickRef, fillState, setFillState, thresholdPressure, setThresholdPressure, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, valveData, adcDataRef: adcDataRef, telemetryDataRef: umbilicalDataRef }}>
+        <PropulsionContext.Provider value={{ confirmedVentSecondsRef, canInteractRef, buttonInteractionState, setButtonInteractionState, valveDataRef, fillUIActive, setFillUIActive, ventUIActive, setVentUIActive, isVentingRef, isFillingRef, manualVentRef, handleButtonClickRef, fillState, setFillState, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, valveData, adcDataRef: adcDataRef, telemetryDataRef: umbilicalDataRef }}>
             <div className={`min-h-screen bg-white ${ventUIActive ? 'cursor-wait' : ''}`}>
                 {/* Header */}
                 <Header

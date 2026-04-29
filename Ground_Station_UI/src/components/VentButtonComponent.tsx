@@ -4,7 +4,7 @@ import ConfirmationOverlay from "./ConfirmationOverlayComponent";
 
 export default function VentButtonComponent() {
 
-    const{manualVentRef, fillUIActive, ventUIActive, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds} = usePropulsion();
+    const { manualVentRef, fillUIActive, ventUIActive, setVentUIActive, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, handleButtonClickRef, isVentingRef } = usePropulsion();
     const [showConfirmation, setShowConfirmation] = useState(false);
     const toggleVentAction = () => {
         if (ventSeconds === 0) {
@@ -52,9 +52,18 @@ export default function VentButtonComponent() {
                         Set Time
                     </button>
                     <div className="relative group inline-block">
-                        <button 
-                        onClick={() => { manualVentRef.current = true }}
-                        disabled={confirmedVentSeconds === 0 || ventUIActive || !fillUIActive} // Disable if no vent time is set or if vent is already active or if we havenet started filling 
+                        <button
+                        onClick={() => {
+                            if (ventUIActive) {
+                                // ABORT: close SV2 immediately and clear the venting lock
+                                handleButtonClickRef.current("Solenoid Valve 2", 'CLOSE');
+                                isVentingRef.current = false;
+                                setVentUIActive(false);
+                            } else {
+                                manualVentRef.current = true;
+                            }
+                        }}
+                        disabled={confirmedVentSeconds === 0 || !fillUIActive}
                         className="bg-[#E05A2B] border-[4px] border-black rounded-2xl px-10 py-3 font-inter font-bold text-[32px] text-white hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed"
                         >
                             {!ventUIActive ? "VENT" : "ABORT"}
