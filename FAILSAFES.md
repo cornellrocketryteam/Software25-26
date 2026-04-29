@@ -85,7 +85,7 @@
 
 | Failsafe | Threshold | Trigger | Action | File |
 |---|---|---|---|---|
-| Client disconnect emergency shutdown | 15 s | Zero WebSocket clients connected | Closes SV1, closes ball valve, sends `<V>` to FSW | `main.rs:826–850` |
+| Client disconnect emergency shutdown | 15 s | Zero WebSocket clients connected | Closes SV1, closes ball valve, sends `<S>` (Open SV) to FSW | `main.rs:826–850` |
 | Client heartbeat watchdog | 15 s | No valid message from a connected client | Disconnect that client | `main.rs:230–234` |
 | `umb_ever_connected` guard | Boot | FSW never connected yet | Umbilical safety timer will not arm until first FSW connection | `main.rs:828–832` |
 

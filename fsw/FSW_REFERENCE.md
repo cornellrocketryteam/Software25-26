@@ -28,7 +28,7 @@ The FSW runs a 7-phase state machine defined in `state.rs` (`FlightMode` enum) w
 |--------|-------------|-----|---------|---------------|
 | **BMP390** (altimeter) | `driver/bmp390.rs` | SPI | 0x77 | Pressure (Pa), temperature (°C), altitude (m) |
 | **LSM6DSOX** (IMU) | `driver/lsm6dsox.rs` | I2C0 | 0x6A | Accel XYZ (m/s²), gyro XYZ (°/s) |
-| **LIS3MDL** (magnetometer) | `driver/lis3mdl.rs` | I2C0 | idk | Mag field XYZ (µT) |
+| **ADS1015** (ADC) | `driver/ads1015.rs` | I2C0 | 0x48 | PT3, PT4, RTD (scaled) |
 | **u-blox MAX-M10S** (GPS) | `driver/ublox_max_m10s.rs` | I2C0 | 0x42 | Latitude, longitude, satellite count, timestamp |
 
 All I2C sensors share a single bus (GPIO 0 SDA / GPIO 1 SCL, 400 kHz) through `embassy_embedded_hal::shared_bus`.
@@ -47,21 +47,22 @@ All I2C sensors share a single bus (GPIO 0 SDA / GPIO 1 SCL, 400 kHz) through `e
 
 | System | Driver File | Interface | Details |
 |--------|-------------|-----------|---------|
-| **RFD900x Radio** | `driver/rfd900x.rs` | UART1 (GPIO 4 TX / GPIO 5 RX, 115200 baud) | Transmit-only. 4-byte sync (`0x3E5D5967`) + 68-byte packet at 1 Hz |
+| **RFD900x Radio** | `driver/rfd900x.rs` | UART1 (GPIO 4 TX / GPIO 5 RX, 115200 baud) | Transmit-only. 4-byte sync (`0x3E5D5967`) + 199-byte packet at 1 Hz |
 | **USB Logger** | Built-in (embassy-usb-logger) | USB CDC-ACM | Debug log output, 1024-byte buffer |
-| **Umbilical** | `umbilical.rs` | USB CDC-ACM | 21-token command parser (H=heartbeat, L=launch, M/m=MAV, S/s=SV, V=safe, F=resetFRAM, f=dumpFRAM, R=reboot, G/W/I=flash dump/wipe/info, X=wipeFRAM+reboot, K/k=key arm/disarm, `<T,lat,lon>`=set BLiMS target, 1–4=payload events). Drained by `flight_loop.rs::check_umbilical_commands` each cycle. |
+| **Umbilical** | `umbilical.rs` | USB CDC-ACM | Command parser (H=heartbeat, L=launch, M/m=MAV, S/s=SV, V=safe, F=resetFRAM, f=dumpFRAM, R=reboot, G/W/I=flash dump/wipe/info, X=wipeFRAM+reboot, KA/KD=key arm/disarm, D/d=Trigger Drogue/Main, `<T,lat,lon>`=set BLiMS target, 1–4=payload N events, A1-A3=payload A events). Drained by `flight_loop.rs::check_umbilical_commands` each cycle. |
 
 ### Telemetry Packet
 
-68-byte struct (`packet.rs`) transmitted each cycle:
+199-byte struct (`packet.rs`) transmitted each cycle via Radio, and emitted as a 57-field CSV via the Umbilical:
 
-```
+```text
 Bytes 0x00–0x03: flight_mode (u32)
 Bytes 0x04–0x0F: pressure (f32), temp (f32), altitude (f32)
 Bytes 0x10–0x1F: latitude (f32), longitude (f32), num_satellites (u32), timestamp (f32)
 Bytes 0x20–0x2B: mag_x (f32), mag_y (f32), mag_z (f32)
 Bytes 0x2C–0x37: accel_x (f32), accel_y (f32), accel_z (f32)
 Bytes 0x38–0x43: gyro_x (f32), gyro_y (f32), gyro_z (f32)
+... (extends to 199 bytes including BLiMS, Airbrakes, and GPS velocities)
 ```
 
 ### Data Storage
