@@ -102,13 +102,13 @@ pub async fn airbrake_core1_task() {
         };
 
         let output = system.execute(
-            input.time as f64,
-            input.altitude as f64,
-            input.gyro_x as f64,
-            input.gyro_y as f64,
-            input.accel_x as f64,
-            input.accel_y as f64,
-            input.accel_z as f64,
+            input.time as _,
+            input.altitude as _,
+            input.gyro_x as _,
+            input.gyro_y as _,
+            input.accel_x as _,
+            input.accel_y as _,
+            input.accel_z as _,
             ctrl_phase,
         );
 
