@@ -48,9 +48,8 @@ pub struct Snapshot {
     pub altitude: f32,
     pub mav_open: u32,
     pub sv_open: u32,
-    pub pt3: f32,
-    pub pt4: f32,
-    pub rtd: f32,
+    pub launch_stage: u32,
+    pub launch_elapsed_ms: u32,
 }
 
 impl Snapshot {
@@ -65,9 +64,9 @@ impl Snapshot {
         b[22..26].copy_from_slice(&self.altitude.to_le_bytes());
         b[26..30].copy_from_slice(&self.mav_open.to_le_bytes());
         b[30..34].copy_from_slice(&self.sv_open.to_le_bytes());
-        b[34..38].copy_from_slice(&self.pt3.to_le_bytes());
-        b[38..42].copy_from_slice(&self.pt4.to_le_bytes());
-        b[42..46].copy_from_slice(&self.rtd.to_le_bytes());
+        b[34..38].copy_from_slice(&self.launch_stage.to_le_bytes());
+        b[38..42].copy_from_slice(&self.launch_elapsed_ms.to_le_bytes());
+        b[42..46].copy_from_slice(&0u32.to_le_bytes()); // reserved
         let crc = Self::crc(&b[0..46]);
         b[46..50].copy_from_slice(&crc.to_le_bytes());
         b
@@ -92,9 +91,8 @@ impl Snapshot {
             altitude: f32at(22),
             mav_open: u32at(26),
             sv_open: u32at(30),
-            pt3: f32at(34),
-            pt4: f32at(38),
-            rtd: f32at(42),
+            launch_stage: u32at(34),
+            launch_elapsed_ms: u32at(38),
         })
     }
 
@@ -218,7 +216,7 @@ impl<'a> OnboardFlash<'a> {
         self.append_raw(&buf).await
     }
 
-    /// Append a 1 Hz full record (tag byte + 199 payload bytes = 200 bytes total).
+    /// Append a 5 Hz full record (tag byte + 199 payload bytes = 200 bytes total).
     pub async fn append_full_record(&mut self, packet: &Packet) -> Result<(), Error> {
         let payload = packet.to_bytes();
         let mut buf = [0u8; 1 + Packet::SIZE];

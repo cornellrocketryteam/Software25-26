@@ -104,6 +104,10 @@ pub struct FlightState {
     // Snapshot-ring throttle (replaces FRAM periodic logging at 1 Hz)
     last_snapshot_log: Instant,
 
+    // Set by FlightLoop each cycle; written into snapshot for crash recovery of launch sequence
+    pub snap_launch_stage: u32,
+    pub snap_launch_elapsed_ms: u32,
+
     // External Comms
     pub payload_uart: UartTx<'static, Async>,
 
@@ -169,6 +173,8 @@ impl FlightState {
         let mut stored_cycle_count = 0u32;
         let mut stored_mav_open = false; // MAV defaults closed (matches Mav::new())
         let mut stored_sv_open  = true;  // SV  defaults open  (matches SV::new())
+        let mut stored_launch_stage = 0u32;
+        let mut stored_launch_elapsed_ms = 0u32;
         if flash_ok {
             match with_timeout(scan_to, flash.initialize_snapshot_ring()).await {
                 Ok(Ok(_)) => match with_timeout(scan_to, flash.read_latest_snapshot()).await {
@@ -177,10 +183,13 @@ impl FlightState {
                         stored_cycle_count = snap.cycle_count;
                         stored_mav_open  = snap.mav_open != 0;
                         stored_sv_open   = snap.sv_open  != 0;
+                        stored_launch_stage = snap.launch_stage;
+                        stored_launch_elapsed_ms = snap.launch_elapsed_ms;
                         log::info!(
-                            "Snapshot recovered: mode={:?} cycle={} alt={:.2} mav={} sv={}",
+                            "Snapshot recovered: mode={:?} cycle={} alt={:.2} mav={} sv={} launch_stage={} elapsed_ms={}",
                             stored_mode, stored_cycle_count, snap.altitude,
-                            stored_mav_open, stored_sv_open
+                            stored_mav_open, stored_sv_open,
+                            stored_launch_stage, stored_launch_elapsed_ms
                         );
                     }
                     Ok(Ok(None)) => log::info!("Snapshot ring empty — starting fresh."),
@@ -313,6 +322,8 @@ impl FlightState {
             airbrake_system,
             flash,
             last_snapshot_log: Instant::now(),
+            snap_launch_stage: stored_launch_stage,
+            snap_launch_elapsed_ms: stored_launch_elapsed_ms,
             payload_uart,
 
             #[cfg(feature = "sim_payload")]
@@ -674,10 +685,10 @@ impl FlightState {
                 let _ = core::fmt::write(
                     &mut msg,
                     format_args!(
-                        "SNAP seq={} mode={} cyc={} p={:.1} t={:.2} alt={:.2} mav={} sv={} pt3={:.1} pt4={:.1} rtd={:.1}\n",
+                        "SNAP seq={} mode={} cyc={} p={:.1} t={:.2} alt={:.2} mav={} sv={} launch_stage={} elapsed_ms={}\n",
                         s.seq, s.flight_mode, s.cycle_count,
                         s.pressure, s.temp, s.altitude,
-                        s.mav_open, s.sv_open, s.pt3, s.pt4, s.rtd
+                        s.mav_open, s.sv_open, s.launch_stage, s.launch_elapsed_ms
                     ),
                 );
                 crate::umbilical::print_str(msg.as_str());
@@ -715,9 +726,8 @@ impl FlightState {
             altitude: self.packet.altitude,
             mav_open: self.packet.mav_open as u32,
             sv_open: self.packet.sv_open as u32,
-            pt3: self.packet.pt3,
-            pt4: self.packet.pt4,
-            rtd: self.packet.rtd,
+            launch_stage: self.snap_launch_stage,
+            launch_elapsed_ms: self.snap_launch_elapsed_ms,
         };
         let to = Duration::from_millis(constants::FLASH_TIMEOUT_MS);
         match with_timeout(to, self.flash.write_snapshot(&mut snap)).await {

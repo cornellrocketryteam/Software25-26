@@ -1,5 +1,5 @@
 use core::f32;
-use embassy_time::Instant;
+use embassy_time::{Duration, Instant};
 
 use blims::blims_state::BlimsDataIn;
 
@@ -119,6 +119,43 @@ impl FlightLoop {
         );
         let main_chutes_deployed = matches!(recovered, FlightMode::MainDeployed);
 
+        // Reconstruct the launch sequence timer from the recovered snapshot so that
+        // a crash mid-burn resumes with the remaining MAV time rather than stalling
+        // in Ascent forever (the timer is wall-clock and can't survive a reboot).
+        let (launch_sequence_stage, launch_stage_start_time) =
+            if matches!(recovered, FlightMode::Ascent) {
+                let stage = flight_state.snap_launch_stage;
+                let elapsed_ms = flight_state.snap_launch_elapsed_ms as u64;
+                let stage_limit_ms: u64 = match stage {
+                    1 => constants::LAUNCH_SV_PREVENT_MS,
+                    2 => constants::LAUNCH_SV_TO_MAV_WAIT_MS,
+                    3 => constants::MAV_OPEN_DURATION_MS,
+                    _ => 0,
+                };
+                if stage == 0 || stage >= 4 || elapsed_ms >= stage_limit_ms {
+                    // Sequence complete — Done stage will be handled by check_transitions
+                    // on the first loop iteration to push mode to Coast.
+                    (LaunchStage::Done, None)
+                } else {
+                    // Backdate the start instant so the remaining duration fires naturally.
+                    let backdated = Instant::now()
+                        .checked_sub(Duration::from_millis(elapsed_ms))
+                        .unwrap_or(Instant::from_ticks(0));
+                    let recovered_stage = match stage {
+                        1 => LaunchStage::PreVent,
+                        2 => LaunchStage::SvToMavWait,
+                        _ => LaunchStage::MavOpen,
+                    };
+                    log::info!(
+                        "Launch sequence resumed: stage={} elapsed_ms={}",
+                        stage, elapsed_ms
+                    );
+                    (recovered_stage, Some(backdated))
+                }
+            } else {
+                (LaunchStage::None, None)
+            };
+
         Self {
             flight_state,
             key_armed,
@@ -155,8 +192,8 @@ impl FlightLoop {
             last_flash_log: None,
             last_full_log: None,
             last_heartbeat: None,
-            launch_sequence_stage: LaunchStage::None,
-            launch_stage_start_time: None,
+            launch_sequence_stage,
+            launch_stage_start_time,
             recovery_vent_sent: false,
             low_alt_time: None,
             n2_low_speed_count: 0,
@@ -235,6 +272,14 @@ impl FlightLoop {
         // the mode that was active when the data was produced, not the mode from
         // the start of the cycle before check_transitions() ran.
         self.flight_state.packet.flight_mode = self.flight_state.flight_mode as u32;
+
+        // Sync launch sequence info into FlightState so all snapshot writes (periodic
+        // and transition-triggered) capture the current stage and elapsed time.
+        self.flight_state.snap_launch_stage = self.launch_sequence_stage as u32;
+        self.flight_state.snap_launch_elapsed_ms = self
+            .launch_stage_start_time
+            .map(|t| t.elapsed().as_millis() as u32)
+            .unwrap_or(0);
 
         // 4. Update actuators
         self.flight_state.update_actuators().await;
@@ -1101,7 +1146,16 @@ impl FlightLoop {
                     }
                 }
             }
-            _ => {}
+            LaunchStage::Done => {
+                // Handles recovery: if we rebooted mid-sequence and restored Done,
+                // push to Coast on the first iteration rather than waiting forever.
+                if self.flight_state.flight_mode == FlightMode::Ascent {
+                    log::warn!("Launch sequence Done on recovery; transitioning Ascent → Coast.");
+                    self.flight_state.flight_mode = FlightMode::Coast;
+                    self.flight_state.write_packet_to_fram().await;
+                }
+            }
+            LaunchStage::None => {}
         }
     }
 
