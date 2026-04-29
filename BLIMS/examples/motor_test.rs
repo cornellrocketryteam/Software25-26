@@ -56,7 +56,8 @@ async fn main(spawner: Spawner) {
     let mut pwm = Pwm::new_output_a(p.PWM_SLICE6, p.PIN_28, pwm_config.clone());
 
     set_motor_position(&mut pwm, &mut pwm_config, 0.5);
-    Timer::after(Duration::from_secs(5)).await; 
+    log::info!("[main] Moving to neutral (0.5)");
+    Timer::after(Duration::from_secs(10)).await; 
 
     state_pin.set_low(); 
     log::info!("pulse low");
@@ -71,23 +72,23 @@ async fn main(spawner: Spawner) {
 
     loop {
         
-        log::info!("[main] Moving to +10.5 turns (0.75)");
+        log::info!("[main] Moving to +10.5 turns (1.0)");
         // log::info!("[main] Moving to +10.5 turns (0.75)");
-        set_motor_position(&mut pwm, &mut pwm_config, 0.75);
-        Timer::after(Duration::from_secs(5)).await;
+        set_motor_position(&mut pwm, &mut pwm_config, 1.0);
+        Timer::after(Duration::from_secs(10)).await;
  
         log::info!("[main] Moving to neutral 0 turns (0.5)");
         set_motor_position(&mut pwm, &mut pwm_config, 0.5);
-        Timer::after(Duration::from_secs(5)).await;
+        Timer::after(Duration::from_secs(10)).await;
  
-        log::info!("[main] Moving to -10.5 turns (0.25)");
+        log::info!("[main] Moving to -10.5 turns (0.0)");
         // log::info!::info!("[main] Moving to +10.5 turns (0.25)");
-        set_motor_position(&mut pwm, &mut pwm_config, 0.25);
-        Timer::after(Duration::from_secs(5)).await;
+        set_motor_position(&mut pwm, &mut pwm_config, 0.0);
+        Timer::after(Duration::from_secs(10)).await;
 
-        log::info!("[main] Moving to -10.5 turns (0.25)");
+        log::info!("[main] Moving to -10.5 turns (0.5)");
         set_motor_position(&mut pwm, &mut pwm_config, 0.5);
-        Timer::after(Duration::from_secs(5)).await;
+        Timer::after(Duration::from_secs(10)).await;
 }
 
     // loop {

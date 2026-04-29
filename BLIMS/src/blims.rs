@@ -1,6 +1,6 @@
 use embassy_rp::gpio::Output;
 use embassy_rp::pwm::{Config as PwmConfig, Pwm};
-use embassy_time::{Duration, Instant};
+use embassy_time::{Duration, Instant,Timer};
  
 use crate::blims_constants::*;
 use crate::blims_state::{BlimsDataIn, BlimsDataOut, LoiterStep, Phase};
@@ -148,6 +148,8 @@ impl<'d> Blims<'d> {
             curr_time_ms: 0,
             prev_time_ms: 0,
         };
+        b.enable_pin.set_low();
+        Timer::after(Duration::from_secs(10)).await;
         b.enable_pin.set_high();
         b.set_motor_position(NEUTRAL_POS);
         b
@@ -468,3 +470,5 @@ impl<'d> Blims<'d> {
     }
 }
 
+
+//controller 6in to -6in 
