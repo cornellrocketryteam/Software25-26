@@ -408,7 +408,7 @@ async fn main(spawner: Spawner) {
                 TARGET_LON,
                 heading_deg,
                 data_out.bearing,
-                data_out.motor_position,
+                data_out.brakeline_diff_in,
                 now_ms,
                 data_out.pid_p,
                 data_out.pid_i,

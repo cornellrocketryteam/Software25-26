@@ -385,7 +385,7 @@ class BlimsVisualizer(QtWidgets.QMainWindow):
             f'  Lat {lat:.6f}   Lon {lon:.6f}   '
             f'Alt {alt:.0f} ft   '
             f'Head {heading:.1f}°   Bearing {bearing:.1f}°   '
-            f'Err {err:+.1f}°   Motor {motor:+.3f} in   '
+            f'Err {err:+.1f}°   Brakeline {motor:+.3f} in   '
             f'Phase: {pname}'
         )
 

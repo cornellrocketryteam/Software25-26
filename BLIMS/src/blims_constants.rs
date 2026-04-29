@@ -73,12 +73,17 @@ pub const MAX_WIND_LAYERS: usize = 20;
 // At 90° error:  p_term = 0.405 × 90 = 36.5 in  → saturated at 9 in — same
 //                saturation behaviour as old gains in old units.
 pub const ALPHA: f32 = 0.1;
-/// Anti-windup integral clamp.  450 °·s at 20 Hz means the integrator
-/// saturates after ~22 s of 1 °/s steady-state error, keeping the I-term
-/// meaningful but bounded.  Tune this from flight data.
-pub const INTEGRAL_MAX: f32 = 450.0;
-pub const KP: f32 = 0.405;
-pub const KI: f32 = 0.045;
+// INTEGRAL_MAX_INCHES: the I term can contribute AT MOST this many inches of
+// differential. Converted to a degree·s clamp inside execute_pi_control as
+//   max_integral = INTEGRAL_MAX_INCHES / KI
+// This makes the limit directly interpretable in physical units.
+pub const INTEGRAL_MAX_INCHES: f32 = 1.0;
+// PI controller gains
+// KP: desired max output at max heading error
+//   8 in / 180° = 0.044 in/°  (leaves 1 in margin before hitting ±9 in limit)
+pub const KP: f32 = 0.044; // in/deg
+// KI: integral builds slowly — 10° error for 10 s → 0.2 in
+pub const KI: f32 = 0.002; // in/(deg·s) 
 
 // MVP L3 altitude thresholds (feet AGL) 
 // upwind/downwind corssover threshold 

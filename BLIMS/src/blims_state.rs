@@ -64,7 +64,7 @@ pub struct BlimsDataOut {
     ///// String differential in inches; range [MOTOR_MIN, MOTOR_MAX] = [−6, +6].
     /// Positive = right brake pulled; negative = left brake pulled.
     /// 0.0 = neutral (both lines equal).
-    pub motor_position: f32, 
+    pub brakeline_diff_in: f32, 
     pub pid_p: f32, //degrees of error × KP
     pub pid_i: f32, // degrees * s x Ki
     pub bearing: f32,    // bearing to target, degrees [0, 360)
@@ -101,7 +101,7 @@ pub struct BLIMSDataIn {
 
 #[derive(Clone, Copy, Default, Debug)]
 pub struct BLIMSDataOut {
-    pub motor_position: f32,
+    pub brakeline_diff_in: f32,
     pub pid_p:          f32,
     pub pid_i:          f32,
     pub bearing:        f32,
@@ -115,7 +115,7 @@ pub struct Flight {
     pub blims_enable_pin: u8,
     pub blims_init:       bool,
     pub flight_mode:      BLIMSMode,
-    pub motor_position:   f32,
+    pub brakeline_diff_in:   f32,
     pub data_out:         BLIMSDataOut,
     pub gps_lon:          f32,
     pub gps_lat:          f32,
@@ -142,7 +142,7 @@ impl Default for Flight {
             blims_enable_pin: 0,
             blims_init:       false,
             flight_mode:      BLIMSMode::STANDBY,
-            motor_position:   0.0,
+            brakeline_diff_in:   0.0,
             data_out:         BLIMSDataOut::default(),
             gps_lon:          0.0,
             gps_lat:          0.0,

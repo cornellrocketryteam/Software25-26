@@ -67,7 +67,7 @@ pub struct Blims<'d> {
     // ── Phase / motor state ──────────────────────────────────────────────────
     last_phase:     Phase,
     bearing:        f32,
-    motor_position: f32,
+    brakeline_diff_in: f32,   // was: motor_position: f32
 
     // ── Timing (ms since boot; mirrors blims::flight::currTime/prevTime) ─────
     curr_time_ms: u64,
@@ -113,7 +113,7 @@ impl<'d> Blims<'d> {
 
             last_phase:     Phase::Held,
             bearing:        0.0,
-            motor_position: NEUTRAL_POS, //now 0.0
+            brakeline_diff_in: NEUTRAL_POS, //now 0.0
 
             curr_time_ms: 0,
             prev_time_ms: 0,
@@ -121,7 +121,7 @@ impl<'d> Blims<'d> {
         //hold enable high continuously so motor driver stays armed
         b.enable_pin.set_high();
         //neutral until first execute() call
-        b.set_motor_position(NEUTRAL_POS);
+        b.set_brakeline_diff(NEUTRAL_POS);
         b
     }
 
@@ -210,7 +210,7 @@ impl<'d> Blims<'d> {
                 // No active control – park motor at neutral
                 self.pid_p = 0.0;
                 self.pid_i = 0.0;
-                self.set_motor_position(NEUTRAL_POS);
+                self.set_brakeline_diff(NEUTRAL_POS);
             }
 
             Phase::Upwind | Phase::Downwind => {
@@ -230,12 +230,12 @@ impl<'d> Blims<'d> {
             Phase::Neutral => {
                 self.pid_p = 0.0;
                 self.pid_i = 0.0;
-                self.set_motor_position(NEUTRAL_POS);
+                self.set_brakeline_diff(NEUTRAL_POS);
             }
         }
 
         BlimsDataOut {
-            motor_position: self.motor_position,
+            brakeline_diff_in: self.brakeline_diff_in,
             pid_p:          self.pid_p,
             pid_i:          self.pid_i,
             bearing:        self.bearing,
@@ -246,9 +246,9 @@ impl<'d> Blims<'d> {
     // =========================================================================
     // Motor
     // =========================================================================
-    fn set_motor_position(&mut self, mut position: f32) {
+    fn set_brakeline_diff(&mut self, mut position: f32) {
         position = position.clamp(MOTOR_MIN, MOTOR_MAX);
-        self.motor_position = position;
+        self.brakeline_diff_in = position;
         // Map inches [MOTOR_MIN, MOTOR_MAX] = [-9, +9] → normalised [0.0, 1.0].
         //
         //   pwm = (position − MOTOR_MIN) / (MOTOR_MAX − MOTOR_MIN)
@@ -281,9 +281,12 @@ impl<'d> Blims<'d> {
     ) {
         let error = Self::compute_heading_error(desired_heading, current_heading);
 
-        // Anti-windup: clamp integral to ±INTEGRAL_MAX
+        // Clamp the accumulated error integral so that the I term can contribute
+        // at most INTEGRAL_MAX_INCHES of brakeline differential.
+        // max_integral [deg·s] = INTEGRAL_MAX_INCHES [in] / KI [in/(deg·s)]
+        let max_integral = INTEGRAL_MAX_INCHES / KI;
         self.error_integral =
-            (self.error_integral + error * dt).clamp(-INTEGRAL_MAX, INTEGRAL_MAX);
+            (self.error_integral + error * dt).clamp(-max_integral, max_integral);
 
         let p_term = KP * error;
         let i_term = KI * self.error_integral;
@@ -291,7 +294,7 @@ impl<'d> Blims<'d> {
         self.pid_p = p_term;
         self.pid_i = i_term;
 
-        self.set_motor_position(NEUTRAL_POS + p_term + i_term);
+        self.set_brakeline_diff(NEUTRAL_POS + p_term + i_term);
     }
 
     // =========================================================================
