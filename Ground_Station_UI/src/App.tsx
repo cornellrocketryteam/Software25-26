@@ -40,6 +40,7 @@ function App() {
   
   useEffect(() => {
         let reconnectTimeout: ReturnType<typeof setTimeout>;
+        let heartbeatInterval: ReturnType<typeof setInterval>;
 
         const connect = () => {
           wsRef.current = new WebSocket(uri);
@@ -47,10 +48,18 @@ function App() {
           wsRef.current.onopen = () => {
                 console.log("WebSocket connection established.");
                 setWsReady(true);
+                // Global heartbeat — keeps the connection alive on every page.
+                // Server disconnects after 15s without one (main.rs:231).
+                heartbeatInterval = setInterval(() => {
+                    if (wsRef.current?.readyState === WebSocket.OPEN) {
+                        wsRef.current.send(JSON.stringify({ "command": "heartbeat" }));
+                    }
+                }, 5000);
             };
 
             wsRef.current.onclose = () => {
                 console.log("WebSocket closed. Reconnecting in 3 seconds...");
+                clearInterval(heartbeatInterval);
                 setWsReady(false);
                 reconnectTimeout = setTimeout(connect, 3000);
             };
@@ -59,12 +68,13 @@ function App() {
                 console.error("WebSocket error:", error);
                 wsRef.current?.close();
             };
-            wsRef.current.addEventListener('message', handleMessage); 
+            wsRef.current.addEventListener('message', handleMessage);
         };
 
         connect();
 
         return () => {
+            clearInterval(heartbeatInterval);
             clearTimeout(reconnectTimeout);
             if (wsRef.current) {
               wsRef.current.removeEventListener('message', handleMessage);
