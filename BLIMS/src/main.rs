@@ -5,7 +5,7 @@ mod blims_constants;
 mod blims_state;
 mod blims;
  
-use blims::Blims;
+use blims::{Blims, Hardware};
 use blims_state::BlimsDataIn;
  
 use embassy_executor::Spawner;
@@ -22,6 +22,15 @@ const DIVIDER: f32 = 38.15;
  
 // Control loop period
 const LOOP_PERIOD_MS: u64 = 50; // 20 Hz
+
+// ── Wind profile — update pre-flight from HRRR/radiosonde data ───────────────
+const WIND_PROFILE_SIZE: usize = 11;
+const WIND_ALTITUDES_M: [f32; WIND_PROFILE_SIZE] = [
+    0.0, 50.0, 100.0, 150.0, 200.0, 250.0, 300.0, 400.0, 500.0, 550.0, 610.0,
+];
+const WIND_DIRS_DEG: [f32; WIND_PROFILE_SIZE] = [
+    270.0, 270.0, 270.0, 270.0, 270.0, 270.0, 270.0, 270.0, 270.0, 270.0, 270.0,
+];
  
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
@@ -40,16 +49,17 @@ async fn main(_spawner: Spawner) {
     let pwm = Pwm::new_output_a(p.PWM_SLICE6, p.PIN_28, pwm_config.clone());
  
     // Construct BLiMS (drives enable high and parks motor at neutral)
-    let mut blims = Blims::new(pwm, pwm_config, enable_pin);
+    let mut blims = Blims::new(Hardware { pwm, pwm_config, enable_pin });
  
     // ── Pre-flight configuration ─────────────────────────────────────────────
     //TODO replace lon, lat with. actual target
-    blims.set_target(123.0, 456.0);   
-    blims.set_wind_from_deg(270.0);    
+    blims.set_upwind_target(42.705565, -77.196310);
+    blims.set_downwind_target(42.703311, -77.181125);
+    blims.set_wind_from_deg(270.0);   
+    blims.set_wind_profile(&WIND_ALTITUDES_M, &WIND_DIRS_DEG); 
  
  
     defmt::println!("BLiMS initialised – waiting for parafoil stabilisation");
-    Timer::after(Duration::from_secs(5)).await;
     defmt::println!(" entering control loop");
  
     // ── Control loop ─────────────────────────────────────────────────────────

@@ -44,7 +44,7 @@ use {defmt_rtt as _, panic_probe as _};
 
 use blims::blims_constants::*;
 use blims::blims_state::BlimsDataIn;
-use blims::Blims;
+use blims::{Blims, Hardware};
 
 // ============================================================================
 // INTERRUPT BINDINGS
@@ -101,12 +101,10 @@ async fn logger_task(driver: Driver<'static, USB>) {
 fn phase_name(phase_id: i8) -> &'static str {
     match phase_id {
         0 => "HELD",
-        1 => "TRACK",
-        2 => "DOWNWIND",
-        3 => "BASE",
-        4 => "FINAL",
-        5 => "NEUTRAL",
-        6 => "LOITER",
+        1 => "INITIAL_HOLD",
+        2 => "UPWIND",
+        3 => "DOWNWIND",
+        4 => "NEUTRAL",
         _ => "???",
     }
 }
@@ -254,7 +252,7 @@ async fn main(spawner: Spawner) {
     // ── PWM (GPIO28, slice 6) ─────────────────────────────────────────────────
     let mut pwm_config = PwmConfig::default();
     pwm_config.top      = WRAP_CYCLE_COUNT;
-    pwm_config.divider  = FixedU16::<U4>::from_num(45.78_f32);
+    pwm_config.divider  = FixedU16::<U4>::from_num(38.15_f32);
     pwm_config.compare_a = 0;
     pwm_config.enable   = true;
     let pwm = Pwm::new_output_a(p.PWM_SLICE6, p.PIN_28, pwm_config.clone());
@@ -263,8 +261,10 @@ async fn main(spawner: Spawner) {
     let enable_pin = Output::new(p.PIN_0, Level::Low);
 
     // ── BLiMS init ────────────────────────────────────────────────────────────
-    let mut blims = Blims::new(pwm, pwm_config, enable_pin);
-    blims.set_target(TARGET_LAT, TARGET_LON);
+    let mut blims = Blims::new(Hardware { pwm, pwm_config, enable_pin });
+    // Car test — both phases point to same target for simplicity
+    blims.set_upwind_target(TARGET_LAT, TARGET_LON);
+    blims.set_downwind_target(TARGET_LAT, TARGET_LON);
     blims.set_wind_from_deg(WIND_FROM_DEG);
     blims.set_wind_profile(&WIND_ALTITUDES_M, &WIND_DIRS_DEG);
 
@@ -314,7 +314,7 @@ async fn main(spawner: Spawner) {
             PWM_PIN_NUM, ENABLE_PIN_NUM, I2C_SDA_NUM, I2C_SCL_NUM);
         log::info!("{}", s.as_str());
     }
-    log::info!("# CSV: lat,lon,target_lat,target_lon,heading,bearing,motor_pos,timestamp_ms,P,I,phase,altitude,loiter_step");
+    log::info!("# CSV: lat,lon,target_lat,target_lon,heading,bearing,motor_pos,timestamp_ms,P,I,phase,altitude");
     log::info!("# ================================================");
     log::info!("# Waiting for GPS fix to start descent...");
 
@@ -395,13 +395,13 @@ async fn main(spawner: Spawner) {
             let lon_f       = pvt.lon as f32 * 1e-7;
             let now_ms      = Instant::now().as_millis();
 
-            // 13 fields — matches car_test_visualizer.py column order:
+            // 12 fields — MVP CSV format:
             //   lat,lon,target_lat,target_lon,heading,bearing,motor_pos,
-            //   timestamp_ms,P,I,phase,altitude,loiter_step
+            //   timestamp_ms,P,I,phase,altitude
             let mut row: String<192> = String::new();
             let _ = write!(
                 row,
-                "{:.7},{:.7},{:.6},{:.6},{:.5},{:.5},{:.4},{},{:.6},{:.6},{},{:.2},{}",
+                "{:.7},{:.7},{:.6},{:.6},{:.5},{:.5},{:.4},{},{:.6},{:.6},{},{:.2}",
                 lat_f,
                 lon_f,
                 TARGET_LAT,
@@ -414,7 +414,6 @@ async fn main(spawner: Spawner) {
                 data_out.pid_i,
                 data_out.phase_id,
                 current_alt_ft,
-                data_out.loiter_step,
             );
             log::info!("{}", row.as_str());
         } else {

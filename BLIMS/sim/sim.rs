@@ -252,13 +252,15 @@ fn load_csv(path: &str) -> Vec<CsvRow> {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-fn phase_name(id: i8) -> &'static str {
-    match id { 0=>"HELD",1=>"TRACK",2=>"DOWNWIND",3=>"BASE",
-               4=>"FINAL",5=>"NEUTRAL",6=>"LOITER",_=>"?" }
-}
-
-fn loiter_step_name(id: i8) -> &'static str {
-    match id { 0=>"TURN_RIGHT",1=>"PAUSE_RIGHT",2=>"TURN_LEFT",3=>"PAUSE_LEFT",_=>"-" }
+fn phase_name(phase_id: i8) -> &'static str {
+    match phase_id {
+        0 => "Held",
+        1 => "InitialHold",
+        2 => "Upwind",
+        3 => "Downwind",
+        4 => "Neutral",
+        _ => "?",
+    }
 }
 
 /// Great-circle distance between two lat/lon points, metres.
@@ -411,7 +413,7 @@ fn main() {
         // ── 8. Write TSV row ──────────────────────────────────────────────────
         let lstr = if out_data.phase_id == 6 { loiter_step_name(out_data.loiter_step) } else { "-" };
         writeln!(out,
-            "{}\t{:.2}\t{:.1}\t{:.7}\t{:.7}\t{:.1}\t{:.1}\t{:.3}\t{}\t{:.4}\t{:.5}\t{:.5}\t{}\t{:.1}",
+            "{}\t{:.2}\t{:.1}\t{:.7}\t{:.7}\t{:.1}\t{:.1}\t{:.3}\t{}\t{:.4}\t{:.5}\t{:.5}\t{:.1}",
             row.time_ms,
             row.altitude_m,
             altitude_ft,
@@ -424,7 +426,6 @@ fn main() {
             out_data.motor_position,
             out_data.pid_p,
             out_data.pid_i,
-            lstr,
             dist_m,
         ).unwrap();
 

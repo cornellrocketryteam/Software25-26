@@ -11,6 +11,10 @@ path = "src/lib.rs"
 name = "motor_test"
 path = "examples/motor_test.rs"
 
+[[example]]
+name = "car_test"
+path = "examples/blims_car_test/car_test.rs"
+
 [dependencies]
 embassy-executor   = { git = "https://github.com/embassy-rs/embassy.git", features = ["platform-cortex-m", "executor-thread", "defmt"] }
 embassy-rp         = { git = "https://github.com/embassy-rs/embassy.git", features = ["defmt", "time-driver", "critical-section-impl", "rp235xa", "binary-info"] }
