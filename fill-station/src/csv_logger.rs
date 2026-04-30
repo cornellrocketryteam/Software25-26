@@ -1,13 +1,19 @@
 use smol::Timer;
+use std::fmt::Write as _;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use smol::lock::Mutex;
 use tracing::{info, error};
 use smol::fs::{self, OpenOptions};
-use smol::io::AsyncWriteExt;
+use smol::io::{AsyncWriteExt, BufWriter};
 
 use crate::hardware::Hardware;
 use crate::command::{AdcReadings, UmbilicalReadings};
+
+// 16 ADC slots (raw,scaled per channel * 8 channels) of "N/A" plus trailing comma.
+const ADC_NA_ROW: &str = "N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,";
+// 23 FSW columns (connected + 20 telemetry + 2 valve states) of N/A.
+const FSW_NA_ROW: &str = "N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A";
 
 pub async fn start_logging(
     _hardware: Arc<Mutex<Hardware>>,
@@ -27,9 +33,9 @@ pub async fn start_logging(
     // Create filename with timestamp
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_secs();
-        
+
     let mut filename = format!("{}/fill_station_log_{}.csv", log_dir, timestamp);
     let mut file_index = 1;
 
@@ -39,7 +45,7 @@ pub async fn start_logging(
         file_index += 1;
     }
 
-    let mut file = match OpenOptions::new()
+    let raw_file = match OpenOptions::new()
         .create(true) // this creates the file if it doesn't exist
         .write(true)
         .truncate(true) // Ensure we start with a clean file
@@ -56,6 +62,9 @@ pub async fn start_logging(
         }
     };
 
+    // 64 KiB buffered writer — collapses 100×/s small writes into a few syscalls/s.
+    let mut file = BufWriter::with_capacity(64 * 1024, raw_file);
+
     // Write Header
     let header = "Loop,Timestamp_ms,Igniter1_Active,Igniter2_Active,\
 SV1_Open,SV1_Cont,\
@@ -65,14 +74,18 @@ FSW_Connected,FSW_Mode,FSW_Pressure,FSW_Temp,FSW_Altitude,FSW_Lat,FSW_Lon,FSW_Sa
 FSW_MagX,FSW_MagY,FSW_MagZ,FSW_AccelX,FSW_AccelY,FSW_AccelZ,FSW_GyroX,FSW_GyroY,FSW_GyroZ,\
 FSW_PT3,FSW_PT4,FSW_RTD,FSW_SV_Open,FSW_MAV_Open,\
 QD_Enabled,QD_Direction\n";
-    
+
     if let Err(e) = file.write_all(header.as_bytes()).await {
         error!("Failed to write header to log file: {}", e);
         return;
     }
 
     let mut loop_count: u64 = 0;
-    
+
+    // Reusable line buffer — pre-sized to fit a worst-case row, then reused
+    // via clear() + write!. Avoids ~30 heap allocs per 10 ms tick.
+    let mut line = String::with_capacity(1024);
+
     // Run at 100Hz
     let interval = Duration::from_millis(10);
 
@@ -80,64 +93,66 @@ QD_Enabled,QD_Direction\n";
         let start_time = std::time::Instant::now();
         loop_count += 1;
 
-        // 1. Gather ADC Data
+        // 1. Snapshot ADC readings
         let (adc_timestamp, adc_valid, adc1, adc2) = {
             let reading = adc_readings.lock().await;
             (reading.timestamp_ms, reading.valid, reading.adc1, reading.adc2)
         };
 
-        // 2. Gather Hardware Data (SV, Igniters)
-        // We lock hardware briefly
-        let (ig1_active, ig2_active, sv_states) = {
-            #[cfg(any(target_os = "linux", target_os = "android"))]
-            {
+        // 2. Snapshot hardware: clone Arcs out from under one short lock,
+        //    then call GPIO-reading methods without holding the mutex.
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        let (ig1_active, ig2_active, sv_open, sv_cont, qd_enabled, qd_direction) = {
+            let (ig1, ig2, sv1, qd) = {
                 let hw = _hardware.lock().await;
-
-                // Igniters
-                let ig1 = hw.ig1.is_igniting().await;
-                let ig2 = hw.ig2.is_igniting().await;
-
-                // SV1 (Open, Continuity)
-                let sv1 = (hw.sv1.is_open().await.unwrap_or(false), hw.sv1.check_continuity().await.unwrap_or(false));
-
-                (ig1, ig2, sv1)
-            }
-            #[cfg(not(any(target_os = "linux", target_os = "android")))]
-            {
-                (false, false, (false, false))
-            }
+                (hw.ig1.clone(), hw.ig2.clone(), hw.sv1.clone(), hw.qd_stepper.clone())
+            };
+            (
+                ig1.is_igniting().await,
+                ig2.is_igniting().await,
+                sv1.is_open().await.unwrap_or(false),
+                sv1.check_continuity().await.unwrap_or(false),
+                qd.is_enabled().await,
+                qd.get_direction().await,
+            )
         };
+        #[cfg(not(any(target_os = "linux", target_os = "android")))]
+        let (ig1_active, ig2_active, sv_open, sv_cont, qd_enabled, qd_direction) =
+            (false, false, false, false, false, false);
 
-        // Format CSV Line
-        let mut line = format!("{},{},{},{},",
-            loop_count, adc_timestamp, ig1_active, ig2_active);
+        // 3. Format CSV Line into reused buffer
+        line.clear();
+        let _ = write!(
+            line,
+            "{},{},{},{},{},{},",
+            loop_count, adc_timestamp, ig1_active, ig2_active, sv_open, sv_cont,
+        );
 
-        // Append SV1
-        line.push_str(&format!("{},{},", sv_states.0, sv_states.1));
-
-        // Append ADCs
+        // ADC channels
         if adc_valid {
-            for ch in adc1 {
-                let scaled_str = ch.scaled.map(|v| format!("{:.4}", v)).unwrap_or("N/A".to_string());
-                line.push_str(&format!("{},{},", ch.raw, scaled_str));
-            }
-            for ch in adc2 {
-                let scaled_str = ch.scaled.map(|v| format!("{:.4}", v)).unwrap_or("N/A".to_string());
-                line.push_str(&format!("{},{},", ch.raw, scaled_str));
+            for ch in adc1.iter().chain(adc2.iter()) {
+                match ch.scaled {
+                    Some(v) => { let _ = write!(line, "{},{:.4},", ch.raw, v); }
+                    None => { let _ = write!(line, "{},N/A,", ch.raw); }
+                }
             }
         } else {
-             // 8 channels * 2 columns = 16 N/A + trailing comma
-             let nas = std::iter::repeat("N/A").take(16).collect::<Vec<_>>().join(",");
-             line.push_str(&nas);
-             line.push(',');
+            line.push_str(ADC_NA_ROW);
         }
 
-        // 3. Gather FSW telemetry
-        {
+        // 4. FSW telemetry — copy needed fields under brief lock, then format
+        let umb_snapshot = {
             let umb = umbilical_readings.lock().await;
             if umb.connected {
-                let t = &umb.telemetry;
-                line.push_str(&format!(
+                Some(umb.telemetry.clone())
+            } else {
+                None
+            }
+        };
+        match umb_snapshot {
+            Some(t) => {
+                let _ = write!(
+                    line,
                     "true,{},{:.2},{:.2},{:.2},{:.6},{:.6},{},{:.3},{:.2},{:.2},{:.2},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.2},{:.2},{:.2},{},{}",
                     t.flight_mode, t.pressure, t.temp, t.altitude,
                     t.latitude, t.longitude, t.num_satellites, t.gps_time,
@@ -146,40 +161,26 @@ QD_Enabled,QD_Direction\n";
                     t.gyro_x, t.gyro_y, t.gyro_z,
                     t.pt3, t.pt4, t.rtd,
                     t.sv_open, t.mav_open,
-                ));
-            } else {
-                // 23 FSW columns: connected + 20 telemetry fields + 2 valve states
-                let nas = std::iter::repeat("N/A").take(23).collect::<Vec<_>>().join(",");
-                line.push_str(&nas);
+                );
             }
+            None => line.push_str(FSW_NA_ROW),
         }
 
-        // 4. Gather QD Stepper state
-        {
-            #[cfg(any(target_os = "linux", target_os = "android"))]
-            {
-                let hw = _hardware.lock().await;
-                let qd_enabled = hw.qd_stepper.is_enabled().await;
-                let qd_direction = hw.qd_stepper.get_direction().await;
-                line.push_str(&format!(",{},{}", qd_enabled, qd_direction));
-            }
-            #[cfg(not(any(target_os = "linux", target_os = "android")))]
-            {
-                line.push_str(",false,false");
-            }
-        }
+        // 5. QD stepper state
+        let _ = write!(line, ",{},{}\n", qd_enabled, qd_direction);
 
-        line.push('\n');
-
-        // Write to file
+        // Write to buffered file
         if let Err(e) = file.write_all(line.as_bytes()).await {
             error!("Failed to write to log file: {}", e);
         }
 
-        // Sync to disk every 10 seconds (1000 samples) to prevent data loss on power cycle
+        // Flush + sync every 10 seconds (1000 samples) to prevent data loss on power cycle
         if loop_count % 1000 == 0 {
-            if let Err(e) = file.sync_all().await {
-                 error!("Failed to sync log file: {}", e);
+            if let Err(e) = file.flush().await {
+                error!("Failed to flush log file: {}", e);
+            }
+            if let Err(e) = file.get_mut().sync_all().await {
+                error!("Failed to sync log file: {}", e);
             }
         }
 
