@@ -47,7 +47,7 @@ state = {
         "cmd_a1": 0,
         "cmd_a2": 0,
         "cmd_a3": 0,
-        "airbrake_state": 0,
+        "airbrake_deployment": 0.0,
         "predicted_apogee": 0.0,
         "h_acc": 0,
         "v_acc": 0,

@@ -41,7 +41,7 @@ TELEM_FIELDS = [
     "ssa_drogue_deployed", "ssa_main_deployed",
     "cmd_n1", "cmd_n2", "cmd_n3", "cmd_n4",
     "cmd_a1", "cmd_a2", "cmd_a3",
-    "airbrake_state", "predicted_apogee",
+    "airbrake_deployment", "predicted_apogee",
     "h_acc", "v_acc",
     "vel_n", "vel_e", "vel_d", "g_speed",
     "s_acc", "head_acc", "fix_type", "head_mot",
@@ -245,7 +245,7 @@ def draw(stdscr, state, port_name):
             f"lat={telem['latitude']:>10.5f}  lon={telem['longitude']:>10.5f}  sats={telem['num_satellites']:<3}  fix={telem['fix_type']}",
             f"accel=({telem['accel_x']:>6.2f},{telem['accel_y']:>6.2f},{telem['accel_z']:>6.2f})  gyro=({telem['gyro_x']:>6.1f},{telem['gyro_y']:>6.1f},{telem['gyro_z']:>6.1f})",
             f"pt3={telem['pt3']:>7.1f}  pt4={telem['pt4']:>7.1f}  rtd={telem['rtd']:>7.1f}   SV={sv:<6}  MAV={mav:<6}",
-            f"airbrake={telem['airbrake_state']}  predicted_apogee={telem['predicted_apogee']:.1f} m   drogue={telem['ssa_drogue_deployed']} main={telem['ssa_main_deployed']}",
+            f"airbrake={telem['airbrake_deployment']:.2f}  predicted_apogee={telem['predicted_apogee']:.1f} m   drogue={telem['ssa_drogue_deployed']} main={telem['ssa_main_deployed']}",
             f"blims_target=({telem['blims_target_lat']:.6f}, {telem['blims_target_lon']:.6f})",
         ]
         for line in lines:

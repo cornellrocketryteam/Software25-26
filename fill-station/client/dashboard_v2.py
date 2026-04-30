@@ -403,13 +403,12 @@ with col_right:
     st.subheader("FSW Sensors (Telemetry)")
     if client.fsw_connected and client.fsw_telemetry:
         t = client.fsw_telemetry
-        airbrake_map = {0: "idle", 1: "deployed", 2: "retracted"}
-        ab = airbrake_map.get(t.get("airbrake_state", 0), "unknown")
+        ab = t.get("airbrake_deployment", 0.0)
         fsw_rows = [
             {"Sensor": "PT3", "Value": f"{t.get('pt3', 0):.2f}"},
             {"Sensor": "PT4", "Value": f"{t.get('pt4', 0):.2f}"},
             {"Sensor": "RTD", "Value": f"{t.get('rtd', 0):.2f}"},
-            {"Sensor": "Airbrake State", "Value": ab},
+            {"Sensor": "Airbrake Deployment", "Value": f"{ab:.2f}"},
             {"Sensor": "Predicted Apogee", "Value": f"{t.get('predicted_apogee', 0):.1f} m"},
         ]
         st.dataframe(pd.DataFrame(fsw_rows), hide_index=True, use_container_width=True)
@@ -487,7 +486,7 @@ if client.fsw_connected and client.fsw_telemetry:
         e1, e2 = st.columns([1, 2])
         with e1:
             st.caption("Airbrake")
-            st.markdown(f"**State:** {airbrake_map.get(t.get('airbrake_state', 0), 'unknown')}")
+            st.metric("Airbrake Deployment", f"{t.get('airbrake_deployment', 0.0):.2f}")
             st.metric("Predicted Apogee", f"{t.get('predicted_apogee', 0):.1f} m")
         with e2:
             st.caption("Event Flags")

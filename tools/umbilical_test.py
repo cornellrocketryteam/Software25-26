@@ -69,6 +69,9 @@ COMMANDS = {
     "d":  "Trigger Main",
     "DR": "Force DrogueDeployed",
     "MR": "Force MainDeployed",
+    "A":  "Deploy Airbrakes",
+    "a":  "Retract Airbrakes",
+    "B":  "Nudge BLiMS (right 1s → neutral)",
 }
 
 

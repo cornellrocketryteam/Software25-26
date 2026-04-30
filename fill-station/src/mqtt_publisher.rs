@@ -77,7 +77,7 @@ struct TelemetryPayload {
     cmd_a3: u8,
 
     // Airbrake & control
-    airbrake_state: u8,
+    airbrake_deployment: f64,
     predicted_apogee: f64,
 
     // Advanced GPS / u-blox
@@ -240,7 +240,7 @@ pub async fn start_mqtt_publisher(
                 cmd_a1: telemetry.cmd_a1,
                 cmd_a2: telemetry.cmd_a2,
                 cmd_a3: telemetry.cmd_a3,
-                airbrake_state: telemetry.airbrake_state,
+                airbrake_deployment: telemetry.airbrake_deployment as f64,
                 predicted_apogee: telemetry.predicted_apogee as f64,
                 h_acc: telemetry.h_acc,
                 v_acc: telemetry.v_acc,
@@ -310,7 +310,7 @@ pub async fn start_mqtt_publisher(
                 cmd_a1: 0,
                 cmd_a2: 0,
                 cmd_a3: 0,
-                airbrake_state: 0,
+                airbrake_deployment: 0.0,
                 predicted_apogee: 0.0,
                 h_acc: 0,
                 v_acc: 0,

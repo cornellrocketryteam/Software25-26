@@ -86,6 +86,9 @@ pub enum UmbilicalCommand {
     TriggerMain,   // Remove this functionality for real code
     //DrogueMode,    // Remove this functionality for real code
     //MainMode,      // Remove this functionality for real code
+    DeployAirbrakes, // Remove this functionality for real code
+    RetractAirbrakes, // Remove this functionality for real code
+    TriggerBLiMS, // Remove this functionality for real code
 }
 
 /// Command channel: receiver task pushes commands, flight loop polls them.
@@ -176,7 +179,7 @@ pub fn emit_telemetry(packet: &crate::packet::Packet) {
             packet.cmd_a1,
             packet.cmd_a2,
             packet.cmd_a3,
-            packet.airbrake_state,
+            packet.airbrake_deployment,
             packet.predicted_apogee,
             packet.h_acc,
             packet.v_acc,
@@ -424,6 +427,9 @@ async fn usb_receiver_task(mut receiver: Receiver<'static, UsbDriver>) -> ! {
                 b"<d>" => Some(UmbilicalCommand::TriggerMain),
                 // b"<DR>" => Some(UmbilicalCommand::DrogueMode),
                 // b"<MR>" => Some(UmbilicalCommand::MainMode),
+                b"<A>" => Some(UmbilicalCommand::DeployAirbrakes),
+                b"<a>" => Some(UmbilicalCommand::RetractAirbrakes),
+                b"<B>" => Some(UmbilicalCommand::TriggerBLiMS),
                 _ => None,
             };
 

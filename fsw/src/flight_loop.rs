@@ -1,5 +1,5 @@
 use core::f32;
-use embassy_time::{Duration, Instant};
+use embassy_time::{Duration, Instant, Timer};
 
 use blims::blims_state::BlimsDataIn;
 
@@ -529,6 +529,18 @@ impl FlightLoop {
                     self.set_flight_mode(FlightMode::MainDeployed);
                 }
                 */
+                UmbilicalCommand::DeployAirbrakes => {
+                    log::warn!("UMBILICAL CMD: Deploy Airbrakes");
+                    self.flight_state.airbrake_system.set_deployment(1.0);
+                }
+                UmbilicalCommand::RetractAirbrakes => {
+                    log::warn!("UMBILICAL CMD: Retract Airbrakes");
+                    self.flight_state.airbrake_system.set_deployment(0.0);
+                }
+                UmbilicalCommand::TriggerBLiMS => {
+                    log::warn!("UMBILICAL CMD: Trigger BLiMS nudge");
+                    self.trigger_blims().await;
+                }
             }
         }
     }
@@ -792,10 +804,8 @@ impl FlightLoop {
                     let deployment = crate::airbrake_task::get_deployment();
                     self.flight_state.airbrake_system.set_deployment(deployment);
                     self.flight_state.packet.predicted_apogee = crate::airbrake_task::get_predicted_apogee();
+                    self.flight_state.packet.airbrake_deployment = deployment;
                     log::info!("Airbrake deployment: {:.1}%", deployment * 100.0);
-                    if deployment > 0.0 && self.flight_state.packet.airbrake_state == 0 {
-                        self.flight_state.packet.airbrake_state = 1;
-                    }
 
                     // N2: vertical speed < 50 ft/s for 5 consecutive loops, only above arming altitude
                     // Slope over 0.5 s (10 loops) smooths altimeter noise vs. frame-to-frame diff
@@ -831,7 +841,7 @@ impl FlightLoop {
                         // Coast signals so it will hold at 0.0 deployment
                         self.flight_state.airbrake_system.retract();
                         self.airbrakes_init = false;
-                        self.flight_state.packet.airbrake_state = 2;
+                        self.flight_state.packet.airbrake_deployment = 0.0;
                         log::info!("Airbrakes retracted");
                         log::info!("Cameras deployed");
                         log::info!("Apogee reached at {:.2} m", self.filtered_alt[1]);
@@ -1073,6 +1083,20 @@ impl FlightLoop {
         self.flight_state.packet.blims_target_lon = lon;
         if let Some(b) = &mut self.blims {
             b.set_target(lat, lon);
+        }
+    }
+
+    /// Nudge the BLiMS motor slightly right then return to neutral.
+    /// Safe to call at any time — keeps movement small to protect the airframe.
+    pub async fn trigger_blims(&mut self) {
+        use blims::blims_constants::{LOITER_RIGHT_POS, NEUTRAL_POS};
+        if let Some(b) = &mut self.blims {
+            b.set_motor_raw(LOITER_RIGHT_POS); // 0.65 — slight right
+            Timer::after_millis(1_000).await;
+            b.set_motor_raw(NEUTRAL_POS);       // 0.5 — back to neutral
+            log::info!("BLiMS nudge complete → neutral");
+        } else {
+            log::warn!("BLiMS nudge: no BLiMS hardware attached");
         }
     }
 
