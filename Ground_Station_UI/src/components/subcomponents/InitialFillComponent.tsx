@@ -11,7 +11,6 @@ export default function InitialFillComponent() {
         isFillingRef,
         isVentingRef,
         fillState,
-        setFillState,
         confirmedVentSecondsRef,
         handleButtonClickRef,
         valveDataRef,
@@ -83,9 +82,6 @@ export default function InitialFillComponent() {
             // Auto-vent condition: one single 1-second vent once PT3 hits 800 PSI
             if (psi >= 800 && !hasAutoVentedRef.current) {
                 hasAutoVentedRef.current = true; // Prevent re-triggering
-            // Auto-vent condition: one single 1-second vent once PT3 hits 800 PSI
-            if (psi >= 800 && !hasAutoVentedRef.current) {
-                hasAutoVentedRef.current = true; // Prevent re-triggering
                 isVentingRef.current = true;
                 setVentUIActive(true);
                 //handleButtonClickRef.current("Ball Valve", 'CLOSE');
@@ -115,12 +111,7 @@ export default function InitialFillComponent() {
                     console.log("🟢 Manual Vent END:", new Date().toISOString());
                     handleButtonClickRef.current("Solenoid Valve 2", 'CLOSE');
                     handleButtonClickRef.current("Ball Valve", 'OPEN');
-                    console.log("🟢 Manual Vent END:", new Date().toISOString());
-                    handleButtonClickRef.current("Solenoid Valve 2", 'CLOSE');
-                    handleButtonClickRef.current("Ball Valve", 'OPEN');
                     isVentingRef.current = false;
-                    setVentUIActive(false);
-                }, confirmedVentSecondsRef.current * 1000);
                     setVentUIActive(false);
                 }, confirmedVentSecondsRef.current * 1000);
             }

@@ -14,9 +14,6 @@ export function RecoveryPage() {
     const { wsRef, wsReady, currFlightMode } = useAppContext();
 
     const toggleAction = (action: BasicAction) => {
-        if (payloadDeployed && action === "OPEN_PAYLOAD" || !payloadDeployed && action === "RETRACT_PAYLOAD") {
-            return;
-        }
         setPendingAction(action);
         setShowConfirmation(true);
     };
@@ -24,7 +21,7 @@ export function RecoveryPage() {
     const handleConfirm = () => {
         if (pendingAction !== null) { //Do Something here with commands
             if(pendingAction === "OPEN_PAYLOAD"){
-                wsRef.current?.send(JSON.stringify(extendCommand)); //Send command to extend payload
+                wsRef.current?.send(JSON.stringify({"command": "fsw_payload_n1"})); //Send command to extend payload
             }
         }
         setShowConfirmation(false);
@@ -131,14 +128,12 @@ export function RecoveryPage() {
                     <div className="flex gap-4">
                         <button
                             onClick={() => toggleAction("OPEN_PAYLOAD")}
-                            disabled={payloadDeployed}
                             className="bg-[#5A87FF] border-[3px] border-black rounded-2xl px-12 py-3 font-inter font-bold text-white text-xl hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             Open
                         </button>
                         <button
                             onClick={() => toggleAction("RETRACT_PAYLOAD")}
-                            disabled={!payloadDeployed}
                             className="bg-[#4A4A4A] border-[3px] border-black rounded-2xl px-12 py-3 font-inter font-bold text-white text-xl hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             Retract

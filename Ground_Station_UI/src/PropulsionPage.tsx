@@ -491,7 +491,6 @@ export function PropulsionPage() {
 
     return (
         <PropulsionContext.Provider value={{ confirmedVentSecondsRef, canInteractRef, buttonInteractionState, setButtonInteractionState, valveDataRef, fillUIActive, setFillUIActive, ventUIActive, setVentUIActive, isVentingRef, isFillingRef, manualVentRef, handleButtonClickRef, fillState, setFillState, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, valveData, adcDataRef: adcDataRef, telemetryDataRef: umbilicalDataRef }}>
-        <PropulsionContext.Provider value={{ confirmedVentSecondsRef, canInteractRef, buttonInteractionState, setButtonInteractionState, valveDataRef, fillUIActive, setFillUIActive, ventUIActive, setVentUIActive, isVentingRef, isFillingRef, manualVentRef, handleButtonClickRef, fillState, setFillState, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, valveData, adcDataRef: adcDataRef, telemetryDataRef: umbilicalDataRef }}>
             <div className={`min-h-screen bg-white ${ventUIActive ? 'cursor-wait' : ''}`}>
                 {/* Header */}
                 <Header
@@ -531,7 +530,7 @@ export function PropulsionPage() {
 
 
                         {/* Home Assistant Tank Heaters */}
-                        {/* <HeaterPanelComponent /> */}
+                         <HeaterPanelComponent />
                     </div>
                 </div>
             </div>
