@@ -18,13 +18,13 @@ const I2C_BUS: &str = "/dev/i2c-2";
 const ADC1_ADDRESS: u16 = 0x48;
 const ADC2_ADDRESS: u16 = 0x49;
 
+/// Hardware actuators only — the two ADCs are owned by the dedicated
+/// sampler thread (see `spawn_adc_sampler` in `main.rs`).
 pub struct Hardware {
     #[cfg(any(target_os = "linux", target_os = "android"))]
     pub ig1: Arc<Igniter>,
     #[cfg(any(target_os = "linux", target_os = "android"))]
     pub ig2: Arc<Igniter>,
-    pub adc1: Ads1015,
-    pub adc2: Ads1015,
     #[cfg(any(target_os = "linux", target_os = "android"))]
     pub sv1: Arc<SolenoidValve>,
     pub ball_valve: Arc<BallValve>,
@@ -32,8 +32,11 @@ pub struct Hardware {
 }
 
 impl Hardware {
+    /// Initialize all hardware. Returns the actuator container plus the two
+    /// ADCs as separate values so the caller can hand the ADCs to a
+    /// dedicated sampler thread that owns them outright (no shared mutex).
     #[cfg(any(target_os = "linux", target_os = "android"))]
-    pub async fn new() -> Result<Self> {
+    pub async fn new() -> Result<(Self, Ads1015, Ads1015)> {
         let chip0 = Chip::new(GPIO_CHIP0).await?;
         let chip1 = Chip::new(GPIO_CHIP1).await?;
         let ig1 = Arc::new(Igniter::new(&chip0, 39, &chip0, 38).await?); // 38 is signal, 39 is continuity
@@ -66,16 +69,16 @@ impl Hardware {
             "QD"
         ).await?);
 
-        Ok(Self { ig1, ig2, adc1, adc2, sv1, ball_valve, qd_stepper })
+        Ok((Self { ig1, ig2, sv1, ball_valve, qd_stepper }, adc1, adc2))
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
-    pub async fn new() -> Result<Self> {
+    pub async fn new() -> Result<(Self, Ads1015, Ads1015)> {
         let adc1 = Ads1015::new(I2C_BUS, ADC1_ADDRESS)?;
         let adc2 = Ads1015::new(I2C_BUS, ADC2_ADDRESS)?;
         let ball_valve = Arc::new(BallValve::new(&(), 0, &(), 0, "BallValve").await?);
         let qd_stepper = Arc::new(QdStepper::new(&(), 0, &(), 0, &(), 0, "QD").await?);
 
-        Ok(Self { adc1, adc2, ball_valve, qd_stepper })
+        Ok((Self { ball_valve, qd_stepper }, adc1, adc2))
     }
 }

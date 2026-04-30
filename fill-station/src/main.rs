@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use std::time::{SystemTime, UNIX_EPOCH};
 use smol::lock::Mutex;
+use std::sync::Mutex as StdMutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tracing::{Instrument, Level, debug, error, info, span, warn};
 use tracing_subscriber::fmt;
@@ -117,10 +118,14 @@ fn main() -> Result<()> {
 
     smol::block_on(async {
         info!("Initializing fill station...");
-        let hardware = Arc::new(Mutex::new(Hardware::new().await?));
+        let (hw_inner, adc1, adc2) = Hardware::new().await?;
+        let hardware = Arc::new(Mutex::new(hw_inner));
 
-        // Create shared ADC readings state
-        let adc_readings = Arc::new(Mutex::new(AdcReadings::default()));
+        // Shared ADC readings — std::sync::Mutex so the dedicated sync sampler
+        // thread can lock it without bouncing through an async runtime.
+        // Critical sections are tiny struct copies; brief blocking from async
+        // readers is acceptable.
+        let adc_readings = Arc::new(StdMutex::new(AdcReadings::default()));
 
         // Create shared actuator state (last-commanded ball valve + QD)
         let actuator_state = Arc::new(ActuatorState::default());
@@ -145,12 +150,11 @@ fn main() -> Result<()> {
         let safety_umb_tx = umb_cmd_tx.clone();
         smol::spawn(safety_monitor_task(safety_hw, safety_counts, safety_umb_readings, safety_umb_tx)).detach();
 
-        // Spawn background ADC monitoring task
-        info!("Starting ADC monitoring task at {} Hz...", ADC_SAMPLE_RATE_HZ);
-        let adc_task_hw = hardware.clone();
-        let adc_task_readings = adc_readings.clone();
-
-        smol::spawn(adc_monitoring_task(adc_task_hw, adc_task_readings)).detach();
+        // Spawn dedicated OS thread that owns the two ADCs and samples at
+        // ADC_SAMPLE_RATE_HZ. Sync I2C reads + sleeps no longer stall the
+        // smol executor.
+        info!("Starting ADC sampler thread at {} Hz...", ADC_SAMPLE_RATE_HZ);
+        spawn_adc_sampler(adc1, adc2, adc_readings.clone());
 
         // Spawn CSV Logger Task
         let log_hw = hardware.clone();
@@ -207,7 +211,7 @@ fn main() -> Result<()> {
 async fn handle_socket(
     mut stream: WebSocketStream<Async<TcpStream>>,
     hardware: Arc<Mutex<Hardware>>,
-    adc_readings: Arc<Mutex<AdcReadings>>,
+    adc_readings: Arc<StdMutex<AdcReadings>>,
     umbilical_readings: Arc<Mutex<UmbilicalReadings>>,
     umb_cmd_tx: smol::channel::Sender<String>,
     active_client_count: Arc<AtomicUsize>,
@@ -267,19 +271,25 @@ async fn handle_socket(
             None => {
                 // Timeout - check if we should send ADC data
                 if streaming_enabled {
-                    let readings = adc_readings.lock().await;
-
-                    // Send if we have new data
-                    if readings.timestamp_ms != last_sent_timestamp {
-                        last_sent_timestamp = readings.timestamp_ms;
-
+                    // Snapshot under sync lock and drop the guard before any
+                    // .await — never hold a std::sync::MutexGuard across an
+                    // await point.
+                    let snapshot = {
+                        let readings = adc_readings.lock().expect("adc_readings poisoned");
+                        if readings.timestamp_ms != last_sent_timestamp {
+                            Some((readings.timestamp_ms, readings.valid, readings.adc1, readings.adc2))
+                        } else {
+                            None
+                        }
+                    };
+                    if let Some((ts, valid, a1, a2)) = snapshot {
+                        last_sent_timestamp = ts;
                         let response = CommandResponse::AdcData {
-                            timestamp_ms: readings.timestamp_ms,
-                            valid: readings.valid,
-                            adc1: readings.adc1,
-                            adc2: readings.adc2,
+                            timestamp_ms: ts,
+                            valid,
+                            adc1: a1,
+                            adc2: a2,
                         };
-
                         if let Err(e) = send_response(&mut stream, response).await {
                             error!("Error sending ADC stream data: {}", e);
                             break;
@@ -314,7 +324,7 @@ async fn handle_socket(
 async fn process_message(
     message: &str,
     hardware: &Arc<Mutex<Hardware>>,
-    _adc_readings: &Arc<Mutex<AdcReadings>>,
+    _adc_readings: &Arc<StdMutex<AdcReadings>>,
     streaming_enabled: &mut bool,
     fsw_streaming_enabled: &mut bool,
     umb_cmd_tx: &smol::channel::Sender<String>,
@@ -944,145 +954,137 @@ async fn perform_emergency_shutdown(
 }
 
 // ============================================================================
-// ADC BACKGROUND TASKS
+// ADC SAMPLER THREAD
 // ============================================================================
 
-/// Background task that continuously reads ADCs and updates shared state
+/// Spawn a dedicated OS thread that owns both ADCs and samples them at
+/// `ADC_SAMPLE_RATE_HZ`, publishing into `adc_readings`. Sync I2C reads +
+/// per-channel conversion sleeps no longer stall the smol executor.
 #[cfg(any(target_os = "linux", target_os = "android"))]
-async fn adc_monitoring_task(
-    hardware: Arc<Mutex<Hardware>>,
-    adc_readings: Arc<Mutex<AdcReadings>>,
+fn spawn_adc_sampler(
+    mut adc1: crate::components::ads1015::Ads1015,
+    mut adc2: crate::components::ads1015::Ads1015,
+    adc_readings: Arc<StdMutex<AdcReadings>>,
 ) {
-    let sample_interval = Duration::from_millis(1000 / ADC_SAMPLE_RATE_HZ);
-    let channels = [Channel::Ain0, Channel::Ain1, Channel::Ain2, Channel::Ain3];
-    
-    info!("ADC monitoring task started");
-    
-    loop {
-        let start = std::time::Instant::now();
-        
-        // Attempt to read ADCs with retry logic
-        match read_all_adcs(&hardware, &channels).await {
-            Ok((adc1_readings, adc2_readings)) => {
-                // Get current timestamp
-                let timestamp_ms = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as u64;
-                
-                // Update shared state
-                let mut readings = adc_readings.lock().await;
-                readings.timestamp_ms = timestamp_ms;
-                readings.valid = true;
-                readings.adc1 = adc1_readings;
-                readings.adc2 = adc2_readings;
-                
-                debug!("ADC readings updated successfully");
-            }
-            Err(e) => {
-                error!("Failed to read ADCs after {} retries: {}", ADC_MAX_RETRIES, e);
-                
-                // Mark readings as invalid
-                let mut readings = adc_readings.lock().await;
-                readings.valid = false;
-                readings.timestamp_ms = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as u64;
-            }
-        }
-        
-        // Sleep for remainder of sample interval
-        let elapsed = start.elapsed();
-        if elapsed < sample_interval {
-            Timer::after(sample_interval - elapsed).await;
-        } else {
-            warn!("ADC read took {}ms, longer than {}ms interval", 
-                  elapsed.as_millis(), sample_interval.as_millis());
-        }
-    }
-}
+    std::thread::Builder::new()
+        .name("adc-sampler".into())
+        .spawn(move || {
+            let sample_interval = Duration::from_millis(1000 / ADC_SAMPLE_RATE_HZ);
+            let channels = [Channel::Ain0, Channel::Ain1, Channel::Ain2, Channel::Ain3];
 
-/// Read all ADC channels with retry logic
-#[cfg(any(target_os = "linux", target_os = "android"))]
-async fn read_all_adcs(
-    hardware: &Arc<Mutex<Hardware>>,
-    channels: &[Channel; 4],
-) -> Result<([ChannelReading; 4], [ChannelReading; 4])> {
-    let mut last_error = None;
-    
-    for attempt in 1..=ADC_MAX_RETRIES {
-        match try_read_all_adcs(hardware, channels).await {
-            Ok(result) => return Ok(result),
-            Err(e) => {
-                if attempt < ADC_MAX_RETRIES {
-                    warn!("ADC read attempt {}/{} failed: {}, retrying...", 
-                          attempt, ADC_MAX_RETRIES, e);
-                    Timer::after(Duration::from_millis(ADC_RETRY_DELAY_MS)).await;
+            info!("ADC sampler thread started");
+
+            loop {
+                let start = Instant::now();
+
+                match try_read_all_adcs_blocking(&mut adc1, &mut adc2, &channels) {
+                    Ok((adc1_readings, adc2_readings)) => {
+                        let timestamp_ms = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64;
+                        let mut readings = adc_readings.lock().expect("adc_readings poisoned");
+                        readings.timestamp_ms = timestamp_ms;
+                        readings.valid = true;
+                        readings.adc1 = adc1_readings;
+                        readings.adc2 = adc2_readings;
+                    }
+                    Err(e) => {
+                        // Inline retry: try a few more times before giving up this tick.
+                        let mut last_err = Some(e);
+                        let mut recovered = None;
+                        for attempt in 2..=ADC_MAX_RETRIES {
+                            std::thread::sleep(Duration::from_millis(ADC_RETRY_DELAY_MS));
+                            match try_read_all_adcs_blocking(&mut adc1, &mut adc2, &channels) {
+                                Ok(r) => { recovered = Some(r); last_err = None; break; }
+                                Err(e) => {
+                                    warn!("ADC read attempt {}/{} failed: {}", attempt, ADC_MAX_RETRIES, e);
+                                    last_err = Some(e);
+                                }
+                            }
+                        }
+                        match (recovered, last_err) {
+                            (Some((a1, a2)), _) => {
+                                let timestamp_ms = SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_millis() as u64;
+                                let mut readings = adc_readings.lock().expect("adc_readings poisoned");
+                                readings.timestamp_ms = timestamp_ms;
+                                readings.valid = true;
+                                readings.adc1 = a1;
+                                readings.adc2 = a2;
+                            }
+                            (None, Some(e)) => {
+                                error!("Failed to read ADCs after {} retries: {}", ADC_MAX_RETRIES, e);
+                                let mut readings = adc_readings.lock().expect("adc_readings poisoned");
+                                readings.valid = false;
+                                readings.timestamp_ms = SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_millis() as u64;
+                            }
+                            _ => {}
+                        }
+                    }
                 }
-                last_error = Some(e);
+
+                let elapsed = start.elapsed();
+                if elapsed < sample_interval {
+                    std::thread::sleep(sample_interval - elapsed);
+                } else {
+                    warn!("ADC tick took {}ms, longer than {}ms interval",
+                          elapsed.as_millis(), sample_interval.as_millis());
+                }
             }
-        }
-    }
-    
-    Err(last_error.unwrap())
+        })
+        .expect("failed to spawn adc-sampler thread");
 }
 
-/// Attempt to read all ADC channels once
+/// Sample all 4 channels on each ADC once, applying scaling. Sync — runs
+/// on the dedicated sampler thread.
 #[cfg(any(target_os = "linux", target_os = "android"))]
-async fn try_read_all_adcs(
-    hardware: &Arc<Mutex<Hardware>>,
+fn try_read_all_adcs_blocking(
+    adc1: &mut crate::components::ads1015::Ads1015,
+    adc2: &mut crate::components::ads1015::Ads1015,
     channels: &[Channel; 4],
 ) -> Result<([ChannelReading; 4], [ChannelReading; 4])> {
-    let mut hw = hardware.lock().await;
-    
     let mut adc1_readings = [ChannelReading { raw: 0, voltage: 0.0, scaled: None }; 4];
     let mut adc2_readings = [ChannelReading { raw: 0, voltage: 0.0, scaled: None }; 4];
-    
-    // Read ADC1 channels
+
     for (i, &channel) in channels.iter().enumerate() {
-        let raw = hw.adc1.read_raw(channel, ADC_GAIN, ADC_DATA_RATE)?;
+        let raw = adc1.read_raw(channel, ADC_GAIN, ADC_DATA_RATE)?;
         let voltage = (raw as f32) * ADC_GAIN.lsb_size();
-        
-        // PT1 (Ch0): PT1500 scaling, PT2 (Ch1): PT2000 scaling, others: no scaling
         let scaled = match i {
             0 => Some(raw as f32 * PT1500_SCALE + PT1500_OFFSET),
             1 => Some(raw as f32 * PT1000_SCALE + PT1000_OFFSET),
             _ => None,
         };
-        
         adc1_readings[i] = ChannelReading { raw, voltage, scaled };
     }
-    
-    // Read ADC2 channels
+
     for (i, &channel) in channels.iter().enumerate() {
-        let raw = hw.adc2.read_raw(channel, ADC_GAIN, ADC_DATA_RATE)?;
+        let raw = adc2.read_raw(channel, ADC_GAIN, ADC_DATA_RATE)?;
         let voltage = (raw as f32) * ADC_GAIN.lsb_size();
-        
-        // Load Cell (Ch1): LOADCELL scaling, others: no scaling
         let scaled = if i == 1 {
             Some(raw as f32 * LOADCELL_SCALE + LOADCELL_OFFSET)
         } else {
             None
         };
-        
         adc2_readings[i] = ChannelReading { raw, voltage, scaled };
     }
-    
+
     Ok((adc1_readings, adc2_readings))
 }
 
 /// Stub for non-Linux platforms
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
-async fn adc_monitoring_task(
-    _hardware: Arc<Mutex<Hardware>>,
-    _adc_readings: Arc<Mutex<AdcReadings>>,
+fn spawn_adc_sampler(
+    _adc1: crate::components::ads1015::Ads1015,
+    _adc2: crate::components::ads1015::Ads1015,
+    _adc_readings: Arc<StdMutex<AdcReadings>>,
 ) {
-    warn!("ADC monitoring not supported on this platform");
-    // Just sleep forever
-    loop {
-        Timer::after(Duration::from_secs(3600)).await;
-    }
+    warn!("ADC sampling not supported on this platform");
 }
 
 // ============================================================================

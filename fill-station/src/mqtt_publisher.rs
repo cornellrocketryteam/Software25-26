@@ -1,7 +1,7 @@
 use rumqttc::{Client, MqttOptions, QoS};
 use serde::Serialize;
 use smol::Timer;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 use smol::lock::Mutex;
 use tracing::{info, warn, error, debug};
@@ -126,7 +126,7 @@ struct TelemetryPayload {
 
 pub async fn start_mqtt_publisher(
     _hardware: Arc<Mutex<Hardware>>,
-    adc_readings: Arc<Mutex<AdcReadings>>,
+    adc_readings: Arc<StdMutex<AdcReadings>>,
     umbilical_readings: Arc<Mutex<UmbilicalReadings>>,
     actuator_state: Arc<ActuatorState>,
 ) {
@@ -165,9 +165,9 @@ pub async fn start_mqtt_publisher(
         let start = Instant::now();
         let ms_since_boot_fill = boot_time.elapsed().as_millis() as u64;
 
-        // 1. Gather ADC data
+        // 1. Gather ADC data (sync mutex; tiny copy under lock)
         let (pt_1_pressure, pt_2_pressure, load_cell) = {
-            let adc = adc_readings.lock().await;
+            let adc = adc_readings.lock().expect("adc_readings poisoned");
             if adc.valid {
                 (
                     adc.adc1[0].scaled.unwrap_or(0.0) as f64, // PT1500

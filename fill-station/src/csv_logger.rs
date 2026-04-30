@@ -1,6 +1,6 @@
 use smol::Timer;
 use std::fmt::Write as _;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use smol::lock::Mutex;
 use tracing::{info, error};
@@ -17,7 +17,7 @@ const FSW_NA_ROW: &str = "N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/
 
 pub async fn start_logging(
     _hardware: Arc<Mutex<Hardware>>,
-    adc_readings: Arc<Mutex<AdcReadings>>,
+    adc_readings: Arc<StdMutex<AdcReadings>>,
     umbilical_readings: Arc<Mutex<UmbilicalReadings>>,
 ) {
     info!("Starting CSV Logger task...");
@@ -93,9 +93,9 @@ QD_Enabled,QD_Direction\n";
         let start_time = std::time::Instant::now();
         loop_count += 1;
 
-        // 1. Snapshot ADC readings
+        // 1. Snapshot ADC readings (sync mutex; tiny copy under lock)
         let (adc_timestamp, adc_valid, adc1, adc2) = {
-            let reading = adc_readings.lock().await;
+            let reading = adc_readings.lock().expect("adc_readings poisoned");
             (reading.timestamp_ms, reading.valid, reading.adc1, reading.adc2)
         };
 
