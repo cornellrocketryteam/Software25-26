@@ -1,0 +1,6 @@
+# Tune codegen for the AM64x deployment target (Cortex-A53 quad).
+# We cross-compile to aarch64-unknown-linux-musl in CI, so target-cpu=native
+# would be wrong (CI builder != runtime CPU). Pinning the exact core lets
+# rustc/LLVM use A53-specific instruction scheduling and tuning.
+[target.aarch64-unknown-linux-musl]
+rustflags = ["-C", "target-cpu=cortex-a53"]
