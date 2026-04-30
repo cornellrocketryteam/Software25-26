@@ -52,21 +52,22 @@ async fn main(spawner: Spawner) {
     pwm_config.divider = FixedU16::<U4>::from_num(DIVIDER);
     pwm_config.compare_a = 0;
     pwm_config.enable = true;
-
     let mut pwm = Pwm::new_output_a(p.PWM_SLICE6, p.PIN_28, pwm_config.clone());
 
-    set_motor_position(&mut pwm, &mut pwm_config, 0.5);
-    log::info!("[main] Moving to neutral (0.5)");
-    Timer::after(Duration::from_secs(10)).await; 
+    // set_motor_position(&mut pwm, &mut pwm_config, 0.5);
 
-    state_pin.set_low(); 
-    log::info!("pulse low");
-    Timer::after(Duration::from_millis(500)).await; 
+    // log::info!("[main] Moving to neutral (0.5)");
+    // Timer::after(Duration::from_secs(5)).await; 
+    //let mut enable_pin = Output::new(p.PIN_0, Level::High);
+
+    // //state_pin.set_low(); 
+    // log::info!("pulse low");
+    // Timer::after(Duration::from_millis(500)).await; 
 
     
     state_pin.set_high(); 
-    log::info!("enable");
-    Timer::after(Duration::from_secs(5)).await;
+    log::info!("enable pin high");
+    // Timer::after(Duration::from_secs(3)).await;
 
     log::info!("entering test loop");
 
