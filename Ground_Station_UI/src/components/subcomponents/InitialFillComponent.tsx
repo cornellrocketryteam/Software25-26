@@ -160,7 +160,7 @@ export default function InitialFillComponent() {
                             // Re-enable button interaction so operator can close SV2
                             setButtonInteractionState('ENABLED');
                             canInteractRef.current = 'ENABLED';
-                            setFillState('SAFE_PROCEDURE');
+                            //setFillState('SAFE_PROCEDURE');
                         }}
                         className="bg-[#2D4556] border-[6px] border-black rounded-3xl px-8 py-2 font-inter font-bold text-[36px] text-white hover:opacity-90 flex-1"
                     >
@@ -169,14 +169,17 @@ export default function InitialFillComponent() {
                             <span>PROCEDURE</span>
                         </div>
                     </button>
-                    <button
-                        onClick={() => {
+                    <button 
+                        onClick={() => {  //close BV1. Do NOT vent SV2, leave both SVs closed and BV closed
                             // Close SV2 first if a vent is mid-cycle
                             if (isVentingRef.current) handleButtonClickRef.current("Solenoid Valve 2", 'CLOSE');
                             handleButtonClickRef.current("Ball Valve", 'CLOSE');
                             isFillingRef.current = false;
                             isVentingRef.current = false;
+                            isFillingRef.current = false;
+                            isVentingRef.current = false;
                             setFillUIActive(false);
+                            setVentUIActive(false);
                             setVentUIActive(false);
                         }}
                         className="bg-[#1A1A1A] border-[6px] border-black rounded-3xl px-8 py-2 font-inter font-bold text-[36px] text-white hover:opacity-90 flex-1"

@@ -7,8 +7,7 @@ type BasicAction = "OPEN_PAYLOAD" | "RETRACT_PAYLOAD";
 
 export function RecoveryPage() {
     const [showConfirmation, setShowConfirmation] = useState(false);
-    const [pendingAction, setPendingAction] = useState<BasicAction | null>(null);
-    const [payloadDeployed, setPayloadDeployed] = useState(false);
+    const [pendingAction, setPendingAction] = useState< BasicAction | null>(null);
     const [latitude, setLatitude] = useState("");
     const [longitude, setLongitude] = useState("");
     const [confirmedCoords, setConfirmedCoords] = useState<{lat: string, lng: string} | null>(null);
@@ -23,12 +22,10 @@ export function RecoveryPage() {
     };
 
     const handleConfirm = () => {
-        if (pendingAction === "OPEN_PAYLOAD") {
-            setPayloadDeployed(true);
-            wsRef.current?.send(JSON.stringify({ "command": "fsw_payload_n1" }));
-        } else if (pendingAction === "RETRACT_PAYLOAD") {
-            setPayloadDeployed(false);
-            // Send retract command here when available
+        if (pendingAction !== null) { //Do Something here with commands
+            if(pendingAction === "OPEN_PAYLOAD"){
+                wsRef.current?.send(JSON.stringify(extendCommand)); //Send command to extend payload
+            }
         }
         setShowConfirmation(false);
         setPendingAction(null);
