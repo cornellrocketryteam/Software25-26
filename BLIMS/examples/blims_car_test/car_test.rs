@@ -24,8 +24,8 @@
 #![no_std]
 #![no_main]
 
-mod descent_alt_data;
-use descent_alt_data::{DESCENT_ALT_FT, DESCENT_DATA_SIZE};
+//mod descent_alt_data; - no alt data for this car test
+//use descent_alt_data::{DESCENT_ALT_FT, DESCENT_DATA_SIZE};
 
 use core::fmt::Write as FmtWrite;
 
@@ -295,14 +295,17 @@ async fn main(spawner: Spawner) {
             WIND_PROFILE_SIZE, WIND_DIRS_DEG[0] as u32);
         log::info!("{}", s.as_str());
     }
-    {
-        let mut s: String<80> = String::new();
-        let _ = write!(s, "# Descent:  {} samples, {:.1} -> {:.1} ft",
-            DESCENT_DATA_SIZE,
-            DESCENT_ALT_FT[0],
-            DESCENT_ALT_FT[DESCENT_DATA_SIZE - 1]);
-        log::info!("{}", s.as_str());
-    }
+    //{
+        //let mut s: String<80> = String::new();
+        //let _ = write!(s, "# Descent:  {} samples, {:.1} -> {:.1} ft",
+            //DESCENT_DATA_SIZE,
+            //DESCENT_ALT_FT[0],
+            //DESCENT_ALT_FT[DESCENT_DATA_SIZE - 1]);
+        //log::info!("{}", s.as_str());
+
+    //}
+    log::info!("# Altitude: fixed 500 ft (tracking only, no descent)");
+
     {
         let mut s: String<48> = String::new();
         let _ = write!(s, "# Cycle:    {} ms (20 Hz)", CYCLE_TIME_MS);
@@ -316,12 +319,12 @@ async fn main(spawner: Spawner) {
     }
     log::info!("# CSV: lat,lon,target_lat,target_lon,heading,bearing,motor_pos,timestamp_ms,P,I,phase,altitude");
     log::info!("# ================================================");
-    log::info!("# Waiting for GPS fix to start descent...");
+    log::info!("# Waiting for GPS fix...");
 
     // ── Loop state ────────────────────────────────────────────────────────────
     let mut pvt             = UbxNavPvt::default();
-    let mut alt_index       = 0usize;
-    let mut descent_started = false;
+    //let mut alt_index       = 0usize;
+    //let mut descent_started = false;
     let mut last_phase_id: i8 = -1;
 
     // =========================================================================
@@ -338,21 +341,21 @@ async fn main(spawner: Spawner) {
         let gps_valid = pvt.fix_type >= 2;
 
         // ── 2. Altitude simulation ────────────────────────────────────────────
-        if !descent_started && gps_valid {
-            descent_started = true;
-            let mut s: String<80> = String::new();
-            let _ = write!(s, "# DESCENT STARTED — alt {:.1} ft (0/{})",
-                DESCENT_ALT_FT[0], DESCENT_DATA_SIZE);
-            log::info!("{}", s.as_str());
-        }
+        //if !descent_started && gps_valid {
+            //descent_started = true;
+            //let mut s: String<80> = String::new();
+            //let _ = write!(s, "# DESCENT STARTED — alt {:.1} ft (0/{})",
+            //    DESCENT_ALT_FT[0], DESCENT_DATA_SIZE);
+            //log::info!("{}", s.as_str());
+        //}
 
-        let current_alt_ft = DESCENT_ALT_FT[alt_index];
+        let current_alt_ft = 500.0;//DESCENT_ALT_FT[alt_index];
 
         // ── 3. Pack BlimsDataIn ───────────────────────────────────────────────
         let data_in = BlimsDataIn {
             lon:         pvt.lon,
             lat:         pvt.lat,
-            altitude_ft: if descent_started { current_alt_ft } else { DESCENT_ALT_FT[0] },
+            altitude_ft: current_alt_ft, //if descent_started { current_alt_ft } else { DESCENT_ALT_FT[0] },
             h_acc:       pvt.h_acc,
             v_acc:       pvt.v_acc,
             vel_n:       pvt.vel_n,
@@ -370,20 +373,20 @@ async fn main(spawner: Spawner) {
         let data_out = blims.execute(&data_in);
 
         // ── 5. Advance altitude ───────────────────────────────────────────────
-        if descent_started && alt_index < DESCENT_DATA_SIZE - 1 {
-            alt_index += 1;
-        }
+        //if descent_started && alt_index < DESCENT_DATA_SIZE - 1 {
+        //    alt_index += 1;
+        //}
 
         // ── 6. Log ────────────────────────────────────────────────────────────
 
         // Phase-change banner
         if data_out.phase_id != last_phase_id {
             let mut s: String<80> = String::new();
-            let _ = write!(s, "# PHASE: {} (alt={:.1} ft, sample {}/{})",
+            let _ = write!(s, "# PHASE: {} (alt={:.1} ft)",
                 phase_name(data_out.phase_id),
-                current_alt_ft,
-                alt_index,
-                DESCENT_DATA_SIZE);
+                current_alt_ft);
+                //alt_index,
+                //DESCENT_DATA_SIZE);
             log::info!("{}", s.as_str());
             last_phase_id = data_out.phase_id;
         }
