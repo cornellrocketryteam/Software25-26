@@ -1,6 +1,7 @@
+use arc_swap::ArcSwap;
 use smol::Timer;
 use std::fmt::Write as _;
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use smol::lock::Mutex;
 use tracing::{info, error};
@@ -17,8 +18,8 @@ const FSW_NA_ROW: &str = "N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/
 
 pub async fn start_logging(
     _hardware: Arc<Mutex<Hardware>>,
-    adc_readings: Arc<StdMutex<AdcReadings>>,
-    umbilical_readings: Arc<Mutex<UmbilicalReadings>>,
+    adc_readings: Arc<ArcSwap<AdcReadings>>,
+    umbilical_readings: Arc<ArcSwap<UmbilicalReadings>>,
 ) {
     info!("Starting CSV Logger task...");
 
@@ -93,9 +94,9 @@ QD_Enabled,QD_Direction\n";
         let start_time = std::time::Instant::now();
         loop_count += 1;
 
-        // 1. Snapshot ADC readings (sync mutex; tiny copy under lock)
+        // 1. Snapshot ADC readings (lock-free ArcSwap load)
         let (adc_timestamp, adc_valid, adc1, adc2) = {
-            let reading = adc_readings.lock().expect("adc_readings poisoned");
+            let reading = adc_readings.load();
             (reading.timestamp_ms, reading.valid, reading.adc1, reading.adc2)
         };
 
@@ -140,9 +141,9 @@ QD_Enabled,QD_Direction\n";
             line.push_str(ADC_NA_ROW);
         }
 
-        // 4. FSW telemetry — copy needed fields under brief lock, then format
+        // 4. FSW telemetry — lock-free ArcSwap load
         let umb_snapshot = {
-            let umb = umbilical_readings.lock().await;
+            let umb = umbilical_readings.load();
             if umb.connected {
                 Some(umb.telemetry.clone())
             } else {

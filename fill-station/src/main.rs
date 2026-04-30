@@ -13,8 +13,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use std::time::{SystemTime, UNIX_EPOCH};
+use arc_swap::ArcSwap;
+use event_listener::Event;
 use smol::lock::Mutex;
-use std::sync::Mutex as StdMutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tracing::{Instrument, Level, debug, error, info, span, warn};
 use tracing_subscriber::fmt;
@@ -121,23 +122,28 @@ fn main() -> Result<()> {
         let (hw_inner, adc1, adc2) = Hardware::new().await?;
         let hardware = Arc::new(Mutex::new(hw_inner));
 
-        // Shared ADC readings — std::sync::Mutex so the dedicated sync sampler
-        // thread can lock it without bouncing through an async runtime.
-        // Critical sections are tiny struct copies; brief blocking from async
-        // readers is acceptable.
-        let adc_readings = Arc::new(StdMutex::new(AdcReadings::default()));
+        // Lock-free shared sensor state. ArcSwap is wait-free for readers and
+        // last-writer-wins for stores, which matches our single-producer,
+        // many-consumer pattern. Each tick the producer wakes consumers via
+        // an event_listener::Event so streaming is push-driven, not polled.
+        let adc_readings = Arc::new(ArcSwap::from_pointee(AdcReadings::default()));
+        let adc_event = Arc::new(Event::new());
 
         // Create shared actuator state (last-commanded ball valve + QD)
         let actuator_state = Arc::new(ActuatorState::default());
 
-        // Create shared umbilical readings state and command channel
-        let umbilical_readings = Arc::new(Mutex::new(UmbilicalReadings::default()));
+        // Shared umbilical state — also ArcSwap'd. Two writers exist
+        // (umbilical_task for telemetry, safety_monitor for the freshness
+        // `connected` flag); they coordinate via ArcSwap::rcu.
+        let umbilical_readings = Arc::new(ArcSwap::from_pointee(UmbilicalReadings::default()));
+        let fsw_event = Arc::new(Event::new());
         let (umb_cmd_tx, umb_cmd_rx) = smol::channel::bounded::<String>(8);
 
         // Spawn umbilical background task
         info!("Starting Umbilical monitoring task...");
         let umb_task_readings = umbilical_readings.clone();
-        smol::spawn(umbilical_task(umb_task_readings, umb_cmd_rx)).detach();
+        let umb_task_event = fsw_event.clone();
+        smol::spawn(umbilical_task(umb_task_readings, umb_cmd_rx, umb_task_event)).detach();
 
         // Active client tracker
         let active_client_count = Arc::new(AtomicUsize::new(0));
@@ -154,7 +160,7 @@ fn main() -> Result<()> {
         // ADC_SAMPLE_RATE_HZ. Sync I2C reads + sleeps no longer stall the
         // smol executor.
         info!("Starting ADC sampler thread at {} Hz...", ADC_SAMPLE_RATE_HZ);
-        spawn_adc_sampler(adc1, adc2, adc_readings.clone());
+        spawn_adc_sampler(adc1, adc2, adc_readings.clone(), adc_event.clone());
 
         // Spawn CSV Logger Task
         let log_hw = hardware.clone();
@@ -198,11 +204,13 @@ fn main() -> Result<()> {
             let span = span!(Level::INFO, "websocket", client_ip);
             let hw = hardware.clone();
             let adc = adc_readings.clone();
+            let adc_evt = adc_event.clone();
             let umb = umbilical_readings.clone();
+            let fsw_evt = fsw_event.clone();
             let umb_tx = umb_cmd_tx.clone();
             let active_clients = active_client_count.clone();
             let actuators = actuator_state.clone();
-            smol::spawn(handle_socket(stream, hw, adc, umb, umb_tx, active_clients, actuators).instrument(span)).detach();
+            smol::spawn(handle_socket(stream, hw, adc, adc_evt, umb, fsw_evt, umb_tx, active_clients, actuators).instrument(span)).detach();
         }
     })
 }
@@ -211,8 +219,10 @@ fn main() -> Result<()> {
 async fn handle_socket(
     mut stream: WebSocketStream<Async<TcpStream>>,
     hardware: Arc<Mutex<Hardware>>,
-    adc_readings: Arc<StdMutex<AdcReadings>>,
-    umbilical_readings: Arc<Mutex<UmbilicalReadings>>,
+    adc_readings: Arc<ArcSwap<AdcReadings>>,
+    adc_event: Arc<Event>,
+    umbilical_readings: Arc<ArcSwap<UmbilicalReadings>>,
+    fsw_event: Arc<Event>,
     umb_cmd_tx: smol::channel::Sender<String>,
     active_client_count: Arc<AtomicUsize>,
     actuator_state: Arc<ActuatorState>,
@@ -226,35 +236,96 @@ async fn handle_socket(
     let mut fsw_streaming_enabled = false;
     let mut last_sent_fsw_timestamp = 0u64;
     let mut last_heartbeat = Instant::now();
-    
-    // Small timeout for non-blocking message receive
-    let poll_interval = Duration::from_millis(50);
-    
+
+    // Heartbeat-tick interval: serves only as a wakeup so the 15 s client
+    // timeout check at the top of the loop runs periodically when nothing
+    // else is happening. ADC/FSW streaming is push-driven via events, no
+    // polling needed.
+    let heartbeat_tick = Duration::from_millis(500);
+
+    enum Wake {
+        Msg(Option<std::result::Result<Message, tungstenite::Error>>),
+        Adc,
+        Fsw,
+        Tick,
+    }
+
     loop {
-        // specific check for 15s timeout
+        // 15s client timeout
         if last_heartbeat.elapsed() > Duration::from_secs(15) {
-             error!("Client timed out (no heartbeat for 15s) - disconnecting");
-             break;
+            error!("Client timed out (no heartbeat for 15s) - disconnecting");
+            break;
         }
 
-        // Try to receive a message with timeout
-        let msg_future = stream.next();
-        let timeout_future = Timer::after(poll_interval);
-        
-        match smol::future::or(
-            async {
-                match msg_future.await {
-                    Some(msg) => Some(msg),
-                    None => None,
+        // Register listeners FIRST — standard event-listener pattern. If a
+        // notification fires after listen() but before our load(), the
+        // listener still wakes; if it fires before listen(), the load()
+        // below picks up the new value. Without this ordering we'd race.
+        let adc_listener = adc_event.listen();
+        let fsw_listener = fsw_event.listen();
+
+        // Send any pending streaming data before waiting. Drop the
+        // listeners on the early-continue path; they'll be re-registered
+        // next iteration.
+        if streaming_enabled {
+            let cur = adc_readings.load();
+            if cur.timestamp_ms != last_sent_timestamp {
+                last_sent_timestamp = cur.timestamp_ms;
+                let response = CommandResponse::AdcData {
+                    timestamp_ms: cur.timestamp_ms,
+                    valid: cur.valid,
+                    adc1: cur.adc1,
+                    adc2: cur.adc2,
+                };
+                drop(cur);
+                drop(adc_listener);
+                drop(fsw_listener);
+                if let Err(e) = send_response(&mut stream, response).await {
+                    error!("Error sending ADC stream data: {}", e);
+                    break;
                 }
-            },
-            async {
-                timeout_future.await;
-                None
+                continue;
             }
-        ).await {
-            Some(Ok(Message::Text(message))) => {
-                // Reset heartbeat timer on any valid message
+        }
+        if fsw_streaming_enabled {
+            let cur = umbilical_readings.load();
+            if cur.timestamp_ms != last_sent_fsw_timestamp {
+                last_sent_fsw_timestamp = cur.timestamp_ms;
+                let response = CommandResponse::FswTelemetry {
+                    timestamp_ms: cur.timestamp_ms,
+                    connected: cur.connected,
+                    flight_mode: cur.telemetry.flight_mode_name().to_string(),
+                    telemetry: cur.telemetry.clone(),
+                };
+                drop(cur);
+                drop(adc_listener);
+                drop(fsw_listener);
+                if let Err(e) = send_response(&mut stream, response).await {
+                    error!("Error sending FSW telemetry stream data: {}", e);
+                    break;
+                }
+                continue;
+            }
+        }
+
+        let recv_fut = async { Wake::Msg(stream.next().await) };
+        let adc_fut = async {
+            if streaming_enabled { adc_listener.await; Wake::Adc }
+            else { drop(adc_listener); std::future::pending().await }
+        };
+        let fsw_fut = async {
+            if fsw_streaming_enabled { fsw_listener.await; Wake::Fsw }
+            else { drop(fsw_listener); std::future::pending().await }
+        };
+        let tick_fut = async { Timer::after(heartbeat_tick).await; Wake::Tick };
+
+        let wake = smol::future::or(
+            smol::future::or(recv_fut, tick_fut),
+            smol::future::or(adc_fut, fsw_fut),
+        ).await;
+
+        match wake {
+            Wake::Msg(Some(Ok(Message::Text(message)))) => {
                 last_heartbeat = Instant::now();
                 let response = process_message(&message, &hardware, &adc_readings, &mut streaming_enabled, &mut fsw_streaming_enabled, &umb_cmd_tx, &actuator_state).await;
                 if let Err(e) = send_response(&mut stream, response).await {
@@ -262,61 +333,19 @@ async fn handle_socket(
                     break;
                 }
             }
-            Some(Ok(Message::Close(_))) => break,
-            Some(Ok(_)) => {}
-            Some(Err(e)) => {
+            Wake::Msg(Some(Ok(Message::Close(_)))) => break,
+            Wake::Msg(Some(Ok(_))) => {}
+            Wake::Msg(Some(Err(e))) => {
                 error!("Error receiving message: {}", e);
                 break;
             }
-            None => {
-                // Timeout - check if we should send ADC data
-                if streaming_enabled {
-                    // Snapshot under sync lock and drop the guard before any
-                    // .await — never hold a std::sync::MutexGuard across an
-                    // await point.
-                    let snapshot = {
-                        let readings = adc_readings.lock().expect("adc_readings poisoned");
-                        if readings.timestamp_ms != last_sent_timestamp {
-                            Some((readings.timestamp_ms, readings.valid, readings.adc1, readings.adc2))
-                        } else {
-                            None
-                        }
-                    };
-                    if let Some((ts, valid, a1, a2)) = snapshot {
-                        last_sent_timestamp = ts;
-                        let response = CommandResponse::AdcData {
-                            timestamp_ms: ts,
-                            valid,
-                            adc1: a1,
-                            adc2: a2,
-                        };
-                        if let Err(e) = send_response(&mut stream, response).await {
-                            error!("Error sending ADC stream data: {}", e);
-                            break;
-                        }
-                    }
-                }
-                // Check if we should send FSW telemetry
-                if fsw_streaming_enabled {
-                    let umb = umbilical_readings.lock().await;
-                    if umb.timestamp_ms != last_sent_fsw_timestamp {
-                        last_sent_fsw_timestamp = umb.timestamp_ms;
-                        let response = CommandResponse::FswTelemetry {
-                            timestamp_ms: umb.timestamp_ms,
-                            connected: umb.connected,
-                            flight_mode: umb.telemetry.flight_mode_name().to_string(),
-                            telemetry: umb.telemetry,
-                        };
-                        if let Err(e) = send_response(&mut stream, response).await {
-                            error!("Error sending FSW telemetry stream data: {}", e);
-                            break;
-                        }
-                    }
-                }
+            Wake::Msg(None) => break,
+            Wake::Adc | Wake::Fsw | Wake::Tick => {
+                // Loop body re-checks pending streams + heartbeat.
             }
         }
     }
-    
+
     info!("Client disconnected");
     active_client_count.fetch_sub(1, Ordering::SeqCst);
 }
@@ -324,7 +353,7 @@ async fn handle_socket(
 async fn process_message(
     message: &str,
     hardware: &Arc<Mutex<Hardware>>,
-    _adc_readings: &Arc<StdMutex<AdcReadings>>,
+    _adc_readings: &Arc<ArcSwap<AdcReadings>>,
     streaming_enabled: &mut bool,
     fsw_streaming_enabled: &mut bool,
     umb_cmd_tx: &smol::channel::Sender<String>,
@@ -820,7 +849,7 @@ async fn send_response(
 async fn safety_monitor_task(
     hardware: Arc<Mutex<Hardware>>,
     active_client_count: Arc<AtomicUsize>,
-    umbilical_readings: Arc<Mutex<UmbilicalReadings>>,
+    umbilical_readings: Arc<ArcSwap<UmbilicalReadings>>,
     umb_cmd_tx: smol::channel::Sender<String>,
 ) {
     let mut disconnect_start: Option<Instant> = None;
@@ -862,13 +891,20 @@ async fn safety_monitor_task(
 
         // Umbilical disconnect logic.
         // Recompute `connected` from telemetry freshness so a hung FSW (USB up
-        // but no $TELEM flowing) correctly reads as disconnected.
+        // but no $TELEM flowing) correctly reads as disconnected. Write the
+        // freshness flag back via rcu so other readers (CSV/MQTT/WS) see it.
         let umb_connected = {
-            let mut umb = umbilical_readings.lock().await;
-            let fresh = umb.last_telem_instant
+            let cur = umbilical_readings.load();
+            let fresh = cur.last_telem_instant
                 .map(|t| t.elapsed() < Duration::from_millis(TELEM_FRESHNESS_MS))
                 .unwrap_or(false);
-            umb.connected = fresh;
+            if cur.connected != fresh {
+                umbilical_readings.rcu(|c| {
+                    let mut new = (**c).clone();
+                    new.connected = fresh;
+                    new
+                });
+            }
             fresh
         };
         if umb_connected {
@@ -964,7 +1000,8 @@ async fn perform_emergency_shutdown(
 fn spawn_adc_sampler(
     mut adc1: crate::components::ads1015::Ads1015,
     mut adc2: crate::components::ads1015::Ads1015,
-    adc_readings: Arc<StdMutex<AdcReadings>>,
+    adc_readings: Arc<ArcSwap<AdcReadings>>,
+    adc_event: Arc<Event>,
 ) {
     std::thread::Builder::new()
         .name("adc-sampler".into())
@@ -977,18 +1014,8 @@ fn spawn_adc_sampler(
             loop {
                 let start = Instant::now();
 
-                match try_read_all_adcs_blocking(&mut adc1, &mut adc2, &channels) {
-                    Ok((adc1_readings, adc2_readings)) => {
-                        let timestamp_ms = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_millis() as u64;
-                        let mut readings = adc_readings.lock().expect("adc_readings poisoned");
-                        readings.timestamp_ms = timestamp_ms;
-                        readings.valid = true;
-                        readings.adc1 = adc1_readings;
-                        readings.adc2 = adc2_readings;
-                    }
+                let mut sample = match try_read_all_adcs_blocking(&mut adc1, &mut adc2, &channels) {
+                    Ok((a1, a2)) => Some((a1, a2)),
                     Err(e) => {
                         // Inline retry: try a few more times before giving up this tick.
                         let mut last_err = Some(e);
@@ -1003,31 +1030,29 @@ fn spawn_adc_sampler(
                                 }
                             }
                         }
-                        match (recovered, last_err) {
-                            (Some((a1, a2)), _) => {
-                                let timestamp_ms = SystemTime::now()
-                                    .duration_since(UNIX_EPOCH)
-                                    .unwrap_or_default()
-                                    .as_millis() as u64;
-                                let mut readings = adc_readings.lock().expect("adc_readings poisoned");
-                                readings.timestamp_ms = timestamp_ms;
-                                readings.valid = true;
-                                readings.adc1 = a1;
-                                readings.adc2 = a2;
-                            }
-                            (None, Some(e)) => {
-                                error!("Failed to read ADCs after {} retries: {}", ADC_MAX_RETRIES, e);
-                                let mut readings = adc_readings.lock().expect("adc_readings poisoned");
-                                readings.valid = false;
-                                readings.timestamp_ms = SystemTime::now()
-                                    .duration_since(UNIX_EPOCH)
-                                    .unwrap_or_default()
-                                    .as_millis() as u64;
-                            }
-                            _ => {}
+                        if let Some(e) = last_err {
+                            error!("Failed to read ADCs after {} retries: {}", ADC_MAX_RETRIES, e);
                         }
+                        recovered
                     }
-                }
+                };
+
+                let timestamp_ms = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                let new = if let Some((a1, a2)) = sample.take() {
+                    AdcReadings { timestamp_ms, valid: true, adc1: a1, adc2: a2 }
+                } else {
+                    AdcReadings { timestamp_ms, valid: false,
+                        adc1: [ChannelReading { raw: 0, voltage: 0.0, scaled: None }; 4],
+                        adc2: [ChannelReading { raw: 0, voltage: 0.0, scaled: None }; 4] }
+                };
+                adc_readings.store(Arc::new(new));
+                // Wake every listening WS client. notify(usize::MAX) is a
+                // permanent notification — consumers that registered a
+                // listener before this point will be woken.
+                adc_event.notify(usize::MAX);
 
                 let elapsed = start.elapsed();
                 if elapsed < sample_interval {
@@ -1082,7 +1107,8 @@ fn try_read_all_adcs_blocking(
 fn spawn_adc_sampler(
     _adc1: crate::components::ads1015::Ads1015,
     _adc2: crate::components::ads1015::Ads1015,
-    _adc_readings: Arc<StdMutex<AdcReadings>>,
+    _adc_readings: Arc<ArcSwap<AdcReadings>>,
+    _adc_event: Arc<Event>,
 ) {
     warn!("ADC sampling not supported on this platform");
 }
@@ -1097,8 +1123,9 @@ fn spawn_adc_sampler(
 /// Commands are written as `<X>` tokens to the same serial port.
 #[cfg(any(target_os = "linux", target_os = "android"))]
 async fn umbilical_task(
-    umbilical_readings: Arc<Mutex<UmbilicalReadings>>,
+    umbilical_readings: Arc<ArcSwap<UmbilicalReadings>>,
     cmd_rx: smol::channel::Receiver<String>,
+    fsw_event: Arc<Event>,
 ) {
     use std::io::Read as _;
     use std::io::Write as _;
@@ -1118,11 +1145,13 @@ async fn umbilical_task(
             }
             Err(e) => {
                 debug!("Umbilical not available ({}), retrying in 2s...", e);
-                {
-                    let mut umb = umbilical_readings.lock().await;
-                    umb.connected = false;
-                    umb.last_telem_instant = None;
-                }
+                umbilical_readings.rcu(|c| {
+                    let mut new = (**c).clone();
+                    new.connected = false;
+                    new.last_telem_instant = None;
+                    new
+                });
+                fsw_event.notify(usize::MAX);
                 Timer::after(Duration::from_secs(2)).await;
                 continue;
             }
@@ -1130,10 +1159,11 @@ async fn umbilical_task(
 
         // Port is open, but DO NOT mark connected yet — we wait for a fresh
         // $TELEM line so a hung FSW with a live USB stack reads as disconnected.
-        {
-            let mut umb = umbilical_readings.lock().await;
-            umb.last_telem_instant = None;
-        }
+        umbilical_readings.rcu(|c| {
+            let mut new = (**c).clone();
+            new.last_telem_instant = None;
+            new
+        });
 
         // CSV line-buffered reader. The FSW emits one telemetry record per
         // line as `$TELEM,<56 fields>\n`; all other lines are FSW log output
@@ -1227,15 +1257,19 @@ async fn umbilical_task(
                                     .unwrap()
                                     .as_millis() as u64;
 
-                                {
-                                    let mut umb = umbilical_readings.lock().await;
-                                    umb.timestamp_ms = timestamp_ms;
-                                    umb.telemetry = telemetry;
-                                    umb.last_telem_instant = Some(Instant::now());
+                                let now = Instant::now();
+                                let tele = telemetry.clone();
+                                umbilical_readings.rcu(|c| {
+                                    let mut new = (**c).clone();
+                                    new.timestamp_ms = timestamp_ms;
+                                    new.telemetry = tele.clone();
+                                    new.last_telem_instant = Some(now);
                                     // Flip connected true eagerly on fresh telemetry;
                                     // safety monitor is the source of truth for staleness.
-                                    umb.connected = true;
-                                }
+                                    new.connected = true;
+                                    new
+                                });
+                                fsw_event.notify(usize::MAX);
 
                                 debug!("FSW telemetry received: mode={}", telemetry.flight_mode_name());
                             } else {
@@ -1258,11 +1292,13 @@ async fn umbilical_task(
         }
 
         // Connection lost — mark disconnected and retry
-        {
-            let mut umb = umbilical_readings.lock().await;
-            umb.connected = false;
-            umb.last_telem_instant = None;
-        }
+        umbilical_readings.rcu(|c| {
+            let mut new = (**c).clone();
+            new.connected = false;
+            new.last_telem_instant = None;
+            new
+        });
+        fsw_event.notify(usize::MAX);
         warn!("Umbilical disconnected, retrying in 2s...");
         Timer::after(Duration::from_secs(2)).await;
     }
@@ -1271,8 +1307,9 @@ async fn umbilical_task(
 /// Stub for non-Linux platforms
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
 async fn umbilical_task(
-    _umbilical_readings: Arc<Mutex<UmbilicalReadings>>,
+    _umbilical_readings: Arc<ArcSwap<UmbilicalReadings>>,
     _cmd_rx: smol::channel::Receiver<String>,
+    _fsw_event: Arc<Event>,
 ) {
     warn!("Umbilical not supported on this platform (no serial port)");
     loop {

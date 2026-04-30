@@ -1,7 +1,8 @@
+use arc_swap::ArcSwap;
 use rumqttc::{Client, MqttOptions, QoS};
 use serde::Serialize;
 use smol::Timer;
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use smol::lock::Mutex;
 use tracing::{info, warn, error, debug};
@@ -126,8 +127,8 @@ struct TelemetryPayload {
 
 pub async fn start_mqtt_publisher(
     _hardware: Arc<Mutex<Hardware>>,
-    adc_readings: Arc<StdMutex<AdcReadings>>,
-    umbilical_readings: Arc<Mutex<UmbilicalReadings>>,
+    adc_readings: Arc<ArcSwap<AdcReadings>>,
+    umbilical_readings: Arc<ArcSwap<UmbilicalReadings>>,
     actuator_state: Arc<ActuatorState>,
 ) {
     info!("Starting MQTT publisher task ({}:{}, topic: {}, rate: {} Hz)",
@@ -165,9 +166,9 @@ pub async fn start_mqtt_publisher(
         let start = Instant::now();
         let ms_since_boot_fill = boot_time.elapsed().as_millis() as u64;
 
-        // 1. Gather ADC data (sync mutex; tiny copy under lock)
+        // 1. Gather ADC data (lock-free ArcSwap load)
         let (pt_1_pressure, pt_2_pressure, load_cell) = {
-            let adc = adc_readings.lock().expect("adc_readings poisoned");
+            let adc = adc_readings.load();
             if adc.valid {
                 (
                     adc.adc1[0].scaled.unwrap_or(0.0) as f64, // PT1500
@@ -179,10 +180,10 @@ pub async fn start_mqtt_publisher(
             }
         };
 
-        // 2. Gather FSW telemetry from umbilical
+        // 2. Gather FSW telemetry from umbilical (lock-free ArcSwap load)
         let (fsw_connected, telemetry) = {
-            let umb = umbilical_readings.lock().await;
-            (umb.connected, umb.telemetry)
+            let umb = umbilical_readings.load();
+            (umb.connected, umb.telemetry.clone())
         };
 
         // 3a. Gather last-commanded actuator state (ball valve, QD)
