@@ -350,31 +350,28 @@ async fn execute_command(
 
                 #[cfg(any(target_os = "linux", target_os = "android"))]
                 {
-                    // 1. Lock and Turn ON
-                    {
+                    let (ig1, ig2) = {
                         let hw = hw_bg.lock().await;
-                        // Use join to set both simultaneously if possible, or just sequential is fine generally 
-                        // as await won't block long for GPIO
-                        if let Err(e) = hw.ig1.set_actuated(true).await {
-                             error!("Failed to actuate igniter 1: {}", e);
-                        }
-                        if let Err(e) = hw.ig2.set_actuated(true).await {
-                             error!("Failed to actuate igniter 2: {}", e);
-                        }
+                        (hw.ig1.clone(), hw.ig2.clone())
+                    };
+
+                    // 1. Turn ON
+                    if let Err(e) = ig1.set_actuated(true).await {
+                         error!("Failed to actuate igniter 1: {}", e);
+                    }
+                    if let Err(e) = ig2.set_actuated(true).await {
+                         error!("Failed to actuate igniter 2: {}", e);
                     }
 
-                    // 2. Wait 3 seconds (without lock)
+                    // 2. Wait 3 seconds
                     Timer::after(Duration::from_secs(3)).await;
 
-                    // 3. Lock and Turn OFF
-                    {
-                        let hw = hw_bg.lock().await;
-                        if let Err(e) = hw.ig1.set_actuated(false).await {
-                             error!("Failed to turn off igniter 1: {}", e);
-                        }
-                        if let Err(e) = hw.ig2.set_actuated(false).await {
-                             error!("Failed to turn off igniter 2: {}", e);
-                        }
+                    // 3. Turn OFF
+                    if let Err(e) = ig1.set_actuated(false).await {
+                         error!("Failed to turn off igniter 1: {}", e);
+                    }
+                    if let Err(e) = ig2.set_actuated(false).await {
+                         error!("Failed to turn off igniter 2: {}", e);
                     }
                 }
                 #[cfg(not(any(target_os = "linux", target_os = "android")))]
@@ -393,11 +390,17 @@ async fn execute_command(
         Command::GetIgniterContinuity { id } => {
             #[cfg(any(target_os = "linux", target_os = "android"))]
             {
-                let hw = hardware.lock().await;
-                let continuity = match id {
-                    1 => Some(hw.ig1.has_continuity().await),
-                    2 => Some(hw.ig2.has_continuity().await),
-                    _ => None,
+                let igniter = {
+                    let hw = hardware.lock().await;
+                    match id {
+                        1 => Some(hw.ig1.clone()),
+                        2 => Some(hw.ig2.clone()),
+                        _ => None,
+                    }
+                };
+                let continuity = match igniter {
+                    Some(ig) => Some(ig.has_continuity().await),
+                    None => None,
                 };
                 
                 if let Some(c) = continuity {
@@ -417,14 +420,14 @@ async fn execute_command(
         Command::ActuateValve { valve, open } => {
             #[cfg(any(target_os = "linux", target_os = "android"))]
             {
-                let hw = hardware.lock().await;
-                let result = match valve.to_lowercase().as_str() {
-                    "sv1" => hw.sv1.set_open(open).await,
+                let sv = match valve.to_lowercase().as_str() {
+                    "sv1" => hardware.lock().await.sv1.clone(),
                     _ => {
                         warn!("Unknown valve: {}", valve);
                         return CommandResponse::Error;
                     }
                 };
+                let result = sv.set_open(open).await;
 
                 match result {
                     Ok(_) => {
@@ -447,10 +450,13 @@ async fn execute_command(
         Command::GetValveState { valve } => {
             #[cfg(any(target_os = "linux", target_os = "android"))]
             {
-                let hw = hardware.lock().await;
-                let result = match valve.to_lowercase().as_str() {
-                    "sv1" => Some((hw.sv1.is_open().await, hw.sv1.check_continuity().await)),
+                let sv = match valve.to_lowercase().as_str() {
+                    "sv1" => Some(hardware.lock().await.sv1.clone()),
                     _ => None,
+                };
+                let result = match sv {
+                    Some(sv) => Some((sv.is_open().await, sv.check_continuity().await)),
+                    None => None,
                 };
 
                 match result {
@@ -489,9 +495,9 @@ async fn execute_command(
             CommandResponse::Success
         }
         Command::BVOpen => {
-            let hw = hardware.lock().await;
+            let bv = hardware.lock().await.ball_valve.clone();
             info!("Executing BallValve Open Sequence");
-            if let Err(e) = hw.ball_valve.open_sequence().await {
+            if let Err(e) = bv.open_sequence().await {
                 error!("Failed to open ball valve: {}", e);
                 CommandResponse::Error
             } else {
@@ -500,9 +506,9 @@ async fn execute_command(
             }
         }
         Command::BVClose => {
-            let hw = hardware.lock().await;
+            let bv = hardware.lock().await.ball_valve.clone();
             info!("Executing BallValve Close Sequence");
-            if let Err(e) = hw.ball_valve.close_sequence().await {
+            if let Err(e) = bv.close_sequence().await {
                 error!("Failed to close ball valve: {}", e);
                 CommandResponse::Error
             } else {
@@ -511,7 +517,6 @@ async fn execute_command(
             }
         }
         Command::BVSignal { state } => {
-             let hw = hardware.lock().await;
              let high = match state.to_lowercase().as_str() {
                  "high" | "open" | "true" => true,
                  "low" | "close" | "false" => false,
@@ -521,8 +526,8 @@ async fn execute_command(
                  }
              };
              info!("Setting BallValve Signal to {}", if high { "HIGH" } else { "LOW" });
-             
-             if let Err(e) = hw.ball_valve.set_signal_safe(high).await {
+             let bv = hardware.lock().await.ball_valve.clone();
+             if let Err(e) = bv.set_signal_safe(high).await {
                  error!("Failed to set ball valve signal: {}", e);
                  // If error is due to ON_OFF being high, it will be caught here
                  CommandResponse::Error
@@ -531,7 +536,6 @@ async fn execute_command(
              }
         }
         Command::BVOnOff { state } => {
-             let hw = hardware.lock().await;
              let high = match state.to_lowercase().as_str() {
                  "high" | "on" | "true" => true,
                  "low" | "off" | "false" => false,
@@ -541,8 +545,8 @@ async fn execute_command(
                  }
              };
              info!("Setting BallValve ON_OFF to {}", if high { "HIGH" } else { "LOW" });
-             
-             if let Err(e) = hw.ball_valve.set_on_off(high).await {
+             let bv = hardware.lock().await.ball_valve.clone();
+             if let Err(e) = bv.set_on_off(high).await {
                  error!("Failed to set ball valve ON_OFF: {}", e);
                  CommandResponse::Error
              } else {
@@ -875,13 +879,16 @@ async fn safety_monitor_task(
                     warn!("UMBILICAL SAFETY TIMEOUT (15s) - Closing BV, Opening SV1");
                     #[cfg(any(target_os = "linux", target_os = "android"))]
                     {
-                        let hw = hardware.lock().await;
+                        let (bv, sv) = {
+                            let hw = hardware.lock().await;
+                            (hw.ball_valve.clone(), hw.sv1.clone())
+                        };
                         // Close Ball Valve
-                        if let Err(e) = hw.ball_valve.close_sequence().await {
+                        if let Err(e) = bv.close_sequence().await {
                             error!("Failed to close Ball Valve during umbilical safety: {}", e);
                         }
                         // Open SV1
-                        if let Err(e) = hw.sv1.set_open(true).await {
+                        if let Err(e) = sv.set_open(true).await {
                             error!("Failed to open SV1 during umbilical safety: {}", e);
                         }
                     }
@@ -910,14 +917,17 @@ async fn perform_emergency_shutdown(
 ) {
     #[cfg(any(target_os = "linux", target_os = "android"))]
     {
-        let hw = hardware.lock().await;
+        let (sv, bv) = {
+            let hw = hardware.lock().await;
+            (hw.sv1.clone(), hw.ball_valve.clone())
+        };
         info!("EMERGENCY SHUTDOWN: Closing all Valves");
 
         // Close SV1
-        let _ = hw.sv1.set_open(false).await;
+        let _ = sv.set_open(false).await;
 
         // Close Ball Valve
-        let _ = hw.ball_valve.close_sequence().await;
+        let _ = bv.close_sequence().await;
     }
 
     // Send FSW Safe command via umbilical to close FSW SV

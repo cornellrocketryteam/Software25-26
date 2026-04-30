@@ -20,14 +20,14 @@ const ADC2_ADDRESS: u16 = 0x49;
 
 pub struct Hardware {
     #[cfg(any(target_os = "linux", target_os = "android"))]
-    pub ig1: Igniter,
+    pub ig1: Arc<Igniter>,
     #[cfg(any(target_os = "linux", target_os = "android"))]
-    pub ig2: Igniter,
+    pub ig2: Arc<Igniter>,
     pub adc1: Ads1015,
     pub adc2: Ads1015,
     #[cfg(any(target_os = "linux", target_os = "android"))]
-    pub sv1: SolenoidValve,
-    pub ball_valve: BallValve,
+    pub sv1: Arc<SolenoidValve>,
+    pub ball_valve: Arc<BallValve>,
     pub qd_stepper: Arc<QdStepper>,
 }
 
@@ -36,27 +36,27 @@ impl Hardware {
     pub async fn new() -> Result<Self> {
         let chip0 = Chip::new(GPIO_CHIP0).await?;
         let chip1 = Chip::new(GPIO_CHIP1).await?;
-        let ig1 = Igniter::new(&chip0, 39, &chip0, 38).await?; // 38 is signal, 39 is continuity
-        let ig2 = Igniter::new(&chip1, 42, &chip0, 40).await?; // 42 is continuity on chip 1, 40 is signal on chip 0
-        
+        let ig1 = Arc::new(Igniter::new(&chip0, 39, &chip0, 38).await?); // 38 is signal, 39 is continuity
+        let ig2 = Arc::new(Igniter::new(&chip1, 42, &chip0, 40).await?); // 42 is continuity on chip 1, 40 is signal on chip 0
+
         let adc1 = Ads1015::new(I2C_BUS, ADC1_ADDRESS)?;
         let adc2 = Ads1015::new(I2C_BUS, ADC2_ADDRESS)?;
 
         // SV1 (Normally Closed)
-        let sv1 = SolenoidValve::new(
+        let sv1 = Arc::new(SolenoidValve::new(
             &chip0, 42, // pin to actuate
             &chip1, 51, // pin to sense
             LinePull::NormallyClosed
-        ).await?;
+        ).await?);
 
         // Ball Valve
         // Signal: Chip 1, Line 62
         // ON_OFF: Chip 1, Line 63
-        let ball_valve = BallValve::new(
+        let ball_valve = Arc::new(BallValve::new(
             &chip1, 63, // ON_OFF Pin
             &chip1, 62, // Signal Pin
             "BallValve"
-        ).await?;
+        ).await?);
 
         // QD Stepper (STEP via GPIO bit-bang, DIR/ENA via GPIO)
         let qd_stepper = Arc::new(QdStepper::new(
@@ -73,7 +73,7 @@ impl Hardware {
     pub async fn new() -> Result<Self> {
         let adc1 = Ads1015::new(I2C_BUS, ADC1_ADDRESS)?;
         let adc2 = Ads1015::new(I2C_BUS, ADC2_ADDRESS)?;
-        let ball_valve = BallValve::new(&(), 0, &(), 0, "BallValve").await?;
+        let ball_valve = Arc::new(BallValve::new(&(), 0, &(), 0, "BallValve").await?);
         let qd_stepper = Arc::new(QdStepper::new(&(), 0, &(), 0, &(), 0, "QD").await?);
 
         Ok(Self { adc1, adc2, ball_valve, qd_stepper })
