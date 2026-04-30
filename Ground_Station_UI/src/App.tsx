@@ -11,7 +11,7 @@ type AppContextType = {
   uri: string;
   wsReady: boolean;
 }
-export type FlightMode = "....."| 'STANDBY';
+export type FlightMode = "....."| 'STANDBY' | 'STARTUP';
 
 export const AppContext = createContext<AppContextType | null>(null);
 
@@ -25,8 +25,8 @@ export const useAppContext = () => {
 
 function App() {
   const wsRef = useRef<WebSocket | null>(null);
-  const uri = "ws://192.168.1.103:9000";
-  //const uri = "ws://localhost:9000";
+  //const uri = "ws://192.168.1.103:9000";
+  const uri = "ws://localhost:9000";
   const [wsReady, setWsReady] = useState(false);
   const [currFlightMode, setCurrFlightMode] = useState<FlightMode>('.....');
 

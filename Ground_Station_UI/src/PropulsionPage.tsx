@@ -20,8 +20,6 @@ type ValveData = {
     SV2: { "actuated": boolean, "continuity": boolean };
     MAV: { "actuated": boolean, "angle": number, "pulseWidth": number };
     BV: { "actuated": boolean, "state": string };
-    IG1: { "continuity": boolean };
-    IG2: { "continuity": boolean };
 }
 
 type PropulsionContextType = {
@@ -106,7 +104,7 @@ export const usePropulsion = () => {
 };
 
 export function PropulsionPage() {
-    const { wsRef, wsReady, currFlightMode, setCurrFlightMode } = useAppContext(); //The App's websocket refrence
+    const { wsRef, wsReady, currFlightMode} = useAppContext(); //The App's websocket refrence
 
     const [fillState, setFillState] = useState<FillState>('INITIAL');
     const [ventSeconds, setVentSeconds] = useState(0);
@@ -189,8 +187,8 @@ export function PropulsionPage() {
     const startFSWStream = { "command": "start_fsw_stream" };
     const stopFSWStream = { "command": "stop_fsw_stream" };
 
-    const queryCommands = ["get_valve_state", "get_igniter_continuity"]; //Set of commands that are used to get information about the current state of the system, which we want to track as pending actions so that when we get the response back from the server, we know what information it corresponds to and can update our state accordingly
-    const actuationCommands = ["actuate_valve", "fsw_open_mav", "fsw_close_mav", "bv_open", "bv_close", "ignite"]; //Set of commands that are used to change the state of the system, which we want to clear any pending actions for when we send them, since we know that any information we get back from the server after sending one of these commands will be outdated and not relevant to our current state
+    const queryCommands = ["get_valve_state"]; //Set of commands that are used to get information about the current state of the system, which we want to track as pending actions so that when we get the response back from the server, we know what information it corresponds to and can update our state accordingly
+    const actuationCommands = ["actuate_valve", "fsw_open_mav", "fsw_close_mav", "bv_open", "bv_close"]; //Set of commands that are used to change the state of the system, which we want to clear any pending actions for when we send them, since we know that any information we get back from the server after sending one of these commands will be outdated and not relevant to our current state
 
 
     //Stored Valve Data
@@ -202,8 +200,6 @@ export function PropulsionPage() {
         SV2: { "actuated": false, "venting": false, "continuity": false },
         MAV: { "actuated": false, "angle": 0, "pulseWidth": 0 },
         BV: { "actuated": false, "state": "high" },
-        IG1: { "continuity": false },
-        IG2: { "continuity": false },
         QD: { "retracted": false }
     });
 
@@ -360,14 +356,15 @@ export function PropulsionPage() {
                 }
 
 
-                // const lastPressure = umbilicalDataRef.current.at(-1)?.telemetry.pt3 ?? 0;
-                // if (isFillingRef.current && !isVentingRef.current) {
-                //     data.telemetry.pt3 = lastPressure + (Math.random() * 4 + 1);
-                // } else if (isVentingRef.current || (valveDataRef.current.SV2.venting && valveDataRef.current.BV.actuated)) {
-                //     data.telemetry.pt3 = Math.max(0, lastPressure - (Math.random() * 15 + 10));
-                // } else {
-                //     data.telemetry.pt3 = lastPressure;
-                // }
+                const lastPressure = umbilicalDataRef.current.at(-1)?.telemetry.pt3 ?? 0;
+
+                if (isFillingRef.current && !isVentingRef.current) {
+                    data.telemetry.pt3 = lastPressure + (Math.random() * 4 + 1); // Random increase between 1-5 during fill
+                } else if (isVentingRef.current || (valveDataRef.current.SV2.venting && valveDataRef.current.BV.actuated)) {
+                    data.telemetry.pt3 = Math.max(0, lastPressure - (Math.random() * 15 + 10)); // Random decrease between 10-25 during vent
+                } else {
+                    data.telemetry.pt3 = lastPressure; // Hold when idle
+                }
 
                 console.log("Pressure:", new Date().toISOString(), "PSI:", data.telemetry.pt3);
 
@@ -392,23 +389,6 @@ export function PropulsionPage() {
                 }
                 break;
 
-            case "igniter_continuity":
-                if (data.id === 1) {
-                    updateValveData(prevState => ({
-                        ...prevState, //Spread the previous state to keep other valves' data unchanged
-                        IG1: { "continuity": data.continuity }
-                        //Adjust as needed based on actual response data and what information we want to track
-                    }));
-                }
-                else if (data.id === 2) {
-                    updateValveData(prevState => ({
-                        ...prevState, //Spread the previous state to keep other valves' data unchanged
-                        IG2: { "continuity": data.continuity }
-                        //Adjust as needed based on actual response data and what information we want to track
-                    }));
-                }
-
-                break;
 
             case "valve_state":
                 if (pendingActionRef.current === "SV1") {
@@ -448,6 +428,9 @@ export function PropulsionPage() {
     useEffect(() => {
         handleButtonClickRef.current = handleButtonClick;
     }); // No dependency array = runs after every render, keeping ref always fresh
+    useEffect(() => {
+        confirmedVentSecondsRef.current = confirmedVentSeconds;
+    }, [confirmedVentSeconds]); // runs after every change of converVentSeconds, keeping ref always fresh
 
     //useEffect hook sets up connection to fill station server on mount of propulsion page, and also sets up listeners for messages, connection closures, and errors, 
     //and then cleans up the connection on unmount of the page. The connection closure listener also attempts to reconnect after a delay if the connection is lost, and 
@@ -508,6 +491,7 @@ export function PropulsionPage() {
 
     return (
         <PropulsionContext.Provider value={{ confirmedVentSecondsRef, canInteractRef, buttonInteractionState, setButtonInteractionState, valveDataRef, fillUIActive, setFillUIActive, ventUIActive, setVentUIActive, isVentingRef, isFillingRef, manualVentRef, handleButtonClickRef, fillState, setFillState, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, valveData, adcDataRef: adcDataRef, telemetryDataRef: umbilicalDataRef }}>
+        <PropulsionContext.Provider value={{ confirmedVentSecondsRef, canInteractRef, buttonInteractionState, setButtonInteractionState, valveDataRef, fillUIActive, setFillUIActive, ventUIActive, setVentUIActive, isVentingRef, isFillingRef, manualVentRef, handleButtonClickRef, fillState, setFillState, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, valveData, adcDataRef: adcDataRef, telemetryDataRef: umbilicalDataRef }}>
             <div className={`min-h-screen bg-white ${ventUIActive ? 'cursor-wait' : ''}`}>
                 {/* Header */}
                 <Header
@@ -541,6 +525,7 @@ export function PropulsionPage() {
                                 <ButtonComponent buttonName="MAV" currentState={valveData.MAV.actuated} actuationLock='LOCKED' />
                                 <ButtonComponent buttonName="Quick Disconnect" currentState={valveData.QD.retracted} actuationLock='UNLOCKED' />
                             </div>
+
                         </div>
 
 
