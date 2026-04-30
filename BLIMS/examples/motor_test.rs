@@ -42,8 +42,8 @@ async fn main(spawner: Spawner) {
 
     let driver = Driver::new(p.USB, Irqs);
     spawner.spawn(logger_task(driver).expect("logger task failed to spawn"));
-    Timer::after(Duration::from_secs(2)).await;
-    defmt::info!("USB Serial initialized! Motor test starting...");
+    Timer::after(Duration::from_secs(10)).await;
+    log::info!("USB Serial initialized! Motor test starting...");
 
     let mut state_pin = Output::new(p.PIN_0, Level::High);
 
@@ -52,47 +52,48 @@ async fn main(spawner: Spawner) {
     pwm_config.divider = FixedU16::<U4>::from_num(DIVIDER);
     pwm_config.compare_a = 0;
     pwm_config.enable = true;
-
     let mut pwm = Pwm::new_output_a(p.PWM_SLICE6, p.PIN_28, pwm_config.clone());
 
-    set_motor_position(&mut pwm, &mut pwm_config, 0.5);
-    Timer::after(Duration::from_secs(5)).await; 
+    // set_motor_position(&mut pwm, &mut pwm_config, 0.5);
 
-    state_pin.set_low(); 
-    defmt::info!("pulse low");
-    Timer::after(Duration::from_millis(500)).await; 
+    // log::info!("[main] Moving to neutral (0.5)");
+    // Timer::after(Duration::from_secs(5)).await; 
+    //let mut enable_pin = Output::new(p.PIN_0, Level::High);
+
+    // //state_pin.set_low(); 
+    // log::info!("pulse low");
+    // Timer::after(Duration::from_millis(500)).await; 
 
     
-    // state_pin.set_high(); 
-    // log::info!("enable");
-    // Timer::after(Duration::from_secs(5)).await;
+    state_pin.set_high(); 
+    log::info!("enable pin high");
+    // Timer::after(Duration::from_secs(3)).await;
 
-    defmt::info!("entering test loop");
+    log::info!("entering test loop");
 
     loop {
         
-        log::info!("[main] Moving to +10.5 turns (0.75)");
+        log::info!("[main] Moving to +10.5 turns (1.0)");
         // log::info!("[main] Moving to +10.5 turns (0.75)");
-        set_motor_position(&mut pwm, &mut pwm_config, 0.75);
-        Timer::after(Duration::from_secs(5)).await;
+        set_motor_position(&mut pwm, &mut pwm_config, 1.0);
+        Timer::after(Duration::from_secs(10)).await;
  
         log::info!("[main] Moving to neutral 0 turns (0.5)");
         set_motor_position(&mut pwm, &mut pwm_config, 0.5);
-        Timer::after(Duration::from_secs(5)).await;
+        Timer::after(Duration::from_secs(10)).await;
  
-        log::info!("[main] Moving to -10.5 turns (0.25)");
+        log::info!("[main] Moving to -10.5 turns (0.0)");
         // log::info!::info!("[main] Moving to +10.5 turns (0.25)");
-        set_motor_position(&mut pwm, &mut pwm_config, 0.25);
-        Timer::after(Duration::from_secs(5)).await;
+        set_motor_position(&mut pwm, &mut pwm_config, 0.0);
+        Timer::after(Duration::from_secs(10)).await;
 
-        log::info!("[main] Moving to -10.5 turns (0.25)");
+        log::info!("[main] Moving to -10.5 turns (0.5)");
         set_motor_position(&mut pwm, &mut pwm_config, 0.5);
-        Timer::after(Duration::from_secs(5)).await;
+        Timer::after(Duration::from_secs(10)).await;
 }
 
     // loop {
     //     log::info!("hello");
     // }
 }
-
 

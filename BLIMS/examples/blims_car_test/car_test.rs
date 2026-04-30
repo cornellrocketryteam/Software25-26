@@ -258,7 +258,7 @@ async fn main(spawner: Spawner) {
     let pwm = Pwm::new_output_a(p.PWM_SLICE6, p.PIN_28, pwm_config.clone());
 
     // ── Enable pin (GPIO0) ────────────────────────────────────────────────────
-    let enable_pin = Output::new(p.PIN_0, Level::Low);
+    let enable_pin = Output::new(p.PIN_0, Level::High);
 
     // ── BLiMS init ────────────────────────────────────────────────────────────
     let mut blims = Blims::new(Hardware { pwm, pwm_config, enable_pin });
@@ -279,6 +279,7 @@ async fn main(spawner: Spawner) {
     }
 
     i2c_scan(&mut i2c).await;
+
 
     // ── Banner ────────────────────────────────────────────────────────────────
     log::info!("# ================================================");
