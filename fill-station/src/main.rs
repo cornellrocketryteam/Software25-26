@@ -550,10 +550,9 @@ async fn execute_command(
              }
         }
         Command::QdMove { steps, direction } => {
-            let hw_bg = hardware.clone();
+            let stepper = hardware.lock().await.qd_stepper.clone();
             smol::spawn(async move {
-                let hw = hw_bg.lock().await;
-                if let Err(e) = hw.qd_stepper.move_steps(steps, direction).await {
+                if let Err(e) = stepper.move_steps(steps, direction).await {
                     error!("QD move failed: {}", e);
                 }
             }).detach();
@@ -561,10 +560,9 @@ async fn execute_command(
         }
         Command::QdRetract => {
             use crate::components::qd_stepper::{QD_RETRACT_STEPS, QD_RETRACT_DIRECTION};
-            let hw_bg = hardware.clone();
+            let stepper = hardware.lock().await.qd_stepper.clone();
             smol::spawn(async move {
-                let hw = hw_bg.lock().await;
-                if let Err(e) = hw.qd_stepper.move_steps(QD_RETRACT_STEPS, QD_RETRACT_DIRECTION).await {
+                if let Err(e) = stepper.move_steps(QD_RETRACT_STEPS, QD_RETRACT_DIRECTION).await {
                     error!("QD retract failed: {}", e);
                 }
             }).detach();
@@ -573,10 +571,9 @@ async fn execute_command(
         }
         Command::QdExtend => {
             use crate::components::qd_stepper::{QD_EXTEND_STEPS, QD_EXTEND_DIRECTION};
-            let hw_bg = hardware.clone();
+            let stepper = hardware.lock().await.qd_stepper.clone();
             smol::spawn(async move {
-                let hw = hw_bg.lock().await;
-                if let Err(e) = hw.qd_stepper.move_steps(QD_EXTEND_STEPS, QD_EXTEND_DIRECTION).await {
+                if let Err(e) = stepper.move_steps(QD_EXTEND_STEPS, QD_EXTEND_DIRECTION).await {
                     error!("QD extend failed: {}", e);
                 }
             }).detach();

@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::sync::Arc;
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use async_gpiod::Chip;
@@ -27,7 +28,7 @@ pub struct Hardware {
     #[cfg(any(target_os = "linux", target_os = "android"))]
     pub sv1: SolenoidValve,
     pub ball_valve: BallValve,
-    pub qd_stepper: QdStepper,
+    pub qd_stepper: Arc<QdStepper>,
 }
 
 impl Hardware {
@@ -58,12 +59,12 @@ impl Hardware {
         ).await?;
 
         // QD Stepper (STEP via GPIO bit-bang, DIR/ENA via GPIO)
-        let qd_stepper = QdStepper::new(
+        let qd_stepper = Arc::new(QdStepper::new(
             &chip1, 58,   // STEP: gpiochip2, line 58 (GPIO1_58, Pull Down)
             &chip1, 43,   // DIR:  gpiochip2, line 43 (GPIO1_43, Pull Down)
             &chip1, 64,   // ENA:  gpiochip2, line 64 (GPIO1_64, No Pull)
             "QD"
-        ).await?;
+        ).await?);
 
         Ok(Self { ig1, ig2, adc1, adc2, sv1, ball_valve, qd_stepper })
     }
@@ -73,7 +74,7 @@ impl Hardware {
         let adc1 = Ads1015::new(I2C_BUS, ADC1_ADDRESS)?;
         let adc2 = Ads1015::new(I2C_BUS, ADC2_ADDRESS)?;
         let ball_valve = BallValve::new(&(), 0, &(), 0, "BallValve").await?;
-        let qd_stepper = QdStepper::new(&(), 0, &(), 0, &(), 0, "QD").await?;
+        let qd_stepper = Arc::new(QdStepper::new(&(), 0, &(), 0, &(), 0, "QD").await?);
 
         Ok(Self { adc1, adc2, ball_valve, qd_stepper })
     }
