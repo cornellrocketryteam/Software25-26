@@ -64,40 +64,48 @@ void PacketSimulator::generateRadioPacket(RadioPacket &packet) {
   
   float t = sim_time_ms / 1000.0f;
   
-  if (t < 5.0f) {
-      // Pure North
-      packet.latitude = 0.001f * 1e6; 
+  // Distance east when lon = 0.001 deg at the equator: ~111.19 m.
+  // Altitude for elevation X = distance * tan(X).
+  // Each stage is ~3 s so the Kalman filter has time to settle between discontinuous position jumps.
+  if (t < 3.0f) {
+      // Pure North, horizon
+      packet.latitude = 0.001f * 1e6;
       packet.longitude = 0.0f;
       packet.altitude = 0.0f;
-  } else if (t < 5.2f) {
-      // Az 30
+  } else if (t < 6.0f) {
+      // Az 30, horizon
       packet.latitude = 0.000866f * 1e6;
       packet.longitude = 0.0005f * 1e6;
       packet.altitude = 0.0f;
-  } else if (t < 5.4f) {
-      // Az 60
+  } else if (t < 9.0f) {
+      // Az 60, horizon
       packet.latitude = 0.0005f * 1e6;
       packet.longitude = 0.000866f * 1e6;
       packet.altitude = 0.0f;
-  } else if (t < 15.0f) {
-      // Az 90
+  } else if (t < 13.0f) {
+      // Az 90 (East), El 0
       packet.latitude = 0.0f;
       packet.longitude = 0.001f * 1e6;
       packet.altitude = 0.0f;
-  } else if (t < 25.0f) {
-      // Az 90, High Altitude
+  } else if (t < 16.0f) {
+      // Az 90, El 30
       packet.latitude = 0.0f;
       packet.longitude = 0.001f * 1e6;
-      packet.altitude = 111.32f;
-  } else {
-      // Zenith
+      packet.altitude = 64.20f;
+  } else if (t < 19.0f) {
+      // Az 90, El 60
       packet.latitude = 0.0f;
-      packet.longitude = 0.0f;
-      packet.altitude = 500.0f;
+      packet.longitude = 0.001f * 1e6;
+      packet.altitude = 192.58f;
+  } else {
+      // Az 90, El ~88-89° (very high altitude — avoids the atan2 singularity at true zenith)
+      packet.latitude = 0.0f;
+      packet.longitude = 0.001f * 1e6;
+      packet.altitude = 6370.0f; // 111.19 * tan(89°); apogee clamp drops it to 3048 m → ~87.9°
   }
   
   return;
-#endif
+#else
 
   updateSimulation();
 
@@ -168,6 +176,7 @@ void PacketSimulator::generateRadioPacket(RadioPacket &packet) {
   packet.pt4 = 750.0f + 30.0f * cosf(t * 0.1f);
   packet.rtd = 25.0f + 2.0f * sinf(t * 0.05f);
   packet.blims_motor_position = (current_mode == MAIN_DEPLOYED) ? 2.5f : 0.0f;
+#endif
 }
 
 void PacketSimulator::serializeRadioPacket(const RadioPacket &packet,

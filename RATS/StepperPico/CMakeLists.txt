@@ -49,7 +49,7 @@ if (COMMAND pico_sdk_init)
     target_compile_definitions(StepperPico PRIVATE ARDUINO=100)
 
     # Link the standard Pico SDK hardware libraries we need for GPIO and Timers
-    target_link_libraries(StepperPico pico_stdlib hardware_gpio hardware_timer hardware_uart)
+    target_link_libraries(StepperPico pico_stdlib hardware_gpio hardware_timer hardware_uart pico_multicore)
 
     # Enable stdio over USB and disable over UART (since GPS uses UART0)
     pico_enable_stdio_usb(StepperPico 1)

@@ -15,18 +15,15 @@
 #include "pico/multicore.h"
 #include "pico/util/queue.h"
 
+// Set to 1 to use internal packet simulator, 0 for real radio data
+#define USE_PACKET_SIMULATOR 1
+
 #if USE_PACKET_SIMULATOR
 #include "packet_simulator.h"
 #endif
 
 // Set USE_GPS = false to disable Native GPS NMEA Parser for testing without module
 static constexpr bool USE_GPS = false;
-
-// Set to 1 to use internal packet simulator, 0 for real radio data
-#define USE_PACKET_SIMULATOR 1
-
-// Set to 1 to run a deterministic math and motor interrupt test sequence
-#define MATH_TEST_MODE 1
 
 // Maximum apogee to predict (10,000 feet in meters)
 static constexpr double MAX_APOGEE_METERS = 3048.0;
@@ -240,7 +237,7 @@ void core1_entry() {
         // 1. POLLING
         if (USE_GPS) {
             if (gps.process()) {
-                if (gps.getFixQuality() > 0 && currentState == TrackerState::GPS_SEARCH) {
+                if (gps.hasFix() && currentState == TrackerState::GPS_SEARCH) {
                     currentState = TrackerState::GPS_AVERAGING;
                 }
                 
@@ -282,10 +279,10 @@ void core1_entry() {
 #endif
         }
 
-        // Check timeout
+        // Check timeout (ensure no underflow if lastPacketTimeMs is slightly ahead of now due to loop timing)
         bool signalLost = false;
         if (lastPacketTimeMs > 0) {
-            signalLost = ((now - lastPacketTimeMs) > 5000);
+            signalLost = (now >= lastPacketTimeMs) ? ((now - lastPacketTimeMs) > 5000) : false;
         }
 
         // FSM TRANSITIONS & LED LOGIC
@@ -456,8 +453,9 @@ int main() {
     while (true) {
         TargetAngles targets;
         while (queue_try_remove(&angle_queue, &targets)) {
-            azMotor.moveAngleTo(targets.azimuth);
-            elMotor.moveAngleTo(constrain(targets.elevation, -90.0, 90.0));
+            azMotor.moveAngleTo(-targets.azimuth);
+            // El motor is mounted reversed; negate so positive elevation drives the antenna up
+            elMotor.moveAngleTo(-constrain(targets.elevation, -90.0, 90.0));
             
             if (targets.motors_enabled != currently_enabled) {
                 if (targets.motors_enabled) {

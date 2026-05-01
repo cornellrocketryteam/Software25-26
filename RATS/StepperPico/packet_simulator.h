@@ -5,8 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// TODO:FIX ENTIRE TEST SYSTEM
-
+// Set to 1 to run a deterministic math and motor interrupt test sequence
+#define MATH_TEST_MODE 1
 // Simulates generating telemetry packets for testing
 class PacketSimulator {
 public:
