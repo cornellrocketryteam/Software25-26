@@ -1,0 +1,246 @@
+================================================================================
+AIRBRAKE CONTROLS 2 — CODE REVIEW
+================================================================================
+
+TABLE OF CONTENTS
+  1. Architecture Overview
+  2. File-by-File Walkthrough (Python)
+  3. File-by-File Walkthrough (Rust)
+  4. Python-Rust Parity Check
+  5. Proposed Changes / Issues Found
+  6. Changes Made
+  7. Physics Recommendations
+
+================================================================================
+1. ARCHITECTURE OVERVIEW
+================================================================================
+
+This system controls deployable airbrakes on a 16 kg sounding rocket to hit a
+target apogee of 3048 m (10,000 ft). Two implementations exist: Python
+(development/testing) and Rust (production embedded target).
+
+Flight phases:
+  - BOOST: Motor is burning. Controller only integrates gyroscope for tilt
+    estimation. Airbrakes stay retracted (0%).
+  - COAST: Motor burned out. Controller actively adjusts airbrakes using a
+    PID loop to hit target apogee.
+
+The controller does NOT detect flight phases itself. The flight computer (or
+simulator) passes the phase in each sensor packet. This mirrors the real
+rocket architecture.
+
+Sensor inputs:
+  - BMP390 barometer -> pressure (Pa) -> converted to altitude (m)
+  - ICM-42688-P IMU -> gyro_x, gyro_y, gyro_z (deg/s) -> integrated for tilt
+
+Control loop (each coast timestep):
+  1. Convert pressure to altitude, buffer last 3 readings
+  2. Compute velocity from altitude finite differences (NOT accelerometer)
+  3. Predict apogee using rocket_sim (forward Euler simulation to v=0)
+  4. PID controller computes error signal: (target_apogee - predicted_apogee)
+  5. PID output is scaled to a drag force delta via DRAG_SCALE_FACTOR
+  6. Current drag + delta is inverted through the drag equation to get a new
+     deployment percentage (0-1)
+  7. Deployment command sent to airbrake actuators
+
+On the very first coast step, a binary search (20 iterations) finds the
+initial deployment that makes predicted apogee ~= target. After that, PID
+takes over for continuous adjustment.
+
+Aerodynamic model:
+  - Cd = 0.3 (constant, all deployments)
+  - Area = 0.01 + 0.04 * deployment  (linear, m^2)
+  - Drag = 0.5 * rho * v^2 * Cd * A
+
+Failsafes:
+  - Excessive tilt (> 50 deg) -> fully retract
+  - Connection lost with positive velocity -> fully retract
+  - Velocity <= 0 (apogee reached) -> fully retract
+
+================================================================================
+2. FILE-BY-FILE WALKTHROUGH — PYTHON
+================================================================================
+
+--- PID.py ---
+Standard PID controller with output saturation.
+  - update(setpoint, measurement, dt) computes error = setpoint - measurement
+  - P, I, D terms computed classically
+  - First call skips derivative to avoid spike from prev_error = 0
+  - Output clamped to (min_output, max_output) = (-1.0, 1.0)
+
+--- rocket_sim.py ---
+Forward Euler simulation of coast phase. Given (height, velocity, tilt,
+airbrake_deployment), steps forward at dt=0.01s until velocity goes negative,
+then returns altitude at that final step as the predicted apogee.
+
+Physics each step:
+  1. Compute ISA air density directly at current altitude x
+  2. Compute axial airspeed: v_air = |v| / cos(tilt)
+  3. Compute drag: F_d = 0.5 * rho * v_air^2 * Cd * A
+  4. Acceleration: a = -g - F_d/mass
+  5. Euler integration: v_next = v + a*dt, x_next = x + v*dt + 0.5*a*dt^2
+
+--- controller.py ---
+Main controller module. Contains:
+  - Constants (atmospheric, airbrake geometry, PID gains)
+  - pressure_to_altitude(): barometric formula
+  - air_density(): ISA model
+  - deployment_to_area/cd/drag(): aerodynamic conversions
+  - drag_force_to_deployment(): inverse drag equation (algebraic, not iterative)
+  - SensorBuffer: rolling deque of 3 readings, computes velocity and
+    acceleration from altitude finite differences
+  - AirbrakeController: main class
+    - step(): processes one sensor packet, dispatches to boost/coast logic
+    - airbrake_adjustment_loop(): binary search for initial deployment
+    - calculate_drag_adjustment(): converts PID output to deployment via drag
+    - check_failsafes(): tilt and connection-loss checks
+    - integrate_gyroscope(): integrates X/Y gyro components separately,
+      computes total tilt as magnitude (allows tilt to decrease)
+  - run_from_csv(): convenience entry point for offline replay
+
+--- simulated_imu.py ---
+Closed-loop hardware-in-the-loop (HIL) simulation:
+  Phase 1 — Reads burn_data.csv, sends each row to controller as phase="boost"
+  Phase 2 — Physics ground truth (h, v updated by gravity + drag):
+    - Generates noisy synthetic sensor readings each timestep
+      (baro noise 0.02 Pa RMS, gyro noise 0.07 deg/s RMS)
+    - Feeds to the UNMODIFIED controller as phase="coast"
+    - Controller's deployment output drives the physics — true closed loop
+  The controller never knows it is in simulation.
+  Each run is logged to successful_runs/run_NNN.csv.
+
+================================================================================
+3. FILE-BY-FILE WALKTHROUGH — RUST
+================================================================================
+
+The Rust code is a direct port of the Python code, intended for the embedded
+flight computer.
+
+--- pid.rs ---
+Identical logic to PID.py. Uses f64::clamp() instead of manual min/max.
+
+--- rocket_sim.rs ---
+Identical logic to rocket_sim.py. Uses closures for inner helper functions.
+
+--- controller.rs ---
+Direct port of controller.py:
+  - Phase enum (Boost, Coast) replaces string phase
+  - SensorBuffer uses VecDeque with manual pop_front (mirrors Python deque)
+  - All constants, formulas, and control logic match Python exactly
+  - Uses Rust's Option<f64> for previous_time (vs Python's None)
+
+--- main.rs ---
+Direct port of simulated_imu.py:
+  - Uses rand/rand_distr crates for Gaussian noise
+  - CSV read/write via csv crate
+  - Run numbering counts directory entries (see Issue #6 below)
+
+================================================================================
+4. PYTHON-RUST PARITY CHECK
+================================================================================
+
+Constants:        MATCH — all values identical
+PID logic:        MATCH
+rocket_sim:       MATCH
+Barometric eqns:  MATCH
+Drag model:       MATCH
+Binary search:    MATCH (20 iterations)
+Failsafes:        MATCH
+Sensor buffer:    MATCH (size 3, same velocity/acceleration formulas)
+Coast init logic:  MATCH
+
+The two implementations should produce the same results up to floating-point
+differences and RNG seed differences in sensor noise.
+
+================================================================================
+5. PROPOSED CHANGES / ISSUES FOUND
+================================================================================
+
+--- ISSUE #1 (Medium): Redundant atmosphere model in rocket_sim ---
+Files: rocket_sim.py:53-56, rocket_sim.rs:29-31
+
+rocket_sim computes P = P0 * exp(-x/8500) (simple exponential model), then
+converts P back to altitude h via the barometric formula. Since the exponential
+model and the barometric formula are DIFFERENT atmosphere models, h != x.
+This means the drag calculation uses a slightly wrong altitude for density.
+
+The variable x already IS the altitude. The sim should just use x directly
+for the air density calculation, skipping the pressure roundtrip entirely.
+
+Proposed fix: replace the P -> h -> rho chain with just rho = air_density(x).
+Remove the altitude_from_pressure helper and the pressure computation.
+
+--- ISSUE #2 (Low): No PID integral windup protection ---
+Files: PID.py:37, pid.rs:31
+
+The integral term accumulates without bound — only the final output is clamped.
+If the controller saturates (e.g., predicted apogee way above target, airbrakes
+fully deployed), the integral keeps growing. When the error finally decreases,
+the accumulated integral delays the response (windup).
+
+Proposed fix: clamp the integral term itself, or use back-calculation
+anti-windup (reduce integral when output is saturated).
+
+--- ISSUE #3 (Low): Tilt can only increase, never decrease ---
+Files: controller.py:445-447, controller.rs:200-201
+
+integrate_gyroscope uses sqrt(gyro_x^2 + gyro_y^2), which is always >= 0.
+This means integrated_tilt monotonically increases. In reality, the rocket
+could oscillate or straighten out, but this model will only accumulate.
+
+This is a known simplification (tilt is only used for axial velocity
+correction and the 50-degree failsafe), but worth discussing whether a more
+accurate tilt estimator (e.g., complementary filter) is needed.
+
+--- ISSUE #4 (Low): Division by zero possible in PID derivative ---
+Files: PID.py:45, pid.rs:38
+
+If dt = 0, the derivative term divides by zero. This could happen if two
+sensor packets have identical timestamps.
+
+Proposed fix: guard with "if dt > 0" before computing derivative.
+
+--- ISSUE #5 (Cosmetic): Self-assignments in rocket_sim.py ---
+File: rocket_sim.py:16, 27-29
+
+Lines like "x = x", "tilt_deg = tilt_deg", "airbrake = airbrake" are
+no-ops. They appear to be leftover from when these were hardcoded values.
+
+Proposed fix: remove them.
+
+--- ISSUE #6 (Low): Rust run numbering differs from Python ---
+Files: main.rs:244-246 vs simulated_imu.py:62-67
+
+Python uses regex to find the highest run number and increments it.
+Rust counts all directory entries (including non-CSV files) and adds 1.
+If there are non-CSV files in the directory, or if runs are deleted,
+numbering could collide or skip.
+
+Proposed fix: port the Python regex approach to Rust.
+
+--- ISSUE #7 (Info): Velocity derived from barometric altitude ---
+
+Both implementations derive velocity from finite differences of barometric
+altitude readings. This means velocity estimation depends on the quality of
+the barometric altitude, which has ~0.02 Pa noise (~0.17 m at ground level).
+With dt=0.01s, this noise could produce velocity errors of ~17 m/s per step.
+
+The 3-point buffer smooths this somewhat, but a Kalman filter or
+complementary filter fusing barometer + accelerometer would give much
+better velocity estimates for the real flight computer.
+
+Not a bug — just a robustness consideration for the actual hardware.
+
+--- ISSUE #8 (Info): rocket_sim apogee slightly undershoots ---
+Files: rocket_sim.py:76-79, rocket_sim.rs:43-44
+
+The simulation returns x_next at the timestep where v_next first goes
+negative. This is the position AFTER the true apogee (velocity crossed zero
+somewhere in the middle of that dt=0.01s step). A linear interpolation
+between the last two steps would give a more precise apogee estimate.
+
+Both Python and Rust behave the same way, so this is consistent.
+
+================================================================================
+END OF REVIEW
+================================================================================
