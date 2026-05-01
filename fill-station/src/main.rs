@@ -137,13 +137,19 @@ fn main() -> Result<()> {
         // `connected` flag); they coordinate via ArcSwap::rcu.
         let umbilical_readings = Arc::new(ArcSwap::from_pointee(UmbilicalReadings::default()));
         let fsw_event = Arc::new(Event::new());
-        let (umb_cmd_tx, umb_cmd_rx) = smol::channel::bounded::<String>(8);
+        let (umb_cmd_tx, umb_cmd_rx) = flume::bounded::<String>(8);
 
-        // Spawn umbilical background task
-        info!("Starting Umbilical monitoring task...");
+        // Spawn dedicated I/O thread that owns the serial port. It pushes
+        // raw byte chunks (and disconnect events) to the async parser via
+        // a flume channel and pulls outbound commands the same way.
+        let (umb_evt_tx, umb_evt_rx) = flume::bounded::<UmbEvent>(64);
+        spawn_umbilical_io_thread(umb_cmd_rx, umb_evt_tx);
+
+        // Spawn async umbilical parser task
+        info!("Starting Umbilical parser task...");
         let umb_task_readings = umbilical_readings.clone();
         let umb_task_event = fsw_event.clone();
-        smol::spawn(umbilical_task(umb_task_readings, umb_cmd_rx, umb_task_event)).detach();
+        smol::spawn(umbilical_task(umb_evt_rx, umb_task_readings, umb_task_event)).detach();
 
         // Active client tracker
         let active_client_count = Arc::new(AtomicUsize::new(0));
@@ -223,7 +229,7 @@ async fn handle_socket(
     adc_event: Arc<Event>,
     umbilical_readings: Arc<ArcSwap<UmbilicalReadings>>,
     fsw_event: Arc<Event>,
-    umb_cmd_tx: smol::channel::Sender<String>,
+    umb_cmd_tx: flume::Sender<String>,
     active_client_count: Arc<AtomicUsize>,
     actuator_state: Arc<ActuatorState>,
 ) {
@@ -356,7 +362,7 @@ async fn process_message(
     _adc_readings: &Arc<ArcSwap<AdcReadings>>,
     streaming_enabled: &mut bool,
     fsw_streaming_enabled: &mut bool,
-    umb_cmd_tx: &smol::channel::Sender<String>,
+    umb_cmd_tx: &flume::Sender<String>,
     actuator_state: &Arc<ActuatorState>,
 ) -> CommandResponse {
     debug!("Received message: {}", message);
@@ -378,7 +384,7 @@ async fn execute_command(
     hardware: &Arc<Mutex<Hardware>>,
     streaming_enabled: &mut bool,
     fsw_streaming_enabled: &mut bool,
-    umb_cmd_tx: &smol::channel::Sender<String>,
+    umb_cmd_tx: &flume::Sender<String>,
     actuator_state: &Arc<ActuatorState>,
 ) -> CommandResponse {
     match command {
@@ -850,7 +856,7 @@ async fn safety_monitor_task(
     hardware: Arc<Mutex<Hardware>>,
     active_client_count: Arc<AtomicUsize>,
     umbilical_readings: Arc<ArcSwap<UmbilicalReadings>>,
-    umb_cmd_tx: smol::channel::Sender<String>,
+    umb_cmd_tx: flume::Sender<String>,
 ) {
     let mut disconnect_start: Option<Instant> = None;
     let mut safety_triggered = false;
@@ -959,7 +965,7 @@ async fn safety_monitor_task(
 
 async fn perform_emergency_shutdown(
     hardware: &Arc<Mutex<Hardware>>,
-    umb_cmd_tx: &smol::channel::Sender<String>,
+    umb_cmd_tx: &flume::Sender<String>,
 ) {
     #[cfg(any(target_os = "linux", target_os = "android"))]
     {
@@ -1130,30 +1136,130 @@ fn spawn_adc_sampler(
 /// Reads text lines from USB serial. Lines prefixed with `$TELEM,` are parsed as
 /// CSV telemetry; all other lines are FSW log output (ignored for data purposes).
 /// Commands are written as `<X>` tokens to the same serial port.
+/// Events sent from the dedicated umbilical I/O thread to the async parser.
+enum UmbEvent {
+    /// Raw byte chunk received from the serial port.
+    Data(Vec<u8>),
+    /// Port is currently not connected (failed open or read error). The
+    /// async parser drops its line buffer and clears the freshness state
+    /// so a stale `last_telem_instant` from before the disconnect can't
+    /// briefly read as fresh after a reconnect.
+    Disconnected,
+}
+
+/// Spawn the dedicated umbilical I/O thread. Owns the serial port outright,
+/// loops on (heartbeat write, command drain, blocking read), and forwards
+/// raw bytes to the async parser via flume. Replaces the previous design
+/// where every iteration did `port.try_clone()` + `smol::unblock(...)`,
+/// which churned file descriptors and thread-pool tasks.
 #[cfg(any(target_os = "linux", target_os = "android"))]
-async fn umbilical_task(
-    umbilical_readings: Arc<ArcSwap<UmbilicalReadings>>,
-    cmd_rx: smol::channel::Receiver<String>,
-    fsw_event: Arc<Event>,
+fn spawn_umbilical_io_thread(
+    cmd_rx: flume::Receiver<String>,
+    event_tx: flume::Sender<UmbEvent>,
 ) {
     use std::io::Read as _;
     use std::io::Write as _;
 
-    info!("Umbilical task started, looking for device at {}", UMBILICAL_DEVICE);
+    std::thread::Builder::new()
+        .name("umbilical-io".into())
+        .spawn(move || {
+            info!("Umbilical I/O thread started, looking for device at {}", UMBILICAL_DEVICE);
 
-    loop {
-        // Try to open the serial port
-        let port = serialport::new(UMBILICAL_DEVICE, UMBILICAL_BAUD)
-            .timeout(Duration::from_millis(UMBILICAL_READ_TIMEOUT_MS))
-            .open();
+            loop {
+                // Try to open the serial port
+                let mut port = match serialport::new(UMBILICAL_DEVICE, UMBILICAL_BAUD)
+                    .timeout(Duration::from_millis(UMBILICAL_READ_TIMEOUT_MS))
+                    .open()
+                {
+                    Ok(p) => {
+                        info!("Umbilical serial port opened: {}", UMBILICAL_DEVICE);
+                        p
+                    }
+                    Err(e) => {
+                        debug!("Umbilical not available ({}), retrying in 2s...", e);
+                        let _ = event_tx.send(UmbEvent::Disconnected);
+                        std::thread::sleep(Duration::from_secs(2));
+                        continue;
+                    }
+                };
 
-        let mut port = match port {
-            Ok(p) => {
-                info!("Umbilical serial port opened: {}", UMBILICAL_DEVICE);
-                p
+                // Newly opened port — clear freshness state until first $TELEM
+                let _ = event_tx.send(UmbEvent::Disconnected);
+
+                // 1 Hz heartbeat to FSW. FSW gates `umbilical_connected` on
+                // freshness of these `<H>` tokens (see fsw/src/umbilical.rs).
+                let mut last_heartbeat_sent = std::time::Instant::now()
+                    .checked_sub(Duration::from_secs(2))
+                    .unwrap_or_else(std::time::Instant::now);
+                const HEARTBEAT_INTERVAL: Duration = Duration::from_millis(1000);
+                let mut buf = [0u8; 256];
+
+                'inner: loop {
+                    // Heartbeat
+                    if last_heartbeat_sent.elapsed() >= HEARTBEAT_INTERVAL {
+                        if let Err(e) = port.write_all(b"<H>") {
+                            error!("Umbilical heartbeat write failed: {}", e);
+                            break 'inner;
+                        }
+                        last_heartbeat_sent = std::time::Instant::now();
+                    }
+
+                    // Drain pending outbound commands
+                    while let Ok(cmd) = cmd_rx.try_recv() {
+                        if let Err(e) = port.write_all(cmd.as_bytes()) {
+                            error!("Umbilical write failed: {}", e);
+                            break 'inner;
+                        }
+                    }
+
+                    // Blocking read with timeout. Timeout fires periodically
+                    // so the heartbeat and command drain stay responsive.
+                    match port.read(&mut buf) {
+                        Ok(0) => {}
+                        Ok(n) => {
+                            if event_tx.send(UmbEvent::Data(buf[..n].to_vec())).is_err() {
+                                // Async side dropped the receiver; thread can exit.
+                                return;
+                            }
+                        }
+                        Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {
+                            // Normal — loop again to check heartbeat / commands
+                        }
+                        Err(e) => {
+                            error!("Umbilical read error: {}, reconnecting...", e);
+                            break 'inner;
+                        }
+                    }
+                }
+
+                let _ = event_tx.send(UmbEvent::Disconnected);
+                warn!("Umbilical disconnected, retrying in 2s...");
+                std::thread::sleep(Duration::from_secs(2));
             }
-            Err(e) => {
-                debug!("Umbilical not available ({}), retrying in 2s...", e);
+        })
+        .expect("failed to spawn umbilical-io thread");
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+async fn umbilical_task(
+    event_rx: flume::Receiver<UmbEvent>,
+    umbilical_readings: Arc<ArcSwap<UmbilicalReadings>>,
+    fsw_event: Arc<Event>,
+) {
+    info!("Umbilical parser task started");
+
+    let mut line_buf = String::with_capacity(4096);
+    // S4a: discard everything until the second `\n` after a fresh
+    // (re)connect so the first line we parse can't be a truncated frame.
+    let mut newlines_seen: u8 = 0;
+    // Cap line_buf growth in case the FSW hangs mid-line (S5).
+    const LINE_BUF_MAX: usize = 8 * 1024;
+
+    while let Ok(event) = event_rx.recv_async().await {
+        match event {
+            UmbEvent::Disconnected => {
+                line_buf.clear();
+                newlines_seen = 0;
                 umbilical_readings.rcu(|c| {
                     let mut new = (**c).clone();
                     new.connected = false;
@@ -1161,163 +1267,81 @@ async fn umbilical_task(
                     new
                 });
                 fsw_event.notify(usize::MAX);
-                Timer::after(Duration::from_secs(2)).await;
-                continue;
             }
-        };
+            UmbEvent::Data(bytes) => {
+                // Append received bytes as text (lossy — non-UTF8 bytes
+                // become replacement chars; affected frames will fail to
+                // parse and be warn-logged below).
+                let text = String::from_utf8_lossy(&bytes);
+                line_buf.push_str(&text);
 
-        // Port is open, but DO NOT mark connected yet — we wait for a fresh
-        // $TELEM line so a hung FSW with a live USB stack reads as disconnected.
-        umbilical_readings.rcu(|c| {
-            let mut new = (**c).clone();
-            new.last_telem_instant = None;
-            new
-        });
-
-        // CSV line-buffered reader. The FSW emits one telemetry record per
-        // line as `$TELEM,<56 fields>\n`; all other lines are FSW log output
-        // and are forwarded to debug logs.
-        let mut line_buf = String::with_capacity(1024);
-        // S4a: discard everything until the second `\n` after a fresh
-        // (re)connect so the first line we parse can't be a truncated frame.
-        let mut newlines_seen: u8 = 0;
-        // Cap line_buf growth in case the FSW hangs mid-line (S5).
-        const LINE_BUF_MAX: usize = 8 * 1024;
-
-        // 1 Hz heartbeat to FSW. FSW gates `umbilical_connected` on freshness
-        // of these `<H>` tokens (see fsw/src/umbilical.rs).
-        let mut last_heartbeat_sent = std::time::Instant::now()
-            .checked_sub(Duration::from_secs(2))
-            .unwrap_or_else(std::time::Instant::now);
-        const HEARTBEAT_INTERVAL: Duration = Duration::from_millis(1000);
-
-        loop {
-            // Send heartbeat if due
-            if last_heartbeat_sent.elapsed() >= HEARTBEAT_INTERVAL {
-                let write_result = smol::unblock({
-                    let mut port_clone = port.try_clone().expect("Failed to clone serial port");
-                    move || port_clone.write_all(b"<H>")
-                }).await;
-                if let Err(e) = write_result {
-                    error!("Umbilical heartbeat write failed: {}", e);
-                    break;
+                if line_buf.len() > LINE_BUF_MAX {
+                    warn!("umbilical line buffer overflow ({} bytes), resetting", line_buf.len());
+                    line_buf.clear();
+                    newlines_seen = 0;
+                    continue;
                 }
-                last_heartbeat_sent = std::time::Instant::now();
-            }
 
-            // Check for pending commands to send
-            while let Ok(cmd) = cmd_rx.try_recv() {
-                let cmd_bytes = cmd.into_bytes();
-                let write_result = smol::unblock({
-                    let mut port_clone = port.try_clone().expect("Failed to clone serial port");
-                    move || port_clone.write_all(&cmd_bytes)
-                }).await;
-                if let Err(e) = write_result {
-                    error!("Umbilical write failed: {}", e);
-                    break;
-                }
-            }
+                while let Some(newline_pos) = line_buf.find('\n') {
+                    let line: String = line_buf.drain(..=newline_pos).collect();
+                    let line = line.trim();
 
-            // Read available bytes from serial port (blocking read wrapped in unblock)
-            let read_result = smol::unblock({
-                let mut port_clone = port.try_clone().expect("Failed to clone serial port");
-                move || {
-                    let mut temp = [0u8; 256];
-                    match port_clone.read(&mut temp) {
-                        Ok(n) => Ok((temp, n)),
-                        Err(e) => Err(e),
-                    }
-                }
-            }).await;
-
-            match read_result {
-                Ok((data, bytes_read)) => {
-                    // Append received bytes as text (lossy — non-UTF8 bytes
-                    // become replacement chars; affected frames will fail to
-                    // parse and be warn-logged below).
-                    let text = String::from_utf8_lossy(&data[..bytes_read]);
-                    line_buf.push_str(&text);
-
-                    if line_buf.len() > LINE_BUF_MAX {
-                        warn!("umbilical line buffer overflow ({} bytes), resetting", line_buf.len());
-                        line_buf.clear();
-                        newlines_seen = 0;
+                    // S4a: skip the first two newline-terminated chunks
+                    // after connect — the first is almost certainly a
+                    // partial line, the second may also be truncated if
+                    // we opened the port mid-record.
+                    if newlines_seen < 2 {
+                        newlines_seen += 1;
                         continue;
                     }
 
-                    while let Some(newline_pos) = line_buf.find('\n') {
-                        let line: String = line_buf.drain(..=newline_pos).collect();
-                        let line = line.trim();
+                    if let Some(csv) = line.strip_prefix("$TELEM,") {
+                        let fields: Vec<&str> = csv.split(',').collect();
+                        if let Some(telemetry) = FswTelemetry::from_csv(&fields) {
+                            let timestamp_ms = SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as u64;
+                            let now = Instant::now();
+                            let tele = telemetry.clone();
+                            umbilical_readings.rcu(|c| {
+                                let mut new = (**c).clone();
+                                new.timestamp_ms = timestamp_ms;
+                                new.telemetry = tele.clone();
+                                new.last_telem_instant = Some(now);
+                                // Flip connected true eagerly on fresh telemetry;
+                                // safety monitor is the source of truth for staleness.
+                                new.connected = true;
+                                new
+                            });
+                            fsw_event.notify(usize::MAX);
 
-                        // S4a: skip the first two newline-terminated chunks
-                        // after connect — the first is almost certainly a
-                        // partial line, the second may also be truncated if
-                        // we opened the port mid-record.
-                        if newlines_seen < 2 {
-                            newlines_seen += 1;
-                            continue;
+                            debug!("FSW telemetry received: mode={}", telemetry.flight_mode_name());
+                        } else {
+                            warn!("Failed to parse FSW telemetry CSV: {}", line);
                         }
-
-                        if let Some(csv) = line.strip_prefix("$TELEM,") {
-                            let fields: Vec<&str> = csv.split(',').collect();
-                            if let Some(telemetry) = FswTelemetry::from_csv(&fields) {
-                                let timestamp_ms = SystemTime::now()
-                                    .duration_since(UNIX_EPOCH)
-                                    .unwrap()
-                                    .as_millis() as u64;
-
-                                let now = Instant::now();
-                                let tele = telemetry.clone();
-                                umbilical_readings.rcu(|c| {
-                                    let mut new = (**c).clone();
-                                    new.timestamp_ms = timestamp_ms;
-                                    new.telemetry = tele.clone();
-                                    new.last_telem_instant = Some(now);
-                                    // Flip connected true eagerly on fresh telemetry;
-                                    // safety monitor is the source of truth for staleness.
-                                    new.connected = true;
-                                    new
-                                });
-                                fsw_event.notify(usize::MAX);
-
-                                debug!("FSW telemetry received: mode={}", telemetry.flight_mode_name());
-                            } else {
-                                warn!("Failed to parse FSW telemetry CSV: {}", line);
-                            }
-                        } else if !line.is_empty() {
-                            debug!("FSW: {}", line);
-                        }
+                    } else if !line.is_empty() {
+                        debug!("FSW: {}", line);
                     }
-                }
-                Err(e) => {
-                    if e.kind() == std::io::ErrorKind::TimedOut {
-                        // Timeout is normal — just loop again
-                        continue;
-                    }
-                    error!("Umbilical read error: {}, reconnecting...", e);
-                    break;
                 }
             }
         }
-
-        // Connection lost — mark disconnected and retry
-        umbilical_readings.rcu(|c| {
-            let mut new = (**c).clone();
-            new.connected = false;
-            new.last_telem_instant = None;
-            new
-        });
-        fsw_event.notify(usize::MAX);
-        warn!("Umbilical disconnected, retrying in 2s...");
-        Timer::after(Duration::from_secs(2)).await;
     }
 }
 
 /// Stub for non-Linux platforms
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
+fn spawn_umbilical_io_thread(
+    _cmd_rx: flume::Receiver<String>,
+    _event_tx: flume::Sender<UmbEvent>,
+) {
+    warn!("Umbilical I/O not supported on this platform (no serial port)");
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
 async fn umbilical_task(
+    _event_rx: flume::Receiver<UmbEvent>,
     _umbilical_readings: Arc<ArcSwap<UmbilicalReadings>>,
-    _cmd_rx: smol::channel::Receiver<String>,
     _fsw_event: Arc<Event>,
 ) {
     warn!("Umbilical not supported on this platform (no serial port)");
