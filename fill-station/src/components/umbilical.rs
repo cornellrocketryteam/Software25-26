@@ -76,6 +76,22 @@ pub struct FswTelemetry {
 }
 
 impl FswTelemetry {
+    /// Parse from a raw CSV string (the body after the `$TELEM,` prefix),
+    /// without allocating. Splits into a stack-allocated [&str; N] slice.
+    /// Use this in hot paths instead of building a `Vec<&str>` per record.
+    pub fn from_csv_str(csv: &str) -> Option<Self> {
+        let mut fields: [&str; TELEM_FIELD_COUNT] = [""; TELEM_FIELD_COUNT];
+        let mut iter = csv.split(',');
+        for slot in &mut fields {
+            *slot = iter.next()?;
+        }
+        if iter.next().is_some() {
+            // Too many fields
+            return None;
+        }
+        Self::from_csv(&fields)
+    }
+
     /// Parse from a CSV field slice (the fields after the `$TELEM,` prefix).
     /// Returns `None` if the field count or any field fails to parse.
     pub fn from_csv(fields: &[&str]) -> Option<Self> {

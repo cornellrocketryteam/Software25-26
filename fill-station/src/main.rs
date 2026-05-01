@@ -1283,46 +1283,50 @@ async fn umbilical_task(
                 }
 
                 while let Some(newline_pos) = line_buf.find('\n') {
-                    let line: String = line_buf.drain(..=newline_pos).collect();
-                    let line = line.trim();
+                    // Parse the line as a borrowed slice — no per-line String
+                    // allocation. The borrow ends at the close of this block,
+                    // before we mutate line_buf via drain below.
+                    {
+                        let line = line_buf[..newline_pos].trim();
 
-                    // S4a: skip the first two newline-terminated chunks
-                    // after connect — the first is almost certainly a
-                    // partial line, the second may also be truncated if
-                    // we opened the port mid-record.
-                    if newlines_seen < 2 {
-                        newlines_seen += 1;
-                        continue;
-                    }
+                        // S4a: skip the first two newline-terminated chunks
+                        // after connect — the first is almost certainly a
+                        // partial line, the second may also be truncated if
+                        // we opened the port mid-record.
+                        if newlines_seen < 2 {
+                            newlines_seen += 1;
+                        } else if let Some(csv) = line.strip_prefix("$TELEM,") {
+                            // No-alloc parse: from_csv_str splits the CSV
+                            // body into a stack-allocated [&str; N] instead
+                            // of a heap Vec<&str>.
+                            if let Some(telemetry) = FswTelemetry::from_csv_str(csv) {
+                                let timestamp_ms = SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_millis() as u64;
+                                let now = Instant::now();
+                                let tele = telemetry.clone();
+                                umbilical_readings.rcu(|c| {
+                                    let mut new = (**c).clone();
+                                    new.timestamp_ms = timestamp_ms;
+                                    new.telemetry = tele.clone();
+                                    new.last_telem_instant = Some(now);
+                                    // Flip connected true eagerly on fresh telemetry;
+                                    // safety monitor is the source of truth for staleness.
+                                    new.connected = true;
+                                    new
+                                });
+                                fsw_event.notify(usize::MAX);
 
-                    if let Some(csv) = line.strip_prefix("$TELEM,") {
-                        let fields: Vec<&str> = csv.split(',').collect();
-                        if let Some(telemetry) = FswTelemetry::from_csv(&fields) {
-                            let timestamp_ms = SystemTime::now()
-                                .duration_since(UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_millis() as u64;
-                            let now = Instant::now();
-                            let tele = telemetry.clone();
-                            umbilical_readings.rcu(|c| {
-                                let mut new = (**c).clone();
-                                new.timestamp_ms = timestamp_ms;
-                                new.telemetry = tele.clone();
-                                new.last_telem_instant = Some(now);
-                                // Flip connected true eagerly on fresh telemetry;
-                                // safety monitor is the source of truth for staleness.
-                                new.connected = true;
-                                new
-                            });
-                            fsw_event.notify(usize::MAX);
-
-                            debug!("FSW telemetry received: mode={}", telemetry.flight_mode_name());
-                        } else {
-                            warn!("Failed to parse FSW telemetry CSV: {}", line);
+                                debug!("FSW telemetry received: mode={}", telemetry.flight_mode_name());
+                            } else {
+                                warn!("Failed to parse FSW telemetry CSV: {}", line);
+                            }
+                        } else if !line.is_empty() {
+                            debug!("FSW: {}", line);
                         }
-                    } else if !line.is_empty() {
-                        debug!("FSW: {}", line);
                     }
+                    line_buf.drain(..=newline_pos);
                 }
             }
         }
