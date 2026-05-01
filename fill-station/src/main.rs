@@ -1011,9 +1011,12 @@ fn spawn_adc_sampler(
 
             info!("ADC sampler thread started");
 
-            loop {
-                let start = Instant::now();
+            // Deadline-based pacing — anchor ticks to a fixed schedule so
+            // a long iteration (retry, GC, scheduler hiccup) doesn't drift
+            // every subsequent tick forward.
+            let mut next_deadline = Instant::now() + sample_interval;
 
+            loop {
                 let mut sample = match try_read_all_adcs_blocking(&mut adc1, &mut adc2, &channels) {
                     Ok((a1, a2)) => Some((a1, a2)),
                     Err(e) => {
@@ -1054,13 +1057,19 @@ fn spawn_adc_sampler(
                 // listener before this point will be woken.
                 adc_event.notify(usize::MAX);
 
-                let elapsed = start.elapsed();
-                if elapsed < sample_interval {
-                    std::thread::sleep(sample_interval - elapsed);
+                let now = Instant::now();
+                if now < next_deadline {
+                    std::thread::sleep(next_deadline - now);
                 } else {
-                    warn!("ADC tick took {}ms, longer than {}ms interval",
-                          elapsed.as_millis(), sample_interval.as_millis());
+                    let lag = now - next_deadline;
+                    if lag > sample_interval {
+                        warn!("adc-sampler missed {}ms ({} ticks); resyncing schedule",
+                              lag.as_millis(),
+                              lag.as_millis() / sample_interval.as_millis().max(1));
+                        next_deadline = now;
+                    }
                 }
+                next_deadline += sample_interval;
             }
         })
         .expect("failed to spawn adc-sampler thread");

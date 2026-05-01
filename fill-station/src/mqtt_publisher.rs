@@ -161,9 +161,10 @@ pub async fn start_mqtt_publisher(
 
     let boot_time = Instant::now();
     let interval = Duration::from_millis(1000 / PUBLISH_RATE_HZ);
+    // Deadline-based pacing — anchor ticks to a fixed schedule.
+    let mut next_deadline = Instant::now() + interval;
 
     loop {
-        let start = Instant::now();
         let ms_since_boot_fill = boot_time.elapsed().as_millis() as u64;
 
         // 1. Gather ADC data (lock-free ArcSwap load)
@@ -359,10 +360,18 @@ pub async fn start_mqtt_publisher(
             }
         }
 
-        // 6. Sleep for remainder of interval
-        let elapsed = start.elapsed();
-        if elapsed < interval {
-            Timer::after(interval - elapsed).await;
+        // 6. Sleep until next absolute deadline
+        let now = Instant::now();
+        if now < next_deadline {
+            Timer::at(next_deadline).await;
+        } else {
+            let lag = now - next_deadline;
+            if lag > interval {
+                warn!("mqtt_publisher missed {}ms ({} ticks); resyncing schedule",
+                      lag.as_millis(), lag.as_millis() / interval.as_millis().max(1));
+                next_deadline = now;
+            }
         }
+        next_deadline += interval;
     }
 }

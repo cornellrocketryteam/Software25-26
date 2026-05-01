@@ -87,11 +87,12 @@ QD_Enabled,QD_Direction\n";
     // via clear() + write!. Avoids ~30 heap allocs per 10 ms tick.
     let mut line = String::with_capacity(1024);
 
-    // Run at 100Hz
+    // Run at 100Hz with deadline-based pacing — ticks are anchored to a
+    // fixed schedule, so a slow iteration doesn't drift the rest forward.
     let interval = Duration::from_millis(10);
+    let mut next_deadline = std::time::Instant::now() + interval;
 
     loop {
-        let start_time = std::time::Instant::now();
         loop_count += 1;
 
         // 1. Snapshot ADC readings (lock-free ArcSwap load)
@@ -185,10 +186,20 @@ QD_Enabled,QD_Direction\n";
             }
         }
 
-        // Sleep
-        let elapsed = start_time.elapsed();
-        if elapsed < interval {
-            Timer::after(interval - elapsed).await;
+        // Sleep until the next absolute deadline. If we ran long, snap
+        // forward instead of compounding the drift; warn so missed
+        // deadlines are visible.
+        let now = std::time::Instant::now();
+        if now < next_deadline {
+            Timer::at(next_deadline).await;
+        } else {
+            let lag = now - next_deadline;
+            if lag > interval {
+                tracing::warn!("csv_logger missed {}ms ({} ticks); resyncing schedule",
+                               lag.as_millis(), lag.as_millis() / interval.as_millis().max(1));
+                next_deadline = now;
+            }
         }
+        next_deadline += interval;
     }
 }
