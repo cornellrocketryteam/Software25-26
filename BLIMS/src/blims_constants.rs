@@ -16,8 +16,8 @@ pub const NEUTRAL_HOLD_THRESHOLD: u32 = 7500; // 7.5 sec neutral
 
 // 0.0 to 1.0 maps to ODrive configurations of -17 to 17 turns
 pub const NEUTRAL_POS: f32 = 0.5; // straight flight
-pub const MOTOR_MIN: f32 = 0.3;   // max left
-pub const MOTOR_MAX: f32 = 0.7;   // max right
+pub const MOTOR_MIN: f32 = 0.0;   // max left
+pub const MOTOR_MAX: f32 = 1.0;   // max right
 
 // Maximum number of wind profile layers
 pub const MAX_WIND_LAYERS: usize = 20;

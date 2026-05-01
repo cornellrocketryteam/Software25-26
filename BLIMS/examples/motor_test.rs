@@ -26,7 +26,7 @@ fn set_motor_position(pwm: &mut Pwm<'_>, config: &mut PwmConfig, position: f32) 
     let five_percent_duty = TOP as f32 * 0.05;
     let duty = (five_percent_duty + position * five_percent_duty) as u16;
 
-    config.compare_a = duty;
+    config.compare_b = duty;  //SWITCH compare_a to b for av bay 
     pwm.set_config(config);
 }
 
@@ -45,20 +45,20 @@ async fn main(spawner: Spawner) {
     Timer::after(Duration::from_secs(10)).await;
     log::info!("USB Serial initialized! Motor test starting...");
 
-    let mut enable_pin = Output::new(p.PIN_0, Level::High);
+    let mut enable_pin = Output::new(p.PIN_34, Level::High); //SWITCH to 34 for av bay, 0 for pico 
 
     let mut pwm_config = PwmConfig::default();
     pwm_config.top = TOP;
     pwm_config.divider = FixedU16::<U4>::from_num(DIVIDER);
-    pwm_config.compare_a = 0;
+    pwm_config.compare_b = 0;      //SWITCH compare_a to b for av bay, b for pico 
     pwm_config.enable = true;
-    let mut pwm = Pwm::new_output_a(p.PWM_SLICE6, p.PIN_28, pwm_config.clone());
+    let mut pwm = Pwm::new_output_b(p.PWM_SLICE9, p.PIN_35, pwm_config.clone());          //SWITCH to slice6 and pin 28 for av bay, slice0 and pin 28 for pico
 
     // set_motor_position(&mut pwm, &mut pwm_config, 0.5);
 
     // log::info!("[main] Moving to neutral (0.5)");
     // Timer::after(Duration::from_secs(5)).await; 
-    //let mut enable_pin = Output::new(p.PIN_0, Level::High);
+    let enable_pin = Output::new(p.PIN_34, Level::High);    ///SWITCH to 34 for av bay, 0 for pico
 
     enable_pin.set_low(); 
     log::info!("pulse low");
