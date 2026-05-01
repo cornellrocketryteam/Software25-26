@@ -660,9 +660,9 @@ async fn main(spawner: Spawner) {
 
         let steps: &[(f32, &str)] = &[
             (0.5, "neutral   (0.5) — 1500 us"),
-            (0.7, "max right (0.7) — 1700 us"),
+            (1.0, "max right (1.0) — 2000 us"),
             (0.5, "neutral   (0.5) — 1500 us"),
-            (0.3, "max left  (0.3) — 1300 us"),
+            (0.0, "max left  (0.0) — 1000 us"),
             (0.5, "neutral   (0.5) — 1500 us — SAFE END"),
         ];
 
