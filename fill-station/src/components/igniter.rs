@@ -38,14 +38,18 @@ impl Igniter {
         })
     }
 
+    /// Read the continuity sense pin. On any GPIO read error, log and
+    /// return `false` rather than panicking — a transient kernel-side
+    /// failure during a ground continuity check shouldn't kill the
+    /// process mid-fill.
     pub async fn has_continuity(&self) -> bool {
-        *self
-            .continuity_line
-            .get_values([false])
-            .await
-            .expect("The GPIO File Descriptor should not be able to close?")
-            .get(0)
-            .expect("We know one value exists since we are requesting one value")
+        match self.continuity_line.get_values([false]).await {
+            Ok(values) => values.get(0).copied().unwrap_or(false),
+            Err(e) => {
+                tracing::warn!("Igniter continuity GPIO read failed: {}", e);
+                false
+            }
+        }
     }
 
     /// Set the ignition state (true = firing, false = off)
