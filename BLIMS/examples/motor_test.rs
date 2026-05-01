@@ -45,7 +45,7 @@ async fn main(spawner: Spawner) {
     Timer::after(Duration::from_secs(10)).await;
     log::info!("USB Serial initialized! Motor test starting...");
 
-    let mut state_pin = Output::new(p.PIN_0, Level::High);
+    let mut enable_pin = Output::new(p.PIN_0, Level::High);
 
     let mut pwm_config = PwmConfig::default();
     pwm_config.top = TOP;
@@ -60,14 +60,14 @@ async fn main(spawner: Spawner) {
     // Timer::after(Duration::from_secs(5)).await; 
     //let mut enable_pin = Output::new(p.PIN_0, Level::High);
 
-    // //state_pin.set_low(); 
-    // log::info!("pulse low");
-    // Timer::after(Duration::from_millis(500)).await; 
+    enable_pin.set_low(); 
+    log::info!("pulse low");
+    Timer::after(Duration::from_millis(500)).await; 
 
     
-    state_pin.set_high(); 
+    enable_pin.set_high(); 
     log::info!("enable pin high");
-    // Timer::after(Duration::from_secs(3)).await;
+    //Timer::after(Duration::from_secs(3)).await;
 
     log::info!("entering test loop");
 
