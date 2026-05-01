@@ -33,10 +33,15 @@ class FillStationClient:
         # Igniters
         self.igniters = {1: False, 2: False}
 
-        # ADC data
-        self.latest_adc = None
+        # ADC data — high-rate stream, stored as raw JSON text and parsed
+        # lazily on the render path so the WS thread never blocks on parse.
+        self._adc_raw = None
+        self._adc_cached_raw = None
+        self._adc_cached = None
 
-        # FSW telemetry
+        # FSW telemetry — same lazy-parse pattern as ADC.
+        self._fsw_raw = None
+        self._fsw_cached_raw = None
         self.fsw_connected = False
         self.fsw_flight_mode = "Unknown"
         self.fsw_telemetry = {}
@@ -105,14 +110,23 @@ class FillStationClient:
             self.send_command({"command": "get_qd_state"})
 
         def on_message(ws, message):
+            # Hot path: high-rate ADC/FSW frames are stashed as raw text and
+            # parsed lazily from the render path. This drains the socket at
+            # wire speed even when Streamlit's main thread (DataFrame renders
+            # at ~10Hz) is hogging the GIL — otherwise json.loads of every
+            # frame here falls behind and visible lag grows over time.
+            head = message[:64]
+            if '"adc_data"' in head:
+                self._adc_raw = message
+                return
+            if '"fsw_telemetry"' in head:
+                self._fsw_raw = message
+                return
             try:
                 data = json.loads(message)
                 msg_type = data.get("type")
 
-                if msg_type == "adc_data":
-                    self.latest_adc = data
-
-                elif msg_type == "valve_state":
+                if msg_type == "valve_state":
                     valve = data.get("valve")
                     if valve == "SV1":
                         self.sv1_open = data.get("open", False)
@@ -122,11 +136,6 @@ class FillStationClient:
                     ign_id = data.get("id")
                     if ign_id in (1, 2):
                         self.igniters[ign_id] = data.get("continuity", False)
-
-                elif msg_type == "fsw_telemetry":
-                    self.fsw_connected = data.get("connected", False)
-                    self.fsw_flight_mode = data.get("flight_mode", "Unknown")
-                    self.fsw_telemetry = data.get("telemetry", {})
 
                 elif msg_type == "ball_valve_state":
                     self.bv_open = data.get("open", None)
@@ -150,6 +159,32 @@ class FillStationClient:
             self.ws.run_forever()
             if self.should_run:
                 time.sleep(2)
+
+    def get_latest_adc(self):
+        raw = self._adc_raw
+        if raw is None:
+            return None
+        if raw is self._adc_cached_raw:
+            return self._adc_cached
+        try:
+            self._adc_cached = json.loads(raw)
+            self._adc_cached_raw = raw
+        except Exception:
+            pass
+        return self._adc_cached
+
+    def refresh_fsw(self):
+        raw = self._fsw_raw
+        if raw is None or raw is self._fsw_cached_raw:
+            return
+        try:
+            data = json.loads(raw)
+        except Exception:
+            return
+        self._fsw_cached_raw = raw
+        self.fsw_connected = data.get("connected", False)
+        self.fsw_flight_mode = data.get("flight_mode", "Unknown")
+        self.fsw_telemetry = data.get("telemetry", {})
 
     def send_command(self, cmd_dict):
         if self.ws and self.connected:
@@ -240,6 +275,11 @@ if not client.connected:
 
 # Auto-refresh
 time.sleep(0.1)
+
+# Parse the latest stashed FSW frame once per render (drops intermediate
+# frames the WS thread received while we were rendering).
+client.refresh_fsw()
+latest_adc = client.get_latest_adc()
 
 # Status banner
 if client.launch_status:
@@ -371,9 +411,9 @@ with col_mid:
 # --- RIGHT COLUMN: Sensors ---
 with col_right:
     st.subheader("Sensor Data (Fill Station ADC)")
-    if client.latest_adc:
-        adc1 = client.latest_adc.get("adc1", [])
-        adc2 = client.latest_adc.get("adc2", [])
+    if latest_adc:
+        adc1 = latest_adc.get("adc1", [])
+        adc2 = latest_adc.get("adc2", [])
 
         rows = []
         # PT1: ADC1 Ch0
