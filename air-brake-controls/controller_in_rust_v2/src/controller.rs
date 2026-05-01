@@ -8,7 +8,7 @@ const SENSOR_BUFFER_SIZE: usize = 10;
 // Constants
 // -----------------------------------------------------------------------------
 pub const DT: f32 = 0.01;
-pub const TARGET_APOGEE: f32 = 2000.0;
+pub const TARGET_APOGEE: f32 = 3048.0;
 pub const R: f32 = 287.05;
 pub const G: f32 = 9.80665;
 pub const L: f32 = 0.0065;
@@ -17,7 +17,7 @@ pub const AIRBRAKE_MIN: f32 = 0.0;
 pub const AIRBRAKE_MAX: f32 = 1.0;
 pub const AIRBRAKE_CD: f32 = 0.3;
 pub const AIRBRAKE_AREA_MIN: f32 = 0.001848;   // 2.86479 in²
-pub const AIRBRAKE_AREA_MAX: f32 = 0.01641287;   // 25.44 in²
+pub const AIRBRAKE_AREA_MAX: f32 = 0.021935;   // 34 in²
 pub const MAX_TILT_DEG: f32 = 50.0;
 pub const SEA_LEVEL_PRESSURE_PA: f32 = 101325.0;
 
