@@ -149,7 +149,7 @@ impl<'d> Blims<'d> {
             prev_time_ms: 0,
         };
         b.enable_pin.set_low();
-        //Timer::after(Duration::from_secs(10)).await;
+        embassy_time::block_for(Duration::from_millis(500));
         b.enable_pin.set_high();
         b.set_motor_position(NEUTRAL_POS);
         b

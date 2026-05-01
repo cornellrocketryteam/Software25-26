@@ -294,7 +294,7 @@ async fn main(spawner: Spawner) {
 
     i2c_scan(&mut i2c).await;
 
-    enable_pin.set_high(); 
+     
 
     // ── Banner ────────────────────────────────────────────────────────────────
     log::info!("# ================================================");
