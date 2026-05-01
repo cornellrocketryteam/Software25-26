@@ -1,6 +1,6 @@
 use embassy_rp::gpio::Output;
 use embassy_rp::pwm::{Config as PwmConfig, Pwm};
-use embassy_time::{Duration, Instant,Timer};
+use embassy_time::{Duration, Instant};
  
 use crate::blims_constants::*;
 use crate::blims_state::{BlimsDataIn, BlimsDataOut, LoiterStep, Phase};
