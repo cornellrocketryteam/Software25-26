@@ -222,6 +222,13 @@ pub fn push_command(cmd: UmbilicalCommand) {
     let _ = COMMANDS.try_send(cmd);
 }
 
+/// Simulation helper: stamps a heartbeat so `is_connected()` returns true for
+/// one `HEARTBEAT_TIMEOUT_MS` window. Call once per sim cycle while in
+/// Startup/Standby so `read_sensors()` sees the umbilical as connected.
+pub fn inject_heartbeat() {
+    record_heartbeat();
+}
+
 /// Initialize USB subsystem: CdcAcmClass for bidirectional text communication.
 /// Logs go out as text (readable in any serial monitor), commands come in as `<X>` tokens.
 /// In release builds the logger is compiled out so the wire carries only

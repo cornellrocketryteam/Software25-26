@@ -90,6 +90,14 @@ pub struct FlightLoop {
     /// Sim only: if Some, overrides altitude + forces altimeter VALID after read_sensors().
     /// Set to None in normal flight — zero cost.
     pub sim_altitude_override: Option<f32>,
+
+    /// Sim only: if Some, overrides packet.vel_d (NED down, m/s, positive = descending)
+    /// after read_sensors() so GPS velocity reflects the simulated altitude profile.
+    pub sim_vel_d_override: Option<f64>,
+
+    /// Sim only: if Some, forces key_armed after read_sensors() overwrites it from
+    /// the physical GPIO pin. Required for no-hardware Startup → Standby transition.
+    pub sim_key_armed_override: Option<bool>,
 }
 
 impl FlightLoop {
@@ -205,6 +213,8 @@ impl FlightLoop {
             overpressure_triggered: false,
             overpressure_count: 0,
             sim_altitude_override: None,
+            sim_vel_d_override: None,
+            sim_key_armed_override: None,
         }
     }
 
@@ -235,6 +245,19 @@ impl FlightLoop {
         if let Some(alt_m) = self.sim_altitude_override {
             self.flight_state.packet.altitude = alt_m;
             self.flight_state.altimeter_state = crate::state::SensorState::VALID;
+        }
+
+        // Sim override: replace GPS vel_d so payload comms and BLiMS see
+        // realistic vertical velocity instead of 0 from a bench GPS reading.
+        if let Some(vel_d) = self.sim_vel_d_override {
+            self.flight_state.packet.vel_d = vel_d;
+        }
+
+        // Sim override: force key_armed after read_sensors() overwrites it from
+        // the physical arming switch pin so the sim can run without hardware.
+        if let Some(armed) = self.sim_key_armed_override {
+            self.flight_state.key_armed = armed;
+            self.key_armed = armed;
         }
 
         // 2b. Forward latest sensor data to the airbrake controller on Core 1.
