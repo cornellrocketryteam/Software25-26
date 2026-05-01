@@ -12,8 +12,9 @@ StepperMotor::StepperMotor(uint8_t DIR, uint8_t STEP, uint8_t EN,
 
   if (EN != 255) {
     motor_.setEnablePin(EN);
-    // Default active low enable for most stepper
-    // drivers (e.g. TMC, A4988), also step and dir are active low
+    // Industrial opto-isolated drivers (EN+ tied to 5V):
+    // To enable, we want 0V potential difference across the optocoupler (optocoupler OFF).
+    // Therefore, Pico must drive EN- HIGH to enable the motor.
     motor_.setPinsInverted(true, true, false);
 
     // NEMA 23 closed-loop drivers usually have opto-isolated inputs that need a
@@ -26,6 +27,14 @@ void StepperMotor::begin() {
   pinMode(DIR_, OUTPUT);
   pinMode(STEP_, OUTPUT);
   motor_.enableOutputs();
+}
+
+void StepperMotor::enable() {
+  motor_.enableOutputs();
+}
+
+void StepperMotor::disable() {
+  motor_.disableOutputs();
 }
 
 long StepperMotor::angleToSteps(double angle) const {

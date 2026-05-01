@@ -13,6 +13,8 @@ public:
   void setMaxSpeed(float stepsPerSec);
   void setAcceleration(float stepsPerSec2);
   void reset();
+  void enable();
+  void disable();
   bool isRunning();
   long currentPosition();
   double currentAngle();

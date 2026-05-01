@@ -13,23 +13,21 @@ bool MqttClient::init() {
     // Initialize state struct
     memset(&state, 0, sizeof(MQTT_CLIENT_T));
     state.last_retry = nil_time;
+    state.last_dns_retry = nil_time;
+    state.last_wifi_retry = nil_time;
     snprintf(state.client_id_str, sizeof(state.client_id_str), "rats_pico_w_%d", RATS_UNIT_ID);
     printf("[MQTT] Client ID set to: %s\n", state.client_id_str);
 
-    // Initialize Wi-Fi
+    // Initialize Wi-Fi Hardware
     if (cyw43_arch_init()) {
-        printf("[MQTT] Wi-Fi init failed\n");
+        printf("[MQTT] Wi-Fi hardware init failed\n");
         return false;
     }
     cyw43_arch_enable_sta_mode();
-    printf("[MQTT] Connecting to Wi-Fi: %s\n", WIFI_SSID);
+    printf("[MQTT] Starting async Wi-Fi connection to: %s\n", WIFI_SSID);
 
-    // Connect to Wi-Fi (blocking with 30s timeout)
-    if (cyw43_arch_wifi_connect_timeout_ms(WIFI_SSID, WIFI_PASS, CYW43_AUTH_WPA2_AES_PSK, 30000)) {
-        printf("[MQTT] Failed to connect to Wi-Fi\n");
-        return false;
-    }
-    printf("[MQTT] Wi-Fi Connected!\n");
+    // Connect to Wi-Fi asynchronously (does not block)
+    cyw43_arch_wifi_connect_async(WIFI_SSID, WIFI_PASS, CYW43_AUTH_WPA2_AES_PSK);
 
     // Initialize MQTT client
     state.mqtt_client = mqtt_client_new();
@@ -38,20 +36,6 @@ bool MqttClient::init() {
         return false;
     }
 
-    // Resolve broker address
-    printf("[MQTT] Resolving broker address: %s\n", MQTT_BROKER_ADDRESS);
-    
-    // Pass 'this' MqttClient instance as the callback argument
-    err_t err = dns_gethostbyname(MQTT_BROKER_ADDRESS, &state.remote_ip, mqtt_dns_found_cb, &state);
-
-    if (err == ERR_OK) {
-        // IP was already cached, connect immediately
-        connect_to_broker();
-    } else if (err != ERR_INPROGRESS) {
-        printf("[MQTT] DNS request failed immediately: %d\n", err);
-        return false;
-    }
-    
     return true;
 }
 
@@ -94,19 +78,36 @@ void MqttClient::poll() {
         }
     }
 
-    // Reconnect if needed
-    if (!state.connected && state.remote_ip.addr != 0) {
-         absolute_time_t now = get_absolute_time();
-
-         // Get the time difference since the last retry in microseconds
-         int64_t diff_us = absolute_time_diff_us(state.last_retry, now);
-
-         // Check if 5 seconds (5000000us) have passed
-         if (diff_us > 5000000) {
-             printf("[MQTT] Retrying connection...\n");
-             connect_to_broker();
-             state.last_retry = now; // Update the last retry time
-         }
+    // Check Wi-Fi link status
+    int link_status = cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA);
+    
+    if (link_status == CYW43_LINK_UP) {
+        // Wi-Fi is connected
+        if (state.remote_ip.addr == 0) {
+            // Need to resolve DNS
+            if (absolute_time_diff_us(state.last_dns_retry, now) > 5000000) { // Every 5s
+                printf("[MQTT] Resolving broker address: %s\n", MQTT_BROKER_ADDRESS);
+                err_t err = dns_gethostbyname(MQTT_BROKER_ADDRESS, &state.remote_ip, mqtt_dns_found_cb, &state);
+                if (err == ERR_OK) {
+                    connect_to_broker();
+                }
+                state.last_dns_retry = now;
+            }
+        } else if (!state.connected) {
+             // Connect/Reconnect MQTT
+             if (absolute_time_diff_us(state.last_retry, now) > 5000000) { // Every 5s
+                 printf("[MQTT] Retrying MQTT connection...\n");
+                 connect_to_broker();
+                 state.last_retry = now;
+             }
+        }
+    } else if (link_status < 0) {
+        // Wi-Fi connection failed or dropped, retry
+        if (absolute_time_diff_us(state.last_wifi_retry, now) > 10000000) { // Every 10s
+             printf("[MQTT] Retrying Wi-Fi...\n");
+             cyw43_arch_wifi_connect_async(WIFI_SSID, WIFI_PASS, CYW43_AUTH_WPA2_AES_PSK);
+             state.last_wifi_retry = now;
+        }
     }
 }
 

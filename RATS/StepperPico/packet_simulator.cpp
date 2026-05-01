@@ -10,7 +10,11 @@ PacketSimulator::PacketSimulator()
 }
 
 void PacketSimulator::updateSimulation() {
+#if MATH_TEST_MODE
+  sim_time_ms += 50; // Real-time for motor testing
+#else
   sim_time_ms += 1000; // 1 second per 50ms real loop tick
+#endif
 
   // Simple flight simulation
   switch (current_mode) {
@@ -51,6 +55,50 @@ void PacketSimulator::updateSimulation() {
 }
 
 void PacketSimulator::generateRadioPacket(RadioPacket &packet) {
+#if MATH_TEST_MODE
+  updateSimulation();
+  memset(&packet, 0, sizeof(RadioPacket));
+  packet.sync_word = SYNC_WORD;
+  packet.flight_mode = ASCENT;
+  packet.timestamp = sim_time_ms / 1000.0f;
+  
+  float t = sim_time_ms / 1000.0f;
+  
+  if (t < 5.0f) {
+      // Pure North
+      packet.latitude = 0.001f * 1e6; 
+      packet.longitude = 0.0f;
+      packet.altitude = 0.0f;
+  } else if (t < 5.2f) {
+      // Az 30
+      packet.latitude = 0.000866f * 1e6;
+      packet.longitude = 0.0005f * 1e6;
+      packet.altitude = 0.0f;
+  } else if (t < 5.4f) {
+      // Az 60
+      packet.latitude = 0.0005f * 1e6;
+      packet.longitude = 0.000866f * 1e6;
+      packet.altitude = 0.0f;
+  } else if (t < 15.0f) {
+      // Az 90
+      packet.latitude = 0.0f;
+      packet.longitude = 0.001f * 1e6;
+      packet.altitude = 0.0f;
+  } else if (t < 25.0f) {
+      // Az 90, High Altitude
+      packet.latitude = 0.0f;
+      packet.longitude = 0.001f * 1e6;
+      packet.altitude = 111.32f;
+  } else {
+      // Zenith
+      packet.latitude = 0.0f;
+      packet.longitude = 0.0f;
+      packet.altitude = 500.0f;
+  }
+  
+  return;
+#endif
+
   updateSimulation();
 
   // Zero out everything first

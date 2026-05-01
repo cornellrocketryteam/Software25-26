@@ -25,6 +25,9 @@ static constexpr bool USE_GPS = false;
 // Set to 1 to use internal packet simulator, 0 for real radio data
 #define USE_PACKET_SIMULATOR 1
 
+// Set to 1 to run a deterministic math and motor interrupt test sequence
+#define MATH_TEST_MODE 1
+
 // Maximum apogee to predict (10,000 feet in meters)
 static constexpr double MAX_APOGEE_METERS = 3048.0;
 
@@ -50,6 +53,7 @@ KalmanCV kalmanRocket;
 NMEAParser gps;
 
 unsigned long lastPacketTimeMs = 0;
+unsigned long lastSimPollTimeMs = 0;
 static constexpr unsigned long PACKET_PERIOD_MS = 50; // 20 Hz
 
 // Thread-safe targets for Core 0
@@ -91,10 +95,17 @@ void setup() {
   azMotor.begin();
   elMotor.begin();
 
+#if MATH_TEST_MODE
+  azMotor.setMaxSpeed(400);
+  azMotor.setAcceleration(200);
+  elMotor.setMaxSpeed(400);
+  elMotor.setAcceleration(200);
+#else
   azMotor.setMaxSpeed(8000);
   azMotor.setAcceleration(4000);
   elMotor.setMaxSpeed(8000);
   elMotor.setAcceleration(4000);
+#endif
 
   azMotor.reset();
   elMotor.reset();
@@ -115,12 +126,26 @@ void setup() {
 }
 
 void handleRadioPacket(const RadioPacket &packet) {
-  rocketLLA.lat = packet.latitude / 1e6;
-  rocketLLA.lon = packet.longitude / 1e6;
+  double newLat = packet.latitude / 1e6;
+  double newLon = packet.longitude / 1e6;
+  
+  // If GPS cuts out, retain the last valid latitude and longitude
+  // and only update altitude from the barometric sensor.
+#if MATH_TEST_MODE
+  rocketLLA.lat = newLat;
+  rocketLLA.lon = newLon;
+#else
+  if (newLat != 0.0 && newLon != 0.0) {
+      rocketLLA.lat = newLat;
+      rocketLLA.lon = newLon;
+  }
+#endif
   rocketLLA.alt = packet.altitude;
+  
   currentFlightMode = packet.flight_mode;
   newPacketAvailable = true;
   totalPacketsReceived++;
+  lastPacketTimeMs = millis();
 }
 
 #if USE_PACKET_SIMULATOR
@@ -145,12 +170,27 @@ void pollRealRadio() {
           if (sync == TRACKING_SYNC_WORD) {
               TrackingData data;
               memcpy(&data, rx_buffer + 4, sizeof(TrackingData));
-              rocketLLA.lat = lat_udeg_to_degrees(data.latitude_udeg);
-              rocketLLA.lon = lon_udeg_to_degrees(data.longitude_udeg);
+              
+              double newLat = lat_udeg_to_degrees(data.latitude_udeg);
+              double newLon = lon_udeg_to_degrees(data.longitude_udeg);
+              
+              // If GPS cuts out, retain the last valid latitude and longitude
+              // and only update altitude from the barometric sensor.
+#if MATH_TEST_MODE
+              rocketLLA.lat = newLat;
+              rocketLLA.lon = newLon;
+#else
+              if (newLat != 0.0 && newLon != 0.0) {
+                  rocketLLA.lat = newLat;
+                  rocketLLA.lon = newLon;
+              }
+#endif
               rocketLLA.alt = data.altitude;
+              
               currentFlightMode = data.flight_mode;
               newPacketAvailable = true;
               totalPacketsReceived++;
+              lastPacketTimeMs = millis();
               rx_index = 0;
           } else {
               memmove(rx_buffer, rx_buffer + 1, 19);
@@ -176,6 +216,13 @@ void core1_entry() {
     double calibration_az_offset = 0.0;
     double calibration_el_offset = 0.0;
     bool has_calibrated = false;
+
+#if MATH_TEST_MODE
+    ratsLLA.lat = 0.0;
+    ratsLLA.lon = 0.0;
+    ratsLLA.alt = 0.0;
+    currentState = TrackerState::ACTIVE_TRACKING;
+#endif
 
     // Start with default targets
     TargetAngles targets = {0.0, 0.0, false};
@@ -212,20 +259,22 @@ void core1_entry() {
                 }
             }
         } else {
+#if !MATH_TEST_MODE
             if (currentState == TrackerState::GPS_SEARCH || currentState == TrackerState::GPS_AVERAGING) {
                 ratsLLA.lat = 42.336789;
                 ratsLLA.lon = -76.497123;
                 ratsLLA.alt = 100.0;
                 currentState = TrackerState::STANDBY;
             }
+#endif
         }
 
 #if !USE_PACKET_SIMULATOR
         pollRealRadio();
 #endif
 
-        if (now - lastPacketTimeMs >= PACKET_PERIOD_MS) {
-            lastPacketTimeMs = now;
+        if (now - lastSimPollTimeMs >= PACKET_PERIOD_MS) {
+            lastSimPollTimeMs = now;
 #if USE_PACKET_SIMULATOR
             if (now >= 5000) {
                 pollPacketSimulator();
@@ -234,9 +283,12 @@ void core1_entry() {
         }
 
         // Check timeout
-        bool signalLost = ((now - lastPacketTimeMs) > 5000);
+        bool signalLost = false;
+        if (lastPacketTimeMs > 0) {
+            signalLost = ((now - lastPacketTimeMs) > 5000);
+        }
 
-        // 2. FSM TRANSITIONS & LED LOGIC
+        // FSM TRANSITIONS & LED LOGIC
         switch (currentState) {
             case TrackerState::GPS_SEARCH:
                 if (now - lastLedToggle > 100) {
@@ -303,9 +355,14 @@ void core1_entry() {
                 break;
         }
 
-        // 3. MATH & CALIBRATION
+        // MATH & CALIBRATION
+#if MATH_TEST_MODE
+        bool hasRatsFix = true;
+        bool hasRocketFix = true;
+#else
         bool hasRatsFix = (ratsLLA.lat != 0.0 && ratsLLA.lon != 0.0);
         bool hasRocketFix = (rocketLLA.lat != 0.0 && rocketLLA.lon != 0.0);
+#endif
 
         if (hasRatsFix && hasRocketFix && (currentState == TrackerState::PAD_IDLE || currentState == TrackerState::ACTIVE_TRACKING || currentState == TrackerState::SIGNAL_LOST)) {
             if (newPacketAvailable) {
@@ -328,6 +385,7 @@ void core1_entry() {
             Vec3 filteredPos = {futureState.d[0], futureState.d[1], futureState.d[2]};
             AzEl azel = GeoMath::enuToAzEl(filteredPos);
             
+#if !MATH_TEST_MODE
             // If we are idling on the pad, continuously update the calibration offset to cancel GPS drift.
             if (currentState == TrackerState::PAD_IDLE) {
                 calibration_az_offset = azel.azimuth;
@@ -340,6 +398,7 @@ void core1_entry() {
                 calibration_el_offset = azel.elevation;
                 has_calibrated = true;
             }
+#endif
 
             // Apply relative offsets so the physical 0 degree matches the launch pad
             targets.azimuth = azel.azimuth - calibration_az_offset;
@@ -357,7 +416,7 @@ void core1_entry() {
         }
         queue_try_add(&angle_queue, &targets);
 
-        // 4. DEBUG PRINT
+        // DEBUG PRINT
         static unsigned long lastPrintTimeMs = 0;
         static uint32_t lastTotalPackets = 0;
         

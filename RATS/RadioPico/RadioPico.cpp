@@ -39,17 +39,13 @@ void core1_entry() {
     }
 
 #if !LOOPBACK_TEST_MODE
-    // Connect to Wi-Fi and MQTT broker (skip in loopback test mode)
-    // Blocks until Wi-Fi is connected
+    // Initialize Wi-Fi and MQTT client state machine
+    // This is now fully asynchronous and will keep retrying in the background
     bool mqtt_ready = MqttClient::init();
     if (!mqtt_ready) {
-        printf("[Core 1]: Failed to init MQTT client - datalink failure\n");
-        while(true) {
-            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
-            sleep_ms(LED_BLINK_ERROR);
-            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
-            sleep_ms(LED_BLINK_ERROR);
-        }
+        printf("[Core 1]: CYW43 hardware init failed - datalink disabled. SD Logging will continue.\n");
+        // Set LED to constant OFF to indicate severe hardware fault
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
     }
 #else
     bool mqtt_ready = false;  // MQTT disabled in loopback test
