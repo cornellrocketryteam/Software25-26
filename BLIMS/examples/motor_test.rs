@@ -26,7 +26,7 @@ fn set_motor_position(pwm: &mut Pwm<'_>, config: &mut PwmConfig, position: f32) 
     let five_percent_duty = TOP as f32 * 0.05;
     let duty = (five_percent_duty + position * five_percent_duty) as u16;
 
-    config.compare_a = duty;
+    config.compare_b = duty;   //swapped from a to b for av bay pins 
     pwm.set_config(config);
 }
 
@@ -45,14 +45,14 @@ async fn main(spawner: Spawner) {
     Timer::after(Duration::from_secs(10)).await;
     log::info!("USB Serial initialized! Motor test starting...");
 
-    let mut enable_pin = Output::new(p.PIN_0, Level::High);
+    let mut enable_pin = Output::new(p.PIN_34, Level::High);
 
     let mut pwm_config = PwmConfig::default();
     pwm_config.top = TOP;
     pwm_config.divider = FixedU16::<U4>::from_num(DIVIDER);
-    pwm_config.compare_a = 0;
+    pwm_config.compare_b = 0;    //swapped from a to b for av bay pins
     pwm_config.enable = true;
-    let mut pwm = Pwm::new_output_a(p.PWM_SLICE6, p.PIN_28, pwm_config.clone());
+    let mut pwm = Pwm::new_output_b(p.PWM_SLICE9, p.PIN_35, pwm_config.clone());
 
     // set_motor_position(&mut pwm, &mut pwm_config, 0.5);
 
@@ -97,3 +97,10 @@ async fn main(spawner: Spawner) {
     // }
 }
 
+// av bay wiring harness pinout for reference:
+// pin 34: enable (active low)
+// pin 35: pwm signal (compare_b in this code)
+
+//pico + bread board wiring:
+// enable: pin 0 
+// pwn: pin 28, slice 6 (compare_a)

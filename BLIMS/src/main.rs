@@ -37,16 +37,16 @@ async fn main(_spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
  
     // Enable pin (PIN_0) – BLiMS::new() will drive it high
-    let enable_pin = Output::new(p.PIN_0, Level::Low);
+    let enable_pin = Output::new(p.PIN_34, Level::Low); // pin 34 for av bay, pin 0 for breadboard
  
     // PWM – PIN_28, PWM_SLICE6 channel A
     let mut pwm_config = PwmConfig::default();
     pwm_config.top      = TOP;
     pwm_config.divider  = FixedU16::<U4>::from_num(DIVIDER);
-    pwm_config.compare_a = 0;
+    pwm_config.compare_b = 0; // compare_b for av bay, compare_a for breadboard – see comments in motor_test.rs
     pwm_config.enable   = true;
  
-    let pwm = Pwm::new_output_a(p.PWM_SLICE6, p.PIN_28, pwm_config.clone());
+    let pwm = Pwm::new_output_b(p.PWM_SLICE9, p.PIN_35, pwm_config.clone()); //compare_b and slice 9 pin 35 for av bay, compare_a and slice 6 pin 28 for breadboard
  
     // Construct BLiMS (drives enable high and parks motor at neutral)
     let mut blims = Blims::new(Hardware { pwm, pwm_config, enable_pin });
