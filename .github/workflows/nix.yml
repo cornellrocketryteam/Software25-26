@@ -4,6 +4,7 @@ on:
     branches:
       - main
       - leaktest_ready
+      - fill-station-optimization
 jobs:
   # Build the MixOS configuration for FillStation and push it to FlakeHub Cache
   build-publish:
