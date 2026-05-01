@@ -119,6 +119,8 @@ impl<'d> Blims<'d> {
             prev_time_ms: 0,
         };
         //hold enable high continuously so motor driver stays armed
+        b.enable_pin.set_low();
+        embassy_time::block_for(Duration::from_millis(500));
         b.enable_pin.set_high();
         //neutral until first execute() call
         b.set_brakeline_diff(NEUTRAL_POS);
