@@ -11,9 +11,13 @@
 //!   MainDeployedMode::execute() → pack BlimsDataIn, call blims.execute()
 //!   flight_loop                 → sleep remaining cycle time (50 ms target)
 //!
-//! WIRING:
+//! BREADBOARD WIRING:
 //!   PWM    → GPIO 28     ODrive enable → GPIO 0
 //!   SDA    → GPIO 12     SCL           → GPIO 13   (I2C0, 400 kHz)
+//!
+//! AV BAY WIRING:
+//!   PWM    → GPIO 35     ODrive enable → GPIO 34
+//!   SDA    → GPIO 0     SCL           → GPIO 1   (I2C0, 400 kHz)
 //!
 //! SERIAL OUTPUT (USB CDC-ACM, open with any serial terminal at any baud):
 //!   Comment lines begin with '#'.
@@ -21,27 +25,12 @@
 //!     lat,lon,target_lat,target_lon,heading,bearing,motor_pos,
 //!     timestamp_ms,P,I,phase,altitude,loiter_step
 
-/* Because we've had to push car tests, Will and I have been chatting and we've settled on 
-a slightly simpler set of goals for a BLiMS controller this weekend. We'd like to remove 
-the states that change logic based on altitude and just move to 2 behaviors:
-
-Main deploy at 2000ft
-Track a generally upwind target until 1000ft
-Track a generally downwind target until 200ft
-Neutral position the motor until touchdown
-
-The wind direction at URRG has been relatively consistent in the past so we can use 
-the forecast to make a guess on wind direction and try to choose targets that generally 
-align with what we think the wind will be. This control scheme will allow us to learn 
-more about the GPS-informed controller's ability to point upwind, but also minimizes 
-the amount of testing that we need to do. @Elizabeth Chen/@William Chen Can you pare down 
-the code to reflect this? Let me know if you have any questions on this. */
 
 #![no_std]
 #![no_main]
 
-mod descent_alt_data;
-use descent_alt_data::{DESCENT_ALT_FT, DESCENT_DATA_SIZE};
+//mod descent_alt_data; - no alt data for this car test
+//use descent_alt_data::{DESCENT_ALT_FT, DESCENT_DATA_SIZE};
 
 use core::fmt::Write as FmtWrite;
 
@@ -60,7 +49,7 @@ use {defmt_rtt as _, panic_probe as _};
 
 use blims::blims_constants::*;
 use blims::blims_state::BlimsDataIn;
-use blims::Blims;
+use blims::{Blims, Hardware};
 
 // ============================================================================
 // INTERRUPT BINDINGS
@@ -75,10 +64,15 @@ bind_interrupts!(struct Irqs {
 // PIN DEFINITIONS
 // ============================================================================
 
-const PWM_PIN_NUM:    u8 = 35;   //28 for breadboard, 35 for av bay (compare_b)
-const ENABLE_PIN_NUM: u8 = 34;   //0 for breadboard, 34 for av bay
-const I2C_SDA_NUM:    u8 = 0;    //12 for breadboard, 0 for av bay (I2C0 SDA)
-const I2C_SCL_NUM:    u8 = 1;    //13 for breadboard, 1 for av bay (I2C0 SCL)
+//const PWM_PIN_NUM:    u8 = 28;
+//const ENABLE_PIN_NUM: u8 = 0;
+//const I2C_SDA_NUM:    u8 = 12;
+//const I2C_SCL_NUM:    u8 = 13;
+
+const PWM_PIN_NUM: u8 = 35;
+const ENABLE_PIN_NUM: u8 = 34;
+const I2C_SDA_NUM: u8 = 0;
+const I2C_SCL_NUM: u8 = 1;
 
 // ============================================================================
 // TEST CONFIGURATION — update before each test
@@ -117,12 +111,10 @@ async fn logger_task(driver: Driver<'static, USB>) {
 fn phase_name(phase_id: i8) -> &'static str {
     match phase_id {
         0 => "HELD",
-        1 => "TRACK",
-        2 => "DOWNWIND",
-        3 => "BASE",
-        4 => "FINAL",
-        5 => "NEUTRAL",
-        6 => "LOITER",
+        1 => "INITIAL_HOLD",
+        2 => "UPWIND",
+        3 => "DOWNWIND",
+        4 => "NEUTRAL",
         _ => "???",
     }
 }
@@ -254,8 +246,10 @@ async fn i2c_scan(i2c: &mut I2c<'_, I2C0, embassy_rp::i2c::Async>) {
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
 
-    let driver = Driver::new(p.USB, Irqs);
-    spawner.spawn(logger_task(driver).unwrap());
+    // ── USB logger (runs as a background task) ────────────────────────────────
+    // All log::info!() calls are routed through this over USB CDC-ACM.
+    // Open the Pico's USB serial port in any terminal to see output.
+    spawner.spawn(logger_task(Driver::new(p.USB, Irqs)).unwrap());
 
     // Wait for the host to enumerate the USB device (~2 s is enough)
     Timer::after_millis(2000).await;
@@ -268,17 +262,23 @@ async fn main(spawner: Spawner) {
     // ── PWM (GPIO28, slice 6) ─────────────────────────────────────────────────
     let mut pwm_config = PwmConfig::default();
     pwm_config.top      = WRAP_CYCLE_COUNT;
-    pwm_config.divider  = FixedU16::<U4>::from_num(45.78_f32);
-    pwm_config.compare_b = 0;   // compare_a is used for GPIO28 (slice 6) in this code PICO, compare_b is used for GPIO35 (slice 9) in the av bay — see comments in motor_test.rs
+    pwm_config.divider  = FixedU16::<U4>::from_num(38.15_f32);
+
+    //pwm_config.compare_a = 0;
+    pwm_config.compare_b = 0;
     pwm_config.enable   = true;
-    let pwm = Pwm::new_output_b(p.PWM_SLICE9, p.PIN_35, pwm_config.clone());
+    //let pwm = Pwm::new_output_a(p.PWM_SLICE6, p.PIN_28, pwm_config.clone());
+    let pwm = Pwm::new_output_b(p.PWM_SLICE9, p.PIN_35, pwm_config.clone()); //compare_b and slice 9 pin 35 for av bay, compare_a and slice 6 pin 28 for breadboard --- IGNORE ---
 
     // ── Enable pin (GPIO0) ────────────────────────────────────────────────────
-    let mut enable_pin = Output::new(p.PIN_34, Level::High);
+    //let enable_pin = Output::new(p.PIN_0, Level::High);
+    let enable_pin = Output::new(p.PIN_34, Level::High); // pin 34 for av bay, pin 0 for breadboard --- IGNORE ---
 
     // ── BLiMS init ────────────────────────────────────────────────────────────
-    let mut blims = Blims::new(pwm, pwm_config, enable_pin);
-    blims.set_target(TARGET_LAT, TARGET_LON);
+    let mut blims = Blims::new(Hardware { pwm, pwm_config, enable_pin });
+    // Car test — both phases point to same target for simplicity
+    blims.set_upwind_target(TARGET_LAT, TARGET_LON);
+    blims.set_downwind_target(TARGET_LAT, TARGET_LON);
     blims.set_wind_from_deg(WIND_FROM_DEG);
     blims.set_wind_profile(&WIND_ALTITUDES_M, &WIND_DIRS_DEG);
 
@@ -294,11 +294,11 @@ async fn main(spawner: Spawner) {
 
     i2c_scan(&mut i2c).await;
 
-     
+
 
     // ── Banner ────────────────────────────────────────────────────────────────
     log::info!("# ================================================");
-    log::info!("# BLiMS Car Test Begin)");
+    log::info!("# BLiMS Car Test (FSW begin/execute pattern)");
     log::info!("# ================================================");
     {
         let mut s: String<64> = String::new();
@@ -311,14 +311,17 @@ async fn main(spawner: Spawner) {
             WIND_PROFILE_SIZE, WIND_DIRS_DEG[0] as u32);
         log::info!("{}", s.as_str());
     }
-    {
-        let mut s: String<80> = String::new();
-        let _ = write!(s, "# Descent:  {} samples, {:.1} -> {:.1} ft",
-            DESCENT_DATA_SIZE,
-            DESCENT_ALT_FT[0],
-            DESCENT_ALT_FT[DESCENT_DATA_SIZE - 1]);
-        log::info!("{}", s.as_str());
-    }
+    //{
+        //let mut s: String<80> = String::new();
+        //let _ = write!(s, "# Descent:  {} samples, {:.1} -> {:.1} ft",
+            //DESCENT_DATA_SIZE,
+            //DESCENT_ALT_FT[0],
+            //DESCENT_ALT_FT[DESCENT_DATA_SIZE - 1]);
+        //log::info!("{}", s.as_str());
+
+    //}
+    log::info!("# Altitude: fixed 500 ft (tracking only, no descent)");
+
     {
         let mut s: String<48> = String::new();
         let _ = write!(s, "# Cycle:    {} ms (20 Hz)", CYCLE_TIME_MS);
@@ -330,14 +333,14 @@ async fn main(spawner: Spawner) {
             PWM_PIN_NUM, ENABLE_PIN_NUM, I2C_SDA_NUM, I2C_SCL_NUM);
         log::info!("{}", s.as_str());
     }
-    log::info!("# CSV: lat,lon,target_lat,target_lon,heading,bearing,motor_pos,timestamp_ms,P,I,phase,altitude,loiter_step");
+    log::info!("# CSV: lat,lon,target_lat,target_lon,heading,bearing,motor_pos,timestamp_ms,P,I,phase,altitude");
     log::info!("# ================================================");
-    log::info!("# Waiting for GPS fix to start descent...");
+    log::info!("# Waiting for GPS fix...");
 
     // ── Loop state ────────────────────────────────────────────────────────────
     let mut pvt             = UbxNavPvt::default();
-    let mut alt_index       = 0usize;
-    let mut descent_started = false;
+    //let mut alt_index       = 0usize;
+    //let mut descent_started = false;
     let mut last_phase_id: i8 = -1;
 
     // =========================================================================
@@ -354,21 +357,21 @@ async fn main(spawner: Spawner) {
         let gps_valid = pvt.fix_type >= 2;
 
         // ── 2. Altitude simulation ────────────────────────────────────────────
-        if !descent_started && gps_valid {
-            descent_started = true;
-            let mut s: String<80> = String::new();
-            let _ = write!(s, "# DESCENT STARTED — alt {:.1} ft (0/{})",
-                DESCENT_ALT_FT[0], DESCENT_DATA_SIZE);
-            log::info!("{}", s.as_str());
-        }
+        //if !descent_started && gps_valid {
+            //descent_started = true;
+            //let mut s: String<80> = String::new();
+            //let _ = write!(s, "# DESCENT STARTED — alt {:.1} ft (0/{})",
+            //    DESCENT_ALT_FT[0], DESCENT_DATA_SIZE);
+            //log::info!("{}", s.as_str());
+        //}
 
-        let current_alt_ft = DESCENT_ALT_FT[alt_index];
+        let current_alt_ft = 500.0;//DESCENT_ALT_FT[alt_index];
 
         // ── 3. Pack BlimsDataIn ───────────────────────────────────────────────
         let data_in = BlimsDataIn {
             lon:         pvt.lon,
             lat:         pvt.lat,
-            altitude_ft: if descent_started { current_alt_ft } else { DESCENT_ALT_FT[0] },
+            altitude_ft: current_alt_ft, //if descent_started { current_alt_ft } else { DESCENT_ALT_FT[0] },
             h_acc:       pvt.h_acc,
             v_acc:       pvt.v_acc,
             vel_n:       pvt.vel_n,
@@ -386,20 +389,20 @@ async fn main(spawner: Spawner) {
         let data_out = blims.execute(&data_in);
 
         // ── 5. Advance altitude ───────────────────────────────────────────────
-        if descent_started && alt_index < DESCENT_DATA_SIZE - 1 {
-            alt_index += 1;
-        }
+        //if descent_started && alt_index < DESCENT_DATA_SIZE - 1 {
+        //    alt_index += 1;
+        //}
 
         // ── 6. Log ────────────────────────────────────────────────────────────
 
         // Phase-change banner
         if data_out.phase_id != last_phase_id {
             let mut s: String<80> = String::new();
-            let _ = write!(s, "# PHASE: {} (alt={:.1} ft, sample {}/{})",
+            let _ = write!(s, "# PHASE: {} (alt={:.1} ft)",
                 phase_name(data_out.phase_id),
-                current_alt_ft,
-                alt_index,
-                DESCENT_DATA_SIZE);
+                current_alt_ft);
+                //alt_index,
+                //DESCENT_DATA_SIZE);
             log::info!("{}", s.as_str());
             last_phase_id = data_out.phase_id;
         }
@@ -411,26 +414,25 @@ async fn main(spawner: Spawner) {
             let lon_f       = pvt.lon as f32 * 1e-7;
             let now_ms      = Instant::now().as_millis();
 
-            // 13 fields — matches car_test_visualizer.py column order:
+            // 12 fields — MVP CSV format:
             //   lat,lon,target_lat,target_lon,heading,bearing,motor_pos,
-            //   timestamp_ms,P,I,phase,altitude,loiter_step
+            //   timestamp_ms,P,I,phase,altitude
             let mut row: String<192> = String::new();
             let _ = write!(
                 row,
-                "{:.7},{:.7},{:.6},{:.6},{:.5},{:.5},{:.4},{},{:.6},{:.6},{},{:.2},{}",
+                "{:.7},{:.7},{:.6},{:.6},{:.5},{:.5},{:.4},{},{:.6},{:.6},{},{:.2}",
                 lat_f,
                 lon_f,
                 TARGET_LAT,
                 TARGET_LON,
                 heading_deg,
                 data_out.bearing,
-                data_out.motor_position,
+                data_out.brakeline_diff_in,
                 now_ms,
                 data_out.pid_p,
                 data_out.pid_i,
                 data_out.phase_id,
                 current_alt_ft,
-                data_out.loiter_step,
             );
             log::info!("{}", row.as_str());
         } else {

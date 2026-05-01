@@ -427,12 +427,7 @@ class BlimsVisualizer(QtWidgets.QMainWindow):
                 scatter.setData([], [])
 
         self.alt_plot.setXRange(t_now - WINDOW_SECONDS, t_now, padding=0)
-        if alt_a.size:
-            self.alt_plot.setYRange(
-                max(0, float(alt_a.min()) - 50),
-                float(alt_a.max()) + 100,
-                padding=0
-            )
+        self.alt_plot.setYRange(0, 1100, padding=0)
 
 # ── ENTRY POINT ───────────────────────────────────────────────────────────────
 

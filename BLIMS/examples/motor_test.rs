@@ -1,3 +1,5 @@
+//compare_a for breadboard, compare_b for av bay - see comments in motor_test.rs
+
 #![no_std]
 #![no_main]
 
@@ -26,7 +28,8 @@ fn set_motor_position(pwm: &mut Pwm<'_>, config: &mut PwmConfig, position: f32) 
     let five_percent_duty = TOP as f32 * 0.05;
     let duty = (five_percent_duty + position * five_percent_duty) as u16;
 
-    config.compare_b = duty;   //swapped from a to b for av bay pins 
+    //config.compare_a = duty;   //swapped from a to b for av bay pins 
+    config.compare_b = duty;   //swapped from a to b for av bay pins --- IGNORE ---
     pwm.set_config(config);
 }
 
@@ -45,14 +48,17 @@ async fn main(spawner: Spawner) {
     Timer::after(Duration::from_secs(10)).await;
     log::info!("USB Serial initialized! Motor test starting...");
 
-    let mut enable_pin = Output::new(p.PIN_34, Level::High);
+    //let mut enable_pin = Output::new(p.PIN_0, Level::High);
+    let mut enable_pin = Output::new(p.PIN_34, Level::High); // pin 34 for av bay, pin 0 for breadboard --- IGNORE ---
 
     let mut pwm_config = PwmConfig::default();
     pwm_config.top = TOP;
     pwm_config.divider = FixedU16::<U4>::from_num(DIVIDER);
+    //pwm_config.compare_a = 0;    //swapped from a to b for av bay pins
     pwm_config.compare_b = 0;    //swapped from a to b for av bay pins
     pwm_config.enable = true;
-    let mut pwm = Pwm::new_output_b(p.PWM_SLICE9, p.PIN_35, pwm_config.clone());
+    //let mut pwm = Pwm::new_output_a(p.PWM_SLICE6, p.PIN_28, pwm_config.clone());
+    let mut pwm = Pwm::new_output_b(p.PWM_SLICE9, p.PIN_35, pwm_config.clone()); //compare_b and slice 9 pin 35 for av bay, compare_a and slice 6 pin 28 for breadboard --- IGNORE ---
 
     // set_motor_position(&mut pwm, &mut pwm_config, 0.5);
 
