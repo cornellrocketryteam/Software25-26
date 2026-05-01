@@ -271,7 +271,7 @@ impl FlightLoop {
         };
         if let Some(phase) = airbrake_phase {
             AIRBRAKE_INPUT.signal(AirbrakeInput {
-                time:     self.flight_state.packet.timestamp,
+                time:     self.flight_state.packet.ms_since_boot_cfc as f32 / 1000.0,
                 altitude: self.flight_state.packet.altitude,
                 gyro_x:   self.flight_state.packet.gyro_x,
                 gyro_y:   self.flight_state.packet.gyro_y,
@@ -554,11 +554,14 @@ impl FlightLoop {
                 */
                 UmbilicalCommand::DeployAirbrakes => {
                     log::warn!("UMBILICAL CMD: Deploy Airbrakes");
+                    self.flight_state.airbrake_system.enable();
                     self.flight_state.airbrake_system.set_deployment(1.0);
+                    self.flight_state.packet.airbrake_deployment = 1.0;
                 }
                 UmbilicalCommand::RetractAirbrakes => {
                     log::warn!("UMBILICAL CMD: Retract Airbrakes");
                     self.flight_state.airbrake_system.set_deployment(0.0);
+                    self.flight_state.packet.airbrake_deployment = 0.0;
                 }
                 UmbilicalCommand::TriggerBLiMS => {
                     log::warn!("UMBILICAL CMD: Trigger BLiMS nudge");
@@ -825,6 +828,7 @@ impl FlightLoop {
                     // Read latest airbrake deployment from Core 1
                     // and drive the ODrive RC PWM servo
                     let deployment = crate::airbrake_task::get_deployment();
+                    log::info!("Airbrake deployment from Core 1: {:.1}%", deployment * 100.0);
                     self.flight_state.airbrake_system.set_deployment(deployment);
                     self.flight_state.packet.predicted_apogee = crate::airbrake_task::get_predicted_apogee();
                     self.flight_state.packet.airbrake_deployment = deployment;
@@ -863,6 +867,7 @@ impl FlightLoop {
                         // Airbrakes retract at apogee
                         // Coast signals so it will hold at 0.0 deployment
                         self.flight_state.airbrake_system.retract();
+                        //self.flight_state.airbrake_system.disable();
                         self.airbrakes_init = false;
                         self.flight_state.packet.airbrake_deployment = 0.0;
                         log::info!("Airbrakes retracted");
@@ -1184,6 +1189,14 @@ impl FlightLoop {
                         // TRANSITION TO COAST if currently in Ascent
                         if self.flight_state.flight_mode == FlightMode::Ascent {
                             log::warn!("MAV closed; Transitioning from Ascent to Coast.");
+                            self.flight_state.airbrake_system.enable();
+                            // Seed alt_buffer with the current altitude so the 10-entry
+                            // moving average starts at the real value, not 0m.
+                            // Without this the first 10 Coast cycles produce a spurious
+                            // low→high ramp that delays or distorts apogee detection.
+                            let cur = self.flight_state.packet.altitude;
+                            self.alt_buffer = [cur; 10];
+                            self.alt_sum = cur * 10.0;
                             self.flight_state.flight_mode = FlightMode::Coast;
                             self.flight_state.write_packet_to_fram().await;
                         }
@@ -1198,6 +1211,10 @@ impl FlightLoop {
                 // push to Coast on the first iteration rather than waiting forever.
                 if self.flight_state.flight_mode == FlightMode::Ascent {
                     log::warn!("Launch sequence Done on recovery; transitioning Ascent → Coast.");
+                    self.flight_state.airbrake_system.enable();
+                    let cur = self.flight_state.packet.altitude;
+                    self.alt_buffer = [cur; 10];
+                    self.alt_sum = cur * 10.0;
                     self.flight_state.flight_mode = FlightMode::Coast;
                     self.flight_state.write_packet_to_fram().await;
                 }

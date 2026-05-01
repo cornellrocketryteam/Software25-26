@@ -627,26 +627,40 @@ pub async fn simulate_real_flight(flight_loop: &mut FlightLoop) {
         }
 
         // ── Hardware overrides (run every cycle, debug and release) ───────────
-        // Force key, umbilical, and key_armed via sim overrides so no physical
-        // hardware is required. These are applied inside execute() AFTER
-        // read_sensors() would otherwise overwrite them from real GPIOs/atomics.
-        flight_loop.sim_key_armed_override = Some(true);
-        if matches!(current_mode, FlightMode::Startup | FlightMode::Standby) {
-            flight_loop.flight_state.umbilical_connected = true;
-            // Inject a fake heartbeat so that read_sensors() → is_connected()
-            // returns true when execute() runs. Without this, the real heartbeat
-            // atomics are stale and umbilical_connected gets overwritten to false.
-            crate::umbilical::inject_heartbeat();
-        } else {
-            flight_loop.flight_state.umbilical_connected = false;
-        }
-        // Launch only fires after the Standby dwell completes, giving the
-        // operator time to reboot and verify Standby recovery first.
-        if current_mode == FlightMode::Standby && !in_dwell {
-            sim_standby_cycles += 1;
-            if sim_standby_cycles == 3 {
-                log::info!("[SIM] Auto-injecting Launch Command...");
-                flight_loop.set_launch_command(true);
+        // Gate key_armed and umbilical by mode + dwell so each mode fully dwells
+        // before its transition fires. Without gating, Startup→Standby fires on
+        // cycle 1 because key_armed+umbilical+VALID altimeter are all true immediately.
+        match current_mode {
+            FlightMode::Startup if in_dwell => {
+                // Stay in Startup: explicitly unset key so Startup→Standby can't fire.
+                flight_loop.sim_key_armed_override = Some(false);
+                flight_loop.flight_state.umbilical_connected = false;
+            }
+            FlightMode::Startup => {
+                // Startup dwell expired — assert key+umbilical to trigger Startup→Standby.
+                flight_loop.sim_key_armed_override = Some(true);
+                flight_loop.flight_state.umbilical_connected = true;
+                crate::umbilical::inject_heartbeat();
+            }
+            FlightMode::Standby => {
+                // Keep key+umbilical the entire Standby phase (dwell and post-dwell)
+                // so we stay in Standby and eventually trigger launch.
+                flight_loop.sim_key_armed_override = Some(true);
+                flight_loop.flight_state.umbilical_connected = true;
+                crate::umbilical::inject_heartbeat();
+                // Launch only fires after the Standby dwell completes.
+                if !in_dwell {
+                    sim_standby_cycles += 1;
+                    if sim_standby_cycles == 3 {
+                        log::info!("[SIM] Auto-injecting Launch Command...");
+                        flight_loop.set_launch_command(true);
+                    }
+                }
+            }
+            _ => {
+                // Flight modes: key armed, umbilical disconnected (rocket is in the air).
+                flight_loop.sim_key_armed_override = Some(true);
+                flight_loop.flight_state.umbilical_connected = false;
             }
         }
 
