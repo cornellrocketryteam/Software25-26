@@ -332,7 +332,8 @@ impl<'d> Blims<'d> {
             Phase::Upwind
         } else {
             Phase::Downwind
-        }
+        } //try for noise reduction - for extraneous values, look for averages, trends - ask amira
+        //communicate with Amira about FSW integration about what data is received where and how 
     }
 
     // =========================================================================
