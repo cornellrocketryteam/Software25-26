@@ -43,7 +43,7 @@ pub struct FswTelemetry {
     pub cmd_a2: u8,
     pub cmd_a3: u8,
     // airbrake
-    pub airbrake_state: u8,
+    pub airbrake_deployment: f32,
     pub predicted_apogee: f32,
     // u-blox advanced GPS
     pub h_acc: u32,
@@ -114,7 +114,7 @@ impl FswTelemetry {
             cmd_a1:         fields[28].trim().parse().ok()?,
             cmd_a2:         fields[29].trim().parse().ok()?,
             cmd_a3:         fields[30].trim().parse().ok()?,
-            airbrake_state: fields[31].trim().parse().ok()?,
+            airbrake_deployment: fields[31].trim().parse().ok()?,
             predicted_apogee: fields[32].trim().parse().ok()?,
             h_acc:          fields[33].trim().parse().ok()?,
             v_acc:          fields[34].trim().parse().ok()?,

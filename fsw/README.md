@@ -20,11 +20,6 @@ Written by Amira Razack (arr258) and Benjamin Zou (bwz5)
 * Flash the code onto the Pico 2, press the BOOTSEL button then connect to computer: `cargo run`
 * To see logs, open the /dev device that corresponds to the Pico 2 (on MacOS this is usually /dev/cu.usbmodem[random numbers]), or on Windows, download the Serial Monitor extension, access the current COM port, and click Start Monitoring.
 
-## TODO: 
-- Test everything
-- Payload comms
-- Magnetometer driver
-- Test and ensure storage integration
-
-
-
+## Next Steps
+- Write integration tests for new failsafes
+- Optimize QSPI flash dump speeds

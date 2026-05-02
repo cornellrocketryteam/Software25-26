@@ -74,6 +74,10 @@ pub enum Command {
     // FSW Umbilical Commands
     /// Send launch command to FSW
     FswLaunch,
+    /// Trigger drogue deploy on FSW (test only)
+    FswTriggerDrogue,
+    /// Trigger main deploy on FSW (test only)
+    FswTriggerMain,
     /// Open MAV on FSW
     FswOpenMav,
     /// Close MAV on FSW
@@ -106,6 +110,12 @@ pub enum Command {
     FswPayloadN3,
     /// Trigger payload event N4 on FSW
     FswPayloadN4,
+    /// Trigger payload event A1 on FSW
+    FswPayloadA1,
+    /// Trigger payload event A2 on FSW
+    FswPayloadA2,
+    /// Trigger payload event A3 on FSW
+    FswPayloadA3,
     /// Start streaming FSW telemetry to this client
     StartFswStream,
     /// Stop streaming FSW telemetry to this client

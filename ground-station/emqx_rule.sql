@@ -40,7 +40,7 @@ SELECT
     payload.cmd_a3 as cmd_a3,
 
     -- Airbrake & Control States
-    payload.airbrake_state as airbrake_state,
+    payload.airbrake_deployment as airbrake_deployment,
     payload.predicted_apogee as predicted_apogee,
 
     -- Advanced GPS / U-Blox Metrics

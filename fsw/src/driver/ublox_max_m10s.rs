@@ -161,6 +161,16 @@ where
         Ok(())
     }
 
+    /// Lightweight presence check: read the bytes-available register (0xFD).
+    /// Returns true if the GPS I2C bus responds without error.
+    pub async fn probe(&mut self) -> bool {
+        let mut buf = [0u8; 2];
+        self.i2c
+            .write_read(GPS_I2C_ADDR, &[0xFD], &mut buf)
+            .await
+            .is_ok()
+    }
+
     /// Read available bytes from GPS module via I2C
     async fn read_bytes(&mut self, buffer: &mut [u8]) -> Result<usize, GpsError> {
         // First, read 2 bytes to get number of available bytes

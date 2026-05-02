@@ -96,7 +96,7 @@ try:
             "cmd_a1": 0, "cmd_a2": 0, "cmd_a3": 0,
 
             # Airbrake & Control States
-            "airbrake_state": 0,
+            "airbrake_deployment": 0.0,
             "predicted_apogee": 10500.0 + random.uniform(-50, 50),
 
             # Advanced GPS / U-Blox Metrics

@@ -491,7 +491,7 @@ pub async fn simulate_flash_storage(flight_loop: &mut FlightLoop) {
     for i in 0..5 {
         flight_loop.set_altitude(100.0 * i as f32);
         flight_loop.flight_state.packet.flight_mode = FlightMode::Ascent as u32;
-        flight_loop.flight_state.save_packet_to_flash().await;
+        flight_loop.flight_state.save_packet_to_flash(true).await;
     }
 
     Timer::after_millis(100).await;
@@ -519,76 +519,162 @@ pub async fn simulate_flash_storage(flight_loop: &mut FlightLoop) {
 // Release: insert key switch, type <L> over USB to launch.
 // Debug:   key + umbilical auto-asserted; launch fires after 5 standby cycles.
 pub async fn simulate_real_flight(flight_loop: &mut FlightLoop) {
-    log::info!("\n--- STARTING REAL FLIGHT SIMULATION ---");
-    log::info!("execute() path active. Altitude injected from TEST_ALTS_LST.");
-    log::info!("Insert Key Switch and type <L> in Serial Monitor to Launch.");
+    log::info!("\n--- STARTING REAL FLIGHT SIMULATION (REBOOT RECOVERY MODE) ---");
+    log::info!("Altitude injected from TEST_ALTS_LST ({} points).", constants::TEST_ALTS_LST.len());
+    log::info!("Each mode dwells 60s — reboot during the dwell to test snapshot recovery.");
 
-    let mut alt_index = 0;
+    // How long to pause after entering each new flight mode before advancing
+    // the altitude profile. 60 s gives plenty of time to power-cycle the board
+    // and confirm it recovers to the correct mode.
+    const DWELL_MS: u64 = 60_000;
 
-    #[cfg(debug_assertions)]
-    let mut debug_standby_cycles = 0u32;
+    let mut alt_index: usize = 0;
+    let mut sim_standby_cycles: u32 = 0;
+
+    // Sentinel value that won't match any real FlightMode, so the very first
+    // loop iteration always triggers the mode-entry banner and starts the dwell.
+    let mut last_mode = FlightMode::Fault;
+    let mut mode_entry_time: Option<Instant> = None;
+    // Altitude held fixed while dwelling so the mode doesn't spuriously advance.
+    let mut dwell_alt: f32 = 0.0;
+    // Previous cycle's altitude — used to derive vertical velocity each step.
+    let mut prev_alt: f32 = 0.0;
 
     loop {
-        // Stage altitude override before execute() so transitions see it.
-        // execute() applies it right after read_sensors().
-        if matches!(
-            flight_loop.flight_state.flight_mode,
+        let current_mode = flight_loop.flight_state.flight_mode;
+
+        // ── Mode-entry detection ──────────────────────────────────────────────
+        let in_flight_mode = matches!(
+            current_mode,
             FlightMode::Ascent
                 | FlightMode::Coast
                 | FlightMode::DrogueDeployed
                 | FlightMode::MainDeployed
-        ) {
+        );
+        if current_mode != last_mode {
+            log::info!("[SIM] ================================================");
+            log::info!("[SIM]  ENTERED MODE: {}", flight_loop.flight_state.flight_mode_name());
+            if !in_flight_mode {
+                log::info!("[SIM]  REBOOT NOW to verify snapshot recovery.");
+                log::info!("[SIM]  Dwelling {}s before advancing.", DWELL_MS / 1000);
+            }
+            log::info!("[SIM] ================================================");
+            mode_entry_time = Some(Instant::now());
+            dwell_alt = if alt_index == 0 {
+                0.0
+            } else {
+                constants::TEST_ALTS_LST[(alt_index - 1).min(constants::TEST_ALTS_LST.len() - 1)]
+            };
+            last_mode = current_mode;
+        }
+
+        let elapsed_ms = mode_entry_time
+            .map(|t| t.elapsed().as_millis())
+            .unwrap_or(0);
+        // Dwell only applies during Startup/Standby (reboot-recovery testing).
+        // Flight modes (Ascent onward) always feed the altitude profile immediately
+        // so mode transitions, payload comms, and airbrakes trigger correctly.
+        let in_dwell = !in_flight_mode && elapsed_ms < DWELL_MS;
+
+        // ── Altitude + velocity override ──────────────────────────────────────
+        // vel_d is NED-down (positive = descending). Derived each cycle from the
+        // altitude delta so payload comms (A2 fault signal) and BLiMS data see
+        // realistic vertical speed instead of 0 from a bench GPS reading.
+        const DT_S: f32 = constants::MAIN_LOOP_DELAY_MS as f32 / 1000.0;
+
+        if in_flight_mode {
+            // Feed the altitude profile every cycle from Ascent onward.
             if alt_index < constants::TEST_ALTS_LST.len() {
                 let alt = constants::TEST_ALTS_LST[alt_index];
+                // vel_d: positive = descending (NED), so climbing is negative.
+                let vel_up_ms = (alt - prev_alt) / DT_S;
                 flight_loop.sim_altitude_override = Some(alt);
-                if alt_index % 20 == 0 {
-                    log::info!("[SIM] alt: {:.2} m  index: {}", alt, alt_index);
+                flight_loop.sim_vel_d_override = Some(-vel_up_ms as f64);
+                if alt_index % 50 == 0 {
+                    log::info!(
+                        "[SIM] alt: {:.1}m  vel_up: {:.1}m/s  idx: {}  mode: {}",
+                        alt,
+                        vel_up_ms,
+                        alt_index,
+                        flight_loop.flight_state.flight_mode_name()
+                    );
                 }
+                prev_alt = alt;
                 alt_index += 1;
             } else {
-                log::info!("\n[SIM] End of TEST_ALTS_LST — simulation complete");
+                log::info!("[SIM] End of TEST_ALTS_LST — simulation complete.");
                 break;
             }
+        } else if in_dwell {
+            // Startup/Standby dwell: hold altitude at 0, stationary.
+            flight_loop.sim_altitude_override = Some(dwell_alt);
+            flight_loop.sim_vel_d_override = Some(0.0);
+            prev_alt = dwell_alt;
+            if elapsed_ms % 10_000 < 1_100 {
+                let secs_left = (DWELL_MS - elapsed_ms) / 1000;
+                log::info!(
+                    "[SIM] {} | {}s left in dwell | alt held {:.0}m",
+                    flight_loop.flight_state.flight_mode_name(),
+                    secs_left,
+                    dwell_alt
+                );
+            }
         } else {
+            // Startup/Standby outside dwell: altitude = 0.
             flight_loop.sim_altitude_override = Some(0.0);
+            flight_loop.sim_vel_d_override = Some(0.0);
+            prev_alt = 0.0;
         }
 
-        // Debug-build overrides: no physical key/umbilical on a probe.
-        #[cfg(debug_assertions)]
-        {
-            flight_loop.flight_state.key_armed = true;
-            if matches!(
-                flight_loop.flight_state.flight_mode,
-                FlightMode::Startup | FlightMode::Standby
-            ) {
-                flight_loop.flight_state.umbilical_connected = true;
-                Timer::after_millis(2000).await;
-            } else {
+        // ── Hardware overrides (run every cycle, debug and release) ───────────
+        // Gate key_armed and umbilical by mode + dwell so each mode fully dwells
+        // before its transition fires. Without gating, Startup→Standby fires on
+        // cycle 1 because key_armed+umbilical+VALID altimeter are all true immediately.
+        match current_mode {
+            FlightMode::Startup if in_dwell => {
+                // Stay in Startup: explicitly unset key so Startup→Standby can't fire.
+                flight_loop.sim_key_armed_override = Some(false);
                 flight_loop.flight_state.umbilical_connected = false;
             }
-            if flight_loop.flight_state.flight_mode == FlightMode::Standby {
-                debug_standby_cycles += 1;
-                if debug_standby_cycles == 5 {
-                    log::info!("[SIM DEBUG] Auto-injecting Launch Command...");
-                    flight_loop.set_launch_command(true);
+            FlightMode::Startup => {
+                // Startup dwell expired — assert key+umbilical to trigger Startup→Standby.
+                flight_loop.sim_key_armed_override = Some(true);
+                flight_loop.flight_state.umbilical_connected = true;
+                crate::umbilical::inject_heartbeat();
+            }
+            FlightMode::Standby => {
+                // Keep key+umbilical the entire Standby phase (dwell and post-dwell)
+                // so we stay in Standby and eventually trigger launch.
+                flight_loop.sim_key_armed_override = Some(true);
+                flight_loop.flight_state.umbilical_connected = true;
+                crate::umbilical::inject_heartbeat();
+                // Launch only fires after the Standby dwell completes.
+                if !in_dwell {
+                    sim_standby_cycles += 1;
+                    if sim_standby_cycles == 3 {
+                        log::info!("[SIM] Auto-injecting Launch Command...");
+                        flight_loop.set_launch_command(true);
+                    }
                 }
+            }
+            _ => {
+                // Flight modes: key armed, umbilical disconnected (rocket is in the air).
+                flight_loop.sim_key_armed_override = Some(true);
+                flight_loop.flight_state.umbilical_connected = false;
             }
         }
 
-        // Full real execute(): commands → sensors (+ alt override) →
-        // transitions → launch sequence → actuators → telemetry → flash + heartbeat.
+        // ── Execute and sleep ─────────────────────────────────────────────────
         flight_loop.execute().await;
 
-        log::info!(
-            "[SIM] Mode: {}  Cycle: {}",
-            flight_loop.flight_state.flight_mode_name(),
-            flight_loop.flight_state.cycle_count
-        );
-
-        Timer::after_millis(constants::MAIN_LOOP_DELAY_MS).await;
+        // 20 Hz in flight modes so the altitude profile advances at its sample rate.
+        // 1 Hz only during Startup/Standby dwell (reboot-recovery window).
+        Timer::after_millis(if in_dwell { 1_000 } else { constants::MAIN_LOOP_DELAY_MS }).await;
     }
 
     flight_loop.sim_altitude_override = None;
+    flight_loop.sim_vel_d_override = None;
+    flight_loop.sim_key_armed_override = None;
 }
 
 // Runs BLiMS parafoil guidance hardware against real GPS with the L3 Launch 4
@@ -633,7 +719,7 @@ pub async fn simulate_blims_descent(flight_loop: &mut FlightLoop) {
 
         // 4. Transmit telemetry over radio + USB and write to flash.
         flight_loop.flight_state.transmit().await;
-        flight_loop.flight_state.save_packet_to_flash().await;
+        flight_loop.flight_state.save_packet_to_flash(false).await;
 
         if i % 20 == 0 {
             let p = &flight_loop.flight_state.packet;
@@ -702,12 +788,12 @@ pub async fn simulate_launch_sequence(flight_loop: &mut FlightLoop) {
     Timer::after_millis(constants::MAV_OPEN_DURATION_MS + 100).await;
     flight_loop.simulate_cycle().await;
 
-    // --- STAGE 3: PostWait (10s) ---
-    if flight_loop.launch_sequence_stage == LaunchStage::PostWait
+    // --- STAGE 3: Done (sequence complete, MAV and SV both closed) ---
+    if flight_loop.launch_sequence_stage == LaunchStage::Done
         && !flight_loop.mav_open
         && !flight_loop.sv_open
     {
-        log::info!("[LAUNCH SIM] SUCCESS: Stage 3 (PostWait) active, MAV Closed, SV Closed.");
+        log::info!("[LAUNCH SIM] SUCCESS: Stage 3 (Done) active, MAV Closed, SV Closed.");
         if flight_loop.flight_state.flight_mode == FlightMode::Coast {
             log::info!("[LAUNCH SIM] SUCCESS: Transitioned to Coast during wait.");
         }
@@ -741,12 +827,14 @@ pub async fn simulate_launch_sequence(flight_loop: &mut FlightLoop) {
         flight_loop.simulate_cycle().await;
     }
 
-    if flight_loop.launch_sequence_stage == LaunchStage::FinalVent && flight_loop.sv_open {
-        log::info!("[LAUNCH SIM] SUCCESS: Apogee override triggered FinalVent and opened SV.");
+    // FinalVent no longer exists as a LaunchStage — SV now reopens via the one-shot
+    // recovery vent in check_transitions when entering DrogueDeployed/MainDeployed/Fault.
+    if flight_loop.flight_state.flight_mode == FlightMode::DrogueDeployed && flight_loop.sv_open {
+        log::info!("[LAUNCH SIM] SUCCESS: Apogee triggered DrogueDeployed and recovery vent opened SV.");
     } else {
         log::error!(
-            "[LAUNCH SIM] FAILED: Apogee override did not open SV. Stage: {:?}, SV: {}",
-            flight_loop.launch_sequence_stage,
+            "[LAUNCH SIM] FAILED: Apogee did not open SV. Mode: {:?}, SV: {}",
+            flight_loop.flight_state.flight_mode,
             flight_loop.sv_open
         );
     }

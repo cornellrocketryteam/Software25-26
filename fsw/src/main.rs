@@ -222,10 +222,26 @@ async fn main(spawner: Spawner) {
         #[cfg(feature = "sim_blims")]
         {
             log::info!("Starting BLiMS Descent Simulation...");
-            // Wire up the motor controller and set the test landing-zone target.
-            // TODO: replace with real landing-zone coordinates before flight.
             flight_loop.set_blims(blims);
-            flight_loop.set_blims_target(42.446610, -76.461304);
+
+            // Pick a pseudo-random landing-zone target within ~500 m of the base
+            // coordinates each run. LCG seeded from boot time so it varies.
+            const BASE_LAT: f32 = 42.446610;
+            const BASE_LON: f32 = -76.461304;
+            let seed = Instant::now().as_millis() as u32;
+            let r1 = 1664525_u32.wrapping_mul(seed).wrapping_add(1013904223);
+            let r2 = 1664525_u32.wrapping_mul(r1).wrapping_add(1013904223);
+            // Map each u32 to [-0.005, +0.005] degrees (~500 m per axis).
+            let lat_off = ((r1 % 1001) as f32 / 1000.0 - 0.5) * 0.01;
+            let lon_off = ((r2 % 1001) as f32 / 1000.0 - 0.5) * 0.01;
+            let target_lat = BASE_LAT + lat_off;
+            let target_lon = BASE_LON + lon_off;
+            log::info!(
+                "BLiMS random target: lat={:.6} lon={:.6} (offset {:.4},{:.4} deg)",
+                target_lat, target_lon, lat_off, lon_off
+            );
+            flight_loop.set_blims_target(target_lat, target_lon);
+
             flight_sim::simulate_blims_descent(&mut flight_loop).await;
             log::info!("Simulation Complete.");
         }
@@ -616,6 +632,53 @@ async fn main(spawner: Spawner) {
         }
     }
 
+    // --- BLiMS MOTOR PWM TEST --- //
+    // Verifies that the BLiMS ODrive motor controller receives and follows PWM
+    // commands correctly. Steps through: neutral → max right → neutral →
+    // max left → neutral, holding each position for 5 seconds so you can
+    // observe movement and measure the pulse on an oscilloscope.
+    //
+    // Flash with:  cargo build --release --features test_blims
+    //
+    // Hardware:
+    //   PIN_34 = enable (driven HIGH to power up the ODrive)
+    //   PIN_35 = PWM output (50 Hz, via PWM_SLICE9)
+    //
+    // Expected pulse widths (at WRAP_CYCLE_COUNT=65535, divider=46, 50 Hz):
+    //   neutral  (0.5) → 5% + 0.5×5% = 7.5% duty → ~1500 µs
+    //   max right(0.7) → 5% + 0.7×5% = 8.5% duty → ~1700 µs
+    //   max left (0.3) → 5% + 0.3×5% = 6.5% duty → ~1300 µs
+    #[cfg(feature = "test_blims")]
+    {
+        log::info!("=== BLiMS Motor PWM Test ===");
+        log::info!("PIN_34 = ENABLE (going HIGH now)");
+        log::info!("PIN_35 = PWM signal (50 Hz)");
+        log::info!("Motor range: 0.3=max left  0.5=neutral  0.7=max right");
+
+        // Blims::new() already drives enable HIGH and parks at neutral.
+        let mut b = blims;
+
+        let steps: &[(f32, &str)] = &[
+            (0.5, "neutral   (0.5) — 1500 us"),
+            (0.7, "max right (0.7) — 1700 us"),
+            (0.5, "neutral   (0.5) — 1500 us"),
+            (0.3, "max left  (0.3) — 1300 us"),
+            (0.5, "neutral   (0.5) — 1500 us — SAFE END"),
+        ];
+
+        // Give the ODrive 3 seconds to power up before the first command.
+        Timer::after_millis(3000).await;
+
+        loop {
+            for &(pos, label) in steps {
+                log::info!("BLiMS: setting motor → {}", label);
+                b.set_motor_raw(pos);
+                led.toggle();
+                Timer::after_millis(5000).await;
+            }
+        }
+    }
+
     // --- WATCHDOG TEST --- //
     // Verifies the hardware watchdog fires correctly when execute() hangs.
     //
@@ -697,6 +760,7 @@ async fn main(spawner: Spawner) {
         feature = "test_hw_all",
         feature = "test_payload_uart",
         feature = "test_airbrakes",
+        feature = "test_blims",
         feature = "test_watchdog",
         feature = "sim_simple",
         feature = "sim_fault",

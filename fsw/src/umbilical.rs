@@ -84,6 +84,11 @@ pub enum UmbilicalCommand {
     SetBlimsTarget { lat: f32, lon: f32 },
     TriggerDrogue, // Remove this functionality for real code
     TriggerMain,   // Remove this functionality for real code
+    //DrogueMode,    // Remove this functionality for real code
+    //MainMode,      // Remove this functionality for real code
+    DeployAirbrakes, // Remove this functionality for real code
+    RetractAirbrakes, // Remove this functionality for real code
+    TriggerBLiMS, // Remove this functionality for real code
 }
 
 /// Command channel: receiver task pushes commands, flight loop polls them.
@@ -174,7 +179,7 @@ pub fn emit_telemetry(packet: &crate::packet::Packet) {
             packet.cmd_a1,
             packet.cmd_a2,
             packet.cmd_a3,
-            packet.airbrake_state,
+            packet.airbrake_deployment,
             packet.predicted_apogee,
             packet.h_acc,
             packet.v_acc,
@@ -215,6 +220,13 @@ pub fn try_recv_command() -> Option<UmbilicalCommand> {
 /// Simulation helper: injects a command into the channel as if it came from USB.
 pub fn push_command(cmd: UmbilicalCommand) {
     let _ = COMMANDS.try_send(cmd);
+}
+
+/// Simulation helper: stamps a heartbeat so `is_connected()` returns true for
+/// one `HEARTBEAT_TIMEOUT_MS` window. Call once per sim cycle while in
+/// Startup/Standby so `read_sensors()` sees the umbilical as connected.
+pub fn inject_heartbeat() {
+    record_heartbeat();
 }
 
 /// Initialize USB subsystem: CdcAcmClass for bidirectional text communication.
@@ -259,6 +271,10 @@ impl log::Log for UsbSerialLogger {
 
     fn log(&self, record: &log::Record) {
         if !self.enabled(record.metadata()) {
+            return;
+        }
+        // Never inject log text into the binary stream during a flash dump.
+        if DUMP_IN_PROGRESS.load(Ordering::Acquire) {
             return;
         }
         let mut buf = [0u8; 256];
@@ -416,6 +432,11 @@ async fn usb_receiver_task(mut receiver: Receiver<'static, UsbDriver>) -> ! {
                 b"<KD>" => Some(UmbilicalCommand::KeyDisarm),
                 b"<D>" => Some(UmbilicalCommand::TriggerDrogue),
                 b"<d>" => Some(UmbilicalCommand::TriggerMain),
+                // b"<DR>" => Some(UmbilicalCommand::DrogueMode),
+                // b"<MR>" => Some(UmbilicalCommand::MainMode),
+                b"<A>" => Some(UmbilicalCommand::DeployAirbrakes),
+                b"<a>" => Some(UmbilicalCommand::RetractAirbrakes),
+                b"<B>" => Some(UmbilicalCommand::TriggerBLiMS),
                 _ => None,
             };
 

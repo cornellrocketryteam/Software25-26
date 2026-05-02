@@ -190,10 +190,9 @@ class FillStationClient:
             time.sleep(2)
             self.launch_status = "2s LAUNCH: Closing SV2..."
             self.send_command({"command": "fsw_close_sv"})
-            time.sleep(2)
             self.launch_status = "2s LAUNCH: MAV OPEN (7.88s)..."
             self.send_command({"command": "fsw_open_mav"})
-            time.sleep(7.88)
+            time.sleep(12)
             self.send_command({"command": "fsw_close_mav"})
             self.launch_status = None
         threading.Thread(target=sequence, daemon=True).start()
@@ -204,13 +203,13 @@ class FillStationClient:
             self.launch_status = "1s LAUNCH: Opening SV2 + Igniting..."
             self.send_command({"command": "fsw_open_sv"})
             self.send_command({"command": "ignite"})
-            time.sleep(2)
+            time.sleep(1)
             self.launch_status = "1s LAUNCH: Closing SV2..."
             self.send_command({"command": "fsw_close_sv"})
             time.sleep(1)
             self.launch_status = "1s LAUNCH: MAV OPEN (7.88s)..."
             self.send_command({"command": "fsw_open_mav"})
-            time.sleep(7.88)
+            time.sleep(12)
             self.send_command({"command": "fsw_close_mav"})
             self.launch_status = None
         threading.Thread(target=sequence, daemon=True).start()
@@ -404,13 +403,12 @@ with col_right:
     st.subheader("FSW Sensors (Telemetry)")
     if client.fsw_connected and client.fsw_telemetry:
         t = client.fsw_telemetry
-        airbrake_map = {0: "idle", 1: "deployed", 2: "retracted"}
-        ab = airbrake_map.get(t.get("airbrake_state", 0), "unknown")
+        ab = t.get("airbrake_deployment", 0.0)
         fsw_rows = [
             {"Sensor": "PT3", "Value": f"{t.get('pt3', 0):.2f}"},
             {"Sensor": "PT4", "Value": f"{t.get('pt4', 0):.2f}"},
             {"Sensor": "RTD", "Value": f"{t.get('rtd', 0):.2f}"},
-            {"Sensor": "Airbrake State", "Value": ab},
+            {"Sensor": "Airbrake Deployment", "Value": f"{ab:.2f}"},
             {"Sensor": "Predicted Apogee", "Value": f"{t.get('predicted_apogee', 0):.1f} m"},
         ]
         st.dataframe(pd.DataFrame(fsw_rows), hide_index=True, use_container_width=True)
@@ -488,7 +486,7 @@ if client.fsw_connected and client.fsw_telemetry:
         e1, e2 = st.columns([1, 2])
         with e1:
             st.caption("Airbrake")
-            st.markdown(f"**State:** {airbrake_map.get(t.get('airbrake_state', 0), 'unknown')}")
+            st.metric("Airbrake Deployment", f"{t.get('airbrake_deployment', 0.0):.2f}")
             st.metric("Predicted Apogee", f"{t.get('predicted_apogee', 0):.1f} m")
         with e2:
             st.caption("Event Flags")
@@ -596,5 +594,17 @@ if row3[2].button("Key Arm", use_container_width=True):
     client.send_command({"command": "fsw_key_arm"})
 if row3[3].button("Key Disarm", use_container_width=True):
     client.send_command({"command": "fsw_key_disarm"})
+if row3[4].button("Payload A1", use_container_width=True):
+    client.send_command({"command": "fsw_payload_a1"})
+if row3[5].button("Payload A2", use_container_width=True):
+    client.send_command({"command": "fsw_payload_a2"})
+if row3[6].button("Payload A3", use_container_width=True):
+    client.send_command({"command": "fsw_payload_a3"})
+if row3[7].button("⚠ Trigger Drogue", use_container_width=True):
+    client.send_command({"command": "fsw_trigger_drogue"})
+
+row4 = st.columns(8)
+if row4[0].button("⚠ Trigger Main", use_container_width=True):
+    client.send_command({"command": "fsw_trigger_main"})
 
 st.rerun()

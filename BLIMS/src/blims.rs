@@ -166,6 +166,13 @@ impl<'d> Blims<'d> {
         self.target_lon = lon;
     }
 
+    /// Drive the motor directly to a position in [0.0, 1.0].
+    /// 0.3 = max left, 0.5 = neutral, 0.7 = max right.
+    /// Bypasses guidance logic — for hardware testing only.
+    pub fn set_motor_raw(&mut self, position: f32) {
+        self.set_motor_position(position);
+    }
+
     pub fn set_wind_from_deg(&mut self, deg: f32) {
         self.wind_from_deg = Self::wrap360(deg);
     }
@@ -283,7 +290,9 @@ impl<'d> Blims<'d> {
         let five_pct = WRAP_CYCLE_COUNT as f32 * 0.05;
         let duty = (five_pct + position * five_pct) as u16;
 
+        // Set both channels — FSW uses output_b (compare_b), examples use output_a (compare_a).
         self.pwm_config.compare_a = duty;
+        self.pwm_config.compare_b = duty;
         self.pwm.set_config(&self.pwm_config);
     }
 

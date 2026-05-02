@@ -45,7 +45,7 @@ INSERT INTO telemetry_data (
     cmd_a3,
 
     -- Airbrake & Control States
-    airbrake_state,
+    airbrake_deployment,
     predicted_apogee,
 
     -- Advanced GPS / U-Blox Metrics
@@ -133,7 +133,7 @@ INSERT INTO telemetry_data (
     ${cmd_a3},
 
     -- Airbrake & Control States
-    ${airbrake_state},
+    ${airbrake_deployment},
     ${predicted_apogee},
 
     -- Advanced GPS / U-Blox Metrics

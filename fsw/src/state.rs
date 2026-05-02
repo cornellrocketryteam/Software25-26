@@ -1,12 +1,12 @@
 use crate::constants;
 use crate::module::*;
 
-use crate::packet::Packet;
+use crate::packet::{Packet, FastRecord};
 
 use crate::driver::bmp390::Bmp390Sensor;
 use crate::driver::lsm6dsox::Lsm6dsoxSensor;
 use crate::driver::rfd900x::Rfd900x;
-use crate::driver::ublox_max_m10s::UbloxMaxM10s;
+use crate::driver::ublox_max_m10s::{UbloxMaxM10s, GpsError};
 use crate::driver::ads1015::Ads1015Sensor;
 use crate::driver::onboard_flash::OnboardFlash;
 
@@ -67,9 +67,14 @@ pub struct FlightState {
     // gps
     gps: UbloxMaxM10s<'static, I2cDevice<'static>>,
     gps_ok: bool,
+    gps_fail_count: u8,
+    gps_probe_count: u8,
 
     // imu
     imu: Lsm6dsoxSensor,
+    imu_ok: bool,
+    imu_fail_count: u8,
+    imu_probe_count: u8,
 
     // adc
     adc: Ads1015Sensor,
@@ -98,6 +103,10 @@ pub struct FlightState {
 
     // Snapshot-ring throttle (replaces FRAM periodic logging at 1 Hz)
     last_snapshot_log: Instant,
+
+    // Set by FlightLoop each cycle; written into snapshot for crash recovery of launch sequence
+    pub snap_launch_stage: u32,
+    pub snap_launch_elapsed_ms: u32,
 
     // External Comms
     pub payload_uart: UartTx<'static, Async>,
@@ -130,6 +139,8 @@ impl FlightState {
         // DMA transactions (calibration reads, soft reset, config writes) that
         // can leave the SPI/DMA engine in a state where 256-byte page reads hang.
         // Running the flash binary-search scan before BMP390 avoids this.
+        // flash_ok = chip is accessible (snapshot ring can be used)
+        // storage_full = data-log region exhausted (snapshot ring at 0x100000 is unaffected)
         let flash_ok = match with_timeout(
             Duration::from_millis(constants::SENSOR_INIT_TIMEOUT_MS),
             flash.initialize_logging(),
@@ -137,6 +148,11 @@ impl FlightState {
             Ok(Ok(_)) => {
                 log::info!("QSPI Flash logging initialized.");
                 true
+            }
+            Ok(Err(crate::driver::onboard_flash::Error::StorageFull)) => {
+                log::warn!("QSPI Flash data-log full — data logging disabled. Snapshot ring still active.");
+                flash.storage_full = true;
+                true  // chip is accessible; snapshot ring at 0x100000 works fine
             }
             Ok(Err(e)) => {
                 log::error!("Failed to initialize QSPI Flash logging: {:?}", e);
@@ -150,17 +166,30 @@ impl FlightState {
         flash.flash_ok = flash_ok;
 
         // Initialize the snapshot ring (replaces FRAM for crash recovery).
+        // Scans 1024 × 64-byte slots — use a generous timeout separate from
+        // the per-op FLASH_TIMEOUT_MS which is sized for single erase/program ops.
+        let scan_to = Duration::from_millis(constants::SNAPSHOT_SCAN_TIMEOUT_MS);
         let mut stored_mode = FlightMode::Startup;
         let mut stored_cycle_count = 0u32;
+        let mut stored_mav_open = false; // MAV defaults closed (matches Mav::new())
+        let mut stored_sv_open  = true;  // SV  defaults open  (matches SV::new())
+        let mut stored_launch_stage = 0u32;
+        let mut stored_launch_elapsed_ms = 0u32;
         if flash_ok {
-            match with_timeout(flash_to, flash.initialize_snapshot_ring()).await {
-                Ok(Ok(_)) => match with_timeout(flash_to, flash.read_latest_snapshot()).await {
+            match with_timeout(scan_to, flash.initialize_snapshot_ring()).await {
+                Ok(Ok(_)) => match with_timeout(scan_to, flash.read_latest_snapshot()).await {
                     Ok(Ok(Some(snap))) => {
-                        stored_mode = FlightMode::from_u32(snap.flight_mode);
+                        stored_mode      = FlightMode::from_u32(snap.flight_mode);
                         stored_cycle_count = snap.cycle_count;
+                        stored_mav_open  = snap.mav_open != 0;
+                        stored_sv_open   = snap.sv_open  != 0;
+                        stored_launch_stage = snap.launch_stage;
+                        stored_launch_elapsed_ms = snap.launch_elapsed_ms;
                         log::info!(
-                            "Snapshot recovered: mode={:?} cycle={} alt={:.2}",
-                            stored_mode, stored_cycle_count, snap.altitude
+                            "Snapshot recovered: mode={:?} cycle={} alt={:.2} mav={} sv={} launch_stage={} elapsed_ms={}",
+                            stored_mode, stored_cycle_count, snap.altitude,
+                            stored_mav_open, stored_sv_open,
+                            stored_launch_stage, stored_launch_elapsed_ms
                         );
                     }
                     Ok(Ok(None)) => log::info!("Snapshot ring empty — starting fresh."),
@@ -191,6 +220,11 @@ impl FlightState {
                 }
             }
         }
+
+        // The snapshot ring is written at 1 Hz and captures flight_mode more
+        // recently than the full packet write. Always trust it over the packet's
+        // own flight_mode field so the two sources stay consistent.
+        packet.flight_mode = stored_mode as u32;
 
         log::info!("STATE: Initializing altimeter (BMP390)...");
         let altimeter = match with_timeout(init_to, Bmp390Sensor::new(spi_bus, altimeter_cs)).await {
@@ -248,6 +282,14 @@ impl FlightState {
         let radio = Rfd900x::new(uart);
         log::info!("STATE: Radio ready");
 
+        // Restore actuator states from the most recent snapshot so a mid-flight
+        // reboot doesn't leave MAV/SV in their power-on defaults.
+        let mut mav = mav;
+        let mut sv  = sv;
+        if stored_mav_open { mav.open(0); } else { mav.close(); }
+        if stored_sv_open  { sv.open(0);  } else { sv.close();  }
+        log::info!("Actuator state restored: mav={} sv={}", stored_mav_open, stored_sv_open);
+
         Self {
             packet: packet,
             flight_mode: stored_mode,
@@ -258,7 +300,12 @@ impl FlightState {
             altimeter_state: altimeter_init,
             gps: gps,
             gps_ok,
+            gps_fail_count: 0,
+            gps_probe_count: 0,
             imu: imu,
+            imu_ok: true,
+            imu_fail_count: 0,
+            imu_probe_count: 0,
             adc: adc,
             arming_switch: arming_switch,
             cfc_arm: cfc_arm,
@@ -275,6 +322,8 @@ impl FlightState {
             airbrake_system,
             flash,
             last_snapshot_log: Instant::now(),
+            snap_launch_stage: stored_launch_stage,
+            snap_launch_elapsed_ms: stored_launch_elapsed_ms,
             payload_uart,
 
             #[cfg(feature = "sim_payload")]
@@ -378,6 +427,7 @@ impl FlightState {
         if self.gps_ok {
             match with_timeout(read_to, self.gps.read_into_packet(&mut self.packet)).await {
                 Ok(Ok(_)) => {
+                    self.gps_fail_count = 0;
                     log::info!(
                         "GPS | Lat = {:.6}°, Lon = {:.6}°, Sats = {}, Time = {:.0} s",
                         self.packet.latitude,
@@ -386,33 +436,96 @@ impl FlightState {
                         self.packet.timestamp
                     );
                 }
-                Ok(Err(e)) => {
-                    log::error!("Failed to read GPS: {:?}", e);
+                Ok(Err(GpsError::NoData)) => {
+                    // No fix yet — normal at 20 Hz vs 1 Hz GPS output; not an I2C fault.
+                }
+                Ok(Err(GpsError::I2cError)) => {
+                    log::error!("GPS: I2C error");
+                    self.gps_fail_count = self.gps_fail_count.saturating_add(1);
                 }
                 Err(_) => {
-                    log::error!("GPS read TIMEOUT — I2C bus may be locked");
+                    log::error!("GPS: read TIMEOUT");
+                    self.gps_fail_count = self.gps_fail_count.saturating_add(1);
+                }
+            }
+
+            if self.gps_fail_count >= 5 {
+                if matches!(self.flight_mode, FlightMode::Startup | FlightMode::Standby)
+                    && self.gps_probe_count < 20
+                {
+                    // Pre-flight: probe for reconnection and reboot if the device
+                    // comes back so the full init sequence runs fresh.
+                    self.gps_probe_count += 1;
+                    log::warn!("GPS: lost — probing ({}/20)...", self.gps_probe_count);
+                    match with_timeout(read_to, self.gps.probe()).await {
+                        Ok(true) => {
+                            log::warn!("GPS: reconnected — rebooting for fresh init");
+                            cortex_m::peripheral::SCB::sys_reset();
+                        }
+                        _ => {
+                            if self.gps_probe_count >= 20 {
+                                self.gps_ok = false;
+                                log::error!("GPS: permanently disabled after 20 failed probes");
+                            }
+                        }
+                    }
+                } else {
+                    // In flight: never reboot mid-flight, just disable reads.
+                    self.gps_ok = false;
+                    log::error!("GPS: disabled — I2C lost during flight");
                 }
             }
         }
 
-        // Read IMU and update packet
-        match with_timeout(read_to, self.imu.read_into_packet(&mut self.packet)).await {
-            Ok(Ok(_)) => {
-                log::info!(
-                    "IMU | Accel: X={:.2} Y={:.2} Z={:.2} m/s² | Gyro: X={:.2} Y={:.2} Z={:.2} °/s",
-                    self.packet.accel_x,
-                    self.packet.accel_y,
-                    self.packet.accel_z,
-                    self.packet.gyro_x,
-                    self.packet.gyro_y,
-                    self.packet.gyro_z
-                );
+        // Read IMU and update packet.
+        // read_into_packet() silently returns Ok(()) when !initialized, so errors
+        // here only fire when the sensor was working and then lost I2C contact.
+        if self.imu_ok {
+            match with_timeout(read_to, self.imu.read_into_packet(&mut self.packet)).await {
+                Ok(Ok(_)) => {
+                    self.imu_fail_count = 0;
+                    log::info!(
+                        "IMU | Accel: X={:.2} Y={:.2} Z={:.2} m/s² | Gyro: X={:.2} Y={:.2} Z={:.2} °/s",
+                        self.packet.accel_x,
+                        self.packet.accel_y,
+                        self.packet.accel_z,
+                        self.packet.gyro_x,
+                        self.packet.gyro_y,
+                        self.packet.gyro_z
+                    );
+                }
+                Ok(Err(e)) => {
+                    log::error!("IMU: I2C error: {:?}", e);
+                    self.imu_fail_count = self.imu_fail_count.saturating_add(1);
+                }
+                Err(_) => {
+                    log::error!("IMU: read TIMEOUT");
+                    self.imu_fail_count = self.imu_fail_count.saturating_add(1);
+                }
             }
-            Ok(Err(e)) => {
-                log::error!("Failed to read LSM6DSOX IMU: {:?}", e);
-            }
-            Err(_) => {
-                log::error!("LSM6DSOX IMU read TIMEOUT");
+
+            if self.imu_fail_count >= 5 {
+                if matches!(self.flight_mode, FlightMode::Startup | FlightMode::Standby)
+                    && self.imu_probe_count < 20
+                {
+                    self.imu_probe_count += 1;
+                    log::warn!("IMU: lost — probing ({}/20)...", self.imu_probe_count);
+                    match with_timeout(read_to, self.imu.probe()).await {
+                        Ok(true) => {
+                            log::warn!("IMU: reconnected — rebooting for fresh init");
+                            cortex_m::peripheral::SCB::sys_reset();
+                        }
+                        _ => {
+                            if self.imu_probe_count >= 20 {
+                                self.imu_ok = false;
+                                log::error!("IMU: permanently disabled after 20 failed probes");
+                            }
+                        }
+                    }
+                } else {
+                    self.imu_ok = false;
+                    log::error!("IMU: disabled — I2C lost during flight");
+                }
             }
         }
 
@@ -508,15 +621,25 @@ impl FlightState {
     }
 
     // Appends the current packet as CSV to the onboard QSPI Flash memory
-    pub async fn save_packet_to_flash(&mut self) {
-        if !self.flash.flash_ok {
+    /// Write a fast (20 Hz) or full (1 Hz) binary record to flash.
+    pub async fn save_packet_to_flash(&mut self, full: bool) {
+        if !self.flash.flash_ok || self.flash.storage_full {
             return;
         }
         let to = Duration::from_millis(constants::FLASH_TIMEOUT_MS);
-        match with_timeout(to, self.flash.append_packet_csv(&self.packet)).await {
-            Ok(Ok(_)) => {}
-            Ok(Err(e)) => log::warn!("Failed to append packet CSV to QSPI Flash: {:?}", e),
-            Err(_) => log::warn!("QSPI Flash append TIMEOUT"),
+        if full {
+            match with_timeout(to, self.flash.append_full_record(&self.packet)).await {
+                Ok(Ok(_)) => {}
+                Ok(Err(e)) => log::warn!("Flash full-record append failed: {:?}", e),
+                Err(_) => log::warn!("Flash full-record append TIMEOUT"),
+            }
+        } else {
+            let fast = FastRecord::from_packet(&self.packet);
+            match with_timeout(to, self.flash.append_fast_record(&fast)).await {
+                Ok(Ok(_)) => {}
+                Ok(Err(e)) => log::warn!("Flash fast-record append failed: {:?}", e),
+                Err(_) => log::warn!("Flash fast-record append TIMEOUT"),
+            }
         }
     }
 
@@ -537,11 +660,12 @@ impl FlightState {
         }
     }
 
-    /// Periodic snapshot, throttled to 1 Hz. Replaces FRAM periodic logging.
-    /// Flash can't absorb 100 Hz writes — erase stalls would block the loop.
+    /// Periodic snapshot, throttled to 5 Hz. Sector erases (every 64 records)
+    /// take up to 400 ms but the watchdog is fed inside erase_sector, so they
+    /// are safe — just slow. At 5 Hz an erase fires every ~12 s.
     pub async fn log_to_fram(&mut self) {
         let now = Instant::now();
-        if now.duration_since(self.last_snapshot_log) < Duration::from_millis(1000) {
+        if now.duration_since(self.last_snapshot_log) < Duration::from_millis(constants::SNAPSHOT_LOGGING_PERIOD_MS) {
             return;
         }
         self.last_snapshot_log = now;
@@ -561,10 +685,10 @@ impl FlightState {
                 let _ = core::fmt::write(
                     &mut msg,
                     format_args!(
-                        "SNAP seq={} mode={} cyc={} p={:.1} t={:.2} alt={:.2} mav={} sv={} pt3={:.1} pt4={:.1} rtd={:.1}\n",
+                        "SNAP seq={} mode={} cyc={} p={:.1} t={:.2} alt={:.2} mav={} sv={} launch_stage={} elapsed_ms={}\n",
                         s.seq, s.flight_mode, s.cycle_count,
                         s.pressure, s.temp, s.altitude,
-                        s.mav_open, s.sv_open, s.pt3, s.pt4, s.rtd
+                        s.mav_open, s.sv_open, s.launch_stage, s.launch_elapsed_ms
                     ),
                 );
                 crate::umbilical::print_str(msg.as_str());
@@ -602,9 +726,8 @@ impl FlightState {
             altitude: self.packet.altitude,
             mav_open: self.packet.mav_open as u32,
             sv_open: self.packet.sv_open as u32,
-            pt3: self.packet.pt3,
-            pt4: self.packet.pt4,
-            rtd: self.packet.rtd,
+            launch_stage: self.snap_launch_stage,
+            launch_elapsed_ms: self.snap_launch_elapsed_ms,
         };
         let to = Duration::from_millis(constants::FLASH_TIMEOUT_MS);
         match with_timeout(to, self.flash.write_snapshot(&mut snap)).await {
@@ -614,14 +737,14 @@ impl FlightState {
         }
     }
 
-    /// Reads all stored CSV data from flash and prints it to the log
+    /// Reads all stored binary data from flash and sends it to the host.
     pub async fn print_flash_dump(&mut self) {
-        log::info!("--- BEGIN FLASH CSV DUMP ---");
+        log::info!("--- BEGIN FLASH BINARY DUMP ---");
         // Suppress telemetry while the dump is on the wire so $TELEM lines
         // can't interleave with raw flash bytes and so telemetry doesn't
         // back-pressure the dump.
         crate::umbilical::begin_dump();
-        crate::umbilical::print_str("--- BEGIN FLASH CSV DUMP ---\n");
+        crate::umbilical::print_str("--- BEGIN FLASH BINARY DUMP ---\n");
         let start = self.flash.get_storage_offset();
         let end = self.flash.get_write_offset();
         let mut offset = start;
@@ -642,16 +765,22 @@ impl FlightState {
                 }
             }
 
-            // Async send — back-pressures to USB speed so no data is dropped
-            crate::umbilical::print_bytes_async(&buffer[..chunk_size]).await;
+            // Async send — back-pressures to USB speed so no data is dropped.
+            // Timeout guards against USB stall (e.g. cable yanked mid-dump)
+            // freezing the flight loop indefinitely.
+            let send_to = Duration::from_millis(5000);
+            if with_timeout(send_to, crate::umbilical::print_bytes_async(&buffer[..chunk_size])).await.is_err() {
+                log::error!("Flash dump USB send TIMEOUT — aborting dump");
+                break;
+            }
             // Keep the watchdog fed; a full-flash dump at USB-CDC speeds can
             // easily exceed the flight loop timeout.
             crate::watchdog::feed();
 
             offset += chunk_size as u32;
         }
-        log::info!("--- END FLASH CSV DUMP ---");
-        crate::umbilical::print_str("--- END FLASH CSV DUMP ---\n");
+        log::info!("--- END FLASH BINARY DUMP ---");
+        crate::umbilical::print_str("--- END FLASH BINARY DUMP ---\n");
         crate::umbilical::end_dump();
     }
 
