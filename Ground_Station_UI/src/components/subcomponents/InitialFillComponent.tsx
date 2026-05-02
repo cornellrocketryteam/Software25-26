@@ -16,15 +16,14 @@ export default function InitialFillComponent() {
         valveDataRef,
         telemetryDataRef,
         canInteractRef,
+        ventTimeoutRef,
         setButtonInteractionState
     } = usePropulsion();
 
     console.log("Rendering InitialFillComponent with fillState: ", fillState);
 
-
     //Checks to see if we already hit the vent threshold
     const hasAutoVentedRef = useRef(false);
-
     
     //  Click handler: only responsible for pre-checks and setting the  
     //  fillUIActive flag. The actual loop is managed in the useEffect below.
@@ -107,7 +106,7 @@ export default function InitialFillComponent() {
                 handleButtonClickRef.current("Solenoid Valve 2", 'OPEN');
                 console.log("🔴 Manual Vent START:", new Date().toISOString(), "PSI:", psi, `Duration: ${confirmedVentSecondsRef.current}s`);
 
-                setTimeout(() => {
+                ventTimeoutRef.current = setTimeout(() => {
                     console.log("🟢 Manual Vent END:", new Date().toISOString());
                     handleButtonClickRef.current("Solenoid Valve 2", 'CLOSE');
                     handleButtonClickRef.current("Ball Valve", 'OPEN');
@@ -172,6 +171,9 @@ export default function InitialFillComponent() {
                             setFillUIActive(false);
                             setVentUIActive(false);
                             setVentUIActive(false);
+                            // Re-enable button interaction so operator can open SVs as needed to safely release pressure
+                            setButtonInteractionState('ENABLED');
+                            canInteractRef.current = 'ENABLED';
                         }}
                         className="bg-[#1A1A1A] border-[6px] border-black rounded-3xl px-8 py-2 font-inter font-bold text-[36px] text-white hover:opacity-90 flex-1"
                     >

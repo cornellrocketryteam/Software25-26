@@ -45,6 +45,7 @@ type PropulsionContextType = {
     isVentingRef: React.RefObject<boolean>;
     isFillingRef: React.RefObject<boolean>;
     canInteractRef: React.RefObject<interactionType>;
+    ventTimeoutRef: React.RefObject<ReturnType<typeof setTimeout> | null>;
 }
 
 type AdcDataMessage = {
@@ -73,9 +74,9 @@ type Fsw_Telemetry = {
     gyro_x: number;
     gyro_y: number;
     gyro_z: number;
-    pt3: number; //Injector Pressure
-    pt4: number; //Runtank Pressure <-- What I really care about
-    rtd: number; //Temperature of the runtank
+    pt3: number; 
+    pt4: number; 
+    rtd: number; 
 }
 
 type AdcChannel = {
@@ -114,10 +115,6 @@ export function PropulsionPage() {
     const [buttonInteractionState, setButtonInteractionState] = useState<interactionType>("DISABLED"); // State to control whether buttons can be interacted with, to prevent spamming commands while waiting for server responses
 
 
-
-    //const uri = "ws://192.168.8.167:9000";
-    //const uri = "ws://localhost:9000"; // Replace with the WebSocket server URI
-    //const wsRef = useRef<WebSocket | null>(null); // Use useRef to store the WebSocket instance
     const pendingActionRef = useRef<ValveKey | null>(null); // Use useRef to store the pending action for confirmation
     const adcDataRef = useRef<AdcDataMessage[]>([]); // Use useRef to store the latest ADC data received from the server
     const umbilicalDataRef = useRef<FswTelemetryMessage[]>([]); // Use useRef to store the latest telemetry data received from the server
@@ -125,6 +122,7 @@ export function PropulsionPage() {
     const isVentingRef = useRef(ventUIActive); // Track whether a vent is currently in progress so the interval doesn't stack multiple vent cycles while the 1-second SV2 timeout is running.
     const isFillingRef = useRef(fillUIActive); // Mirror isFilling into a ref so the interval can check it synchronously without capturing a stale closure value.
     const canInteractRef = useRef<interactionType>(buttonInteractionState); // Ref to track whether buttons can be interacted with, to prevent spamming commands while waiting for server responses
+    const ventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // Stores the active vent timeout ID so it can be cancelled on abort
     const confirmedVentSecondsRef = useRef(confirmedVentSeconds); // Ref to track the confirmed vent seconds for the same reason as above
 
     /**
@@ -143,23 +141,13 @@ export function PropulsionPage() {
     //Hearbeat command: send every 15 seconds to stay connected to server
     const heartbeatCommand = { "command": "heartbeat" };
 
-    //Igniter commands: get the continuity status of the igniters, likely will need to be reworked to fit the actual data being sent by the server and how we want to handle it. 
-    //If we have continuity then we have the ability to ignite
-
-    //Igniter commands:
-    const getIgniterContinuity1 = { "command": "get_igniter_continuity", "id": 1 };
-    const getIgniterContinuity2 = { "command": "get_igniter_continuity", "id": 2 };
-
-    //Solenoid Valve Commands: Get the information of the valve states on mount (so call in useEffect) so I can set my initial state of the valve buttons to
-    //match the actual state of the valves, and then also use these commands to get updated valve states after sending any command that would change the valve states.
+    //Solenoid Valve Commands:
     const getSVstate1 = { "command": "get_valve_state", "valve": "SV1" };
     const actuateSV1Open = { "command": "actuate_valve", "valve": "SV1", "open": true };
     const actuateSV1Close = { "command": "actuate_valve", "valve": "SV1", "open": false };
 
     const actuateSV2Open = { "command": "fsw_open_sv" };
     const actuateSV2Close = { "command": "fsw_close_sv" };
-
-
 
     //Mav comands: 
     const actuateMavOpen = { "command": "fsw_open_mav" };
@@ -176,26 +164,21 @@ export function PropulsionPage() {
     const getQdState = { "command": "get_qd_state" };
 
 
-    //Start and stop ADC stream commands: will need to talk to Ronit about how to implement this, or even if I have to, but the idea is that I would send the start 
-    //command in useEffect after establishing the WebSocket connection to start receiving the ADC data, and then send the stop command in the clean up function of useEffect 
-    //to stop receiving the data when the component unmounts. Depending on how the server is set up, I may also need to set up a listener for incoming ADC data and update 
-    //some state with that data to display it on the page or use it for some logic.
+    //ADC stream commands:
     const startADCStream = { "command": "start_adc_stream" };
     const stopADCStream = { "command": "stop_adc_stream" };
 
-    //FSW Umbilical Commands: set up FSW stream to get FSW telemetry (For now, just learn how to keep track of the data we get from this stream)
+    //FSW Umbilical Stream Commands:
     const startFSWStream = { "command": "start_fsw_stream" };
     const stopFSWStream = { "command": "stop_fsw_stream" };
 
-    const queryCommands = ["get_valve_state"]; //Set of commands that are used to get information about the current state of the system, which we want to track as pending actions so that when we get the response back from the server, we know what information it corresponds to and can update our state accordingly
-    const actuationCommands = ["actuate_valve", "fsw_open_mav", "fsw_close_mav", "bv_open", "bv_close"]; //Set of commands that are used to change the state of the system, which we want to clear any pending actions for when we send them, since we know that any information we get back from the server after sending one of these commands will be outdated and not relevant to our current state
+    const queryCommands = ["get_valve_state", "get_ball_valve_state", "get_qd_state"]; //Only command for state query
+    const actuationCommands = ["actuate_valve", "fsw_open_mav", "fsw_close_mav", "bv_open", "bv_close"]; //Set of commands that are used to change the state of the system
 
 
-    //Stored Valve Data
-    //This is where we will store the current state of the valves and igniters based on the responses we get back from the server when we send the query commands, so that we can use that information to update our 
-    //button states and display the current state of the system on the page. We will update this state whenever we get a response back from the server for one of our query commands, and we will also use this state to 
-    //determine what command to send when a button is clicked (e.g., if SV1 is currently open according to our state, then when we click the SV1 button, we know we need to send the command to close it).
-    const [valveData, setValveData] = useState({
+    //Stored Valve Data For UI Representation:
+    
+    const [valveData, setValveData] = useState({ //TODO: Think of what to do with venting field in valve Data
         SV1: { "actuated": false, "continuity": false },
         SV2: { "actuated": false, "venting": false, "continuity": false },
         MAV: { "actuated": false, "angle": 0, "pulseWidth": 0 },
@@ -203,15 +186,13 @@ export function PropulsionPage() {
         QD: { "retracted": false }
     });
 
-    //Implement this refrence for all my logic and also make sure that whenever I update my valveData state, I also update this ref with the latest data so that I can access the most up to date valve data in my functions without worrying about stale closures from useState
-    const valveDataRef = useRef(valveData); // Create a ref to hold the latest valve data for synchronous access in functions without worrying about stale closures
+    //Ref to hold the latest valve data for synchronous access in functions without worrying about stale closures, better for logic rather than UI representation
+    const valveDataRef = useRef(valveData); 
 
-    //Do we want a delay? This is important before testing ;)
+    //Enforced base button delay for 250 miliseconds
+    const buttondelay = 250; 
 
-
-    const buttondelay = 250; // Example delay in milliseconds between commands, can adjust as needed based on testing and how quickly the server can process commands and send responses
-
-    //COMMAND DELAY FUNCTION
+    //SEND COMMAND DELAY FUNCTION
     const sendCommandWithDelay = (param: any, delay: number) => {
         setTimeout(() => {
             if (typeof param === 'function') {
@@ -239,26 +220,24 @@ export function PropulsionPage() {
         });
     };
 
-    //This function is called when a valve button is clicked, and it determines which command to send based on the name of the button and the current state of the corresponding valve in our state. 
-    //It also sets the pending action for query commands so that we can update our state with the response from the server when we get it back.
+   
     const handleButtonClick = (ValveName: string, action: ActuationTypeIdentifier) => {
 
         const commandMap: { [key: string]: string } = { //---> map names of the buttons to shorthand identifiers
             "Solenoid Valve 1": "SV1",
             "Solenoid Valve 2": "SV2",
             "Ball Valve": "BV",
-            "Igniter": "Igniter",
             "MAV": "MAV",
             "Quick Disconnect": "QD"
         }
 
         const valveIdentifier = commandMap[ValveName]; //<= This will map the button name to the corresponding valve identifier used in the command
 
-        switch (valveIdentifier) { //Handles logic for button presses based of the current state of the button
+        switch (valveIdentifier) {
             case "SV1":
-                if (valveDataRef.current.SV1.actuated && action === 'CLOSE') { // If SV1 is currently open and we want to close it
+                if (valveDataRef.current.SV1.actuated && action === 'CLOSE') {
                     sendCommandWithDelay(actuateSV1Close, buttondelay);
-                } else if (!valveDataRef.current.SV1.actuated && action === 'OPEN') { // If SV1 is currently closed and we want to open it
+                } else if (!valveDataRef.current.SV1.actuated && action === 'OPEN') {
                     sendCommandWithDelay(actuateSV1Open, buttondelay);
                 }
 
@@ -267,65 +246,70 @@ export function PropulsionPage() {
                 break;
 
             case "SV2":
-                if (valveDataRef.current.SV2.actuated && action === 'CLOSE') { // If SV2 is currently open and we want to close it
+                if (valveDataRef.current.SV2.actuated && action === 'CLOSE') {
                     sendCommandWithDelay(actuateSV2Close, buttondelay);
-                } else if (!valveDataRef.current.SV2.actuated && action === 'OPEN') { // If SV2 is currently closed and we want to open it
+                } else if (!valveDataRef.current.SV2.actuated && action === 'OPEN') { 
                     sendCommandWithDelay(actuateSV2Open, buttondelay);
                 }
 
-                //sendCommandWithDelay(getSVstate2, buttondelay + 50); // Query the state of SV2 after sending the command to update our state with the response from the server
                 console.log(`Toggling Solenoid Valve 2 to ${!valveDataRef.current.SV2.actuated ? 'OPEN' : 'CLOSED'}`);
                 break;
 
-            case "BV":
-                if (valveDataRef.current.BV.actuated && action === 'CLOSE') { // If the ball valve is currently open and we want to close it
-                    sendCommandWithDelay(actuateBallValveClose, buttondelay);
-                    sendCommandWithDelay(() => {
-                        updateValveData(prevState => ({
-                            ...prevState,
-                            BV: { actuated: false, state: "high" }
-                        }));
-                        console.log("Ball Valve toggled to CLOSED");
-                    }, buttondelay + 50); // Delay state update to give command time to execute
-                } else if (!valveDataRef.current.BV.actuated && action === 'OPEN') { // If the ball valve is currently open and we want to open it (i.e., do nothing)
-                    sendCommandWithDelay(actuateBallValveOpen, buttondelay);
-                    sendCommandWithDelay(() => {
-                        updateValveData(prevState => ({
-                            ...prevState,
-                            BV: { actuated: true, state: "low" }
-                        }));
-                        console.log("Ball Valve toggled to OPEN");
-                    }, buttondelay + 50); // Delay state update to give command time to execute
+            case "MAV":
+                if (valveDataRef.current.MAV.actuated && action === 'CLOSE') { 
+                    sendCommandWithDelay(actuateMavClose, buttondelay);
+                } else if (!valveDataRef.current.MAV.actuated && action === 'OPEN') { 
+                    sendCommandWithDelay(actuateMavOpen, buttondelay); 
                 }
                 break;
-
-            case "MAV":
-                if (valveDataRef.current.MAV.actuated && action === 'CLOSE') { //If the Mav is actuated then we want to close it
-                    sendCommandWithDelay(actuateMavClose, buttondelay); //Send `Close` Command for Mav Valve
-                } else if (!valveDataRef.current.MAV.actuated && action === 'OPEN') { //If the Mav is not actuated then we want to open it
-                    sendCommandWithDelay(actuateMavOpen, buttondelay); //Send `Open` Command for Mav Valve
+            
+            //For BV and QD, if the query commands for both aren't working, just fall back to the custom query function to update the state after the actuation command
+            //Custom query commnds are behind though, so there will have to be some updates
+            case "BV":
+                if (valveDataRef.current.BV.actuated && action === 'CLOSE') { 
+                    sendCommandWithDelay(actuateBallValveClose, buttondelay);
+                    // sendCommandWithDelay(() => { //define custom query function to update state
+                    //     updateValveData(prevState => ({
+                    //         ...prevState,
+                    //         BV: { actuated: false, state: "high" }
+                    //     }));
+                    //     console.log("Ball Valve toggled to CLOSED");
+                    // }, buttondelay + 50); // Delay state update to give command time to execute
+                    sendCommandWithDelay(getBallValveState, buttondelay + 50); // Query the state of the ball valve after sending the command to update our state with the response from the server
+                } else if (!valveDataRef.current.BV.actuated && action === 'OPEN') {
+                    sendCommandWithDelay(actuateBallValveOpen, buttondelay);
+                    // sendCommandWithDelay(() => { //define custom query function to update state
+                    //     updateValveData(prevState => ({
+                    //         ...prevState,
+                    //         BV: { actuated: true, state: "low" }
+                    //     }));
+                    //     console.log("Ball Valve toggled to OPEN");
+                    // }, buttondelay + 50); // Delay state update to give command time to execute
+                    sendCommandWithDelay(getBallValveState, buttondelay + 50); // Query the state of the ball valve after sending the command to update our state with the response from the server
                 }
                 break;
 
             case "QD":
                 if (!valveDataRef.current.QD.retracted && action === 'RETRACT') {
                     sendCommandWithDelay(actuateQDRetract, buttondelay);
-                    sendCommandWithDelay(() => {
-                        updateValveData(prevState => ({
-                            ...prevState,
-                            QD: { ...prevState.QD, retracted: true }
-                        }));
-                        console.log("Quick Disconnect retracted");
-                    }, buttondelay + 50);
+                    // sendCommandWithDelay(() => { //define custom query function to update state
+                    //     updateValveData(prevState => ({
+                    //         ...prevState,
+                    //         QD: { ...prevState.QD, retracted: true }
+                    //     }));
+                    //     console.log("Quick Disconnect retracted");
+                    // }, buttondelay + 50);
+                    sendCommandWithDelay(getQdState, buttondelay + 50); // Query the state of the quick disconnect after sending the command to update our state with the response from the server
                 } else if (valveDataRef.current.QD.retracted && action === 'EXTEND') {
                     sendCommandWithDelay(actuateQDExtend, buttondelay);
-                    sendCommandWithDelay(() => {
-                        updateValveData(prevState => ({
-                            ...prevState,
-                            QD: { ...prevState.QD, retracted: false }
-                        }));
-                        console.log("Quick Disconnect extended");
-                    }, buttondelay + 50);
+                    // sendCommandWithDelay(() => { //define custom query function to update state
+                    //     updateValveData(prevState => ({
+                    //         ...prevState,
+                    //         QD: { ...prevState.QD, retracted: false }
+                    //     }));
+                    //     console.log("Quick Disconnect extended");
+                    // }, buttondelay + 50);
+                    sendCommandWithDelay(getQdState, buttondelay + 50); // Query the state of the quick disconnect after sending the command to update our state with the response from the server
                 }
                 break;
 
@@ -339,7 +323,7 @@ export function PropulsionPage() {
     const handleMessage = (event: MessageEvent) => {
         //Parse JSON data here
         const data = JSON.parse(event.data);
-        //console.log("Received message:", data);
+        //console.log("Received message:", data); <- don't log so we can see pressure readings
 
         switch (data.type) { //Switch on response type 
             case "adc_data":
@@ -347,7 +331,7 @@ export function PropulsionPage() {
                     adcDataRef.current.shift(); //Remove the oldest entry when we exceed the limit
                 }
 
-                adcDataRef.current.push(data); //Store the latest ADC data in the ref, which we can use for displaying on the page or for any logic we want to implement based on the ADC data in the future
+                adcDataRef.current.push(data); //Store the latest ADC data in the ref
                 break;
 
             case "fsw_telemetry":
@@ -355,7 +339,7 @@ export function PropulsionPage() {
                     umbilicalDataRef.current.shift(); //Remove the oldest entry when we exceed the limit
                 }
 
-
+                // For testing purposes so we can simulate fill without any actual pressure readings
                 const lastPressure = umbilicalDataRef.current.at(-1)?.telemetry.pt3 ?? 0;
 
                 if (isFillingRef.current && !isVentingRef.current) {
@@ -365,13 +349,10 @@ export function PropulsionPage() {
                 } else {
                     data.telemetry.pt3 = lastPressure; // Hold when idle
                 }
+                
+                console.log("Pressure:", new Date().toISOString(), "PSI:", data.telemetry.pt3 ?? "N/A", "SV2 Open (possible vent):", data.telemetry.sv_open ?? "N/A"); //Log pressure and venting status for testing
 
-                console.log("Pressure:", new Date().toISOString(), "PSI:", data.telemetry.pt3);
-
-                /* Not needed as we already poll for flight mode in our initial hook in `App`
-                    setCurrFlightMode(data.flight_mode as FlightMode); 
-                */
-                umbilicalDataRef.current.push(data); //Store the latest ADC data in the ref, which we can use for displaying on the page or for any logic we want to implement based on the ADC data in the future
+                umbilicalDataRef.current.push(data); //Store the latest umbilical data in the ref
 
                 // Update MAV state based on telemetry
                 if (data.telemetry && data.telemetry.mav_open !== undefined) {
@@ -422,15 +403,14 @@ export function PropulsionPage() {
     it uses that old version which has a stale wsRef → WebSocket error → disconnect. By using a ref to always point to the latest handleButtonClick, 
     the setTimeout can call handleButtonClickRef.current() to get the up-to-date function with the current wsRef, preventing the stale closure issue and keeping the connection alive.
     */
-
     const handleButtonClickRef = useRef(handleButtonClick);
 
     useEffect(() => {
         handleButtonClickRef.current = handleButtonClick;
-    }); // No dependency array = runs after every render, keeping ref always fresh
+    }); // No dependency array, runs after every render, keeping ref always fresh
     useEffect(() => {
         confirmedVentSecondsRef.current = confirmedVentSeconds;
-    }, [confirmedVentSeconds]); // runs after every change of converVentSeconds, keeping ref always fresh
+    }, [confirmedVentSeconds]); //Runs after every change of converVentSeconds, keeping ref always fresh
 
     //useEffect hook sets up connection to fill station server on mount of propulsion page, and also sets up listeners for messages, connection closures, and errors, 
     //and then cleans up the connection on unmount of the page. The connection closure listener also attempts to reconnect after a delay if the connection is lost, and 
@@ -442,12 +422,12 @@ export function PropulsionPage() {
         let pollingInterval: ReturnType<typeof setInterval>;
 
         const onOpen = () => {
-            sendCommandWithDelay(getSVstate1, 0);
+            sendCommandWithDelay(getSVstate1, 50);
             sendCommandWithDelay(getBallValveState, 50);
-            sendCommandWithDelay(getQdState, 100);
-            sendCommandWithDelay(heartbeatCommand, 250);
-            sendCommandWithDelay(startADCStream, 333);
-            sendCommandWithDelay(startFSWStream, 333);
+            sendCommandWithDelay(getQdState, 50);
+            sendCommandWithDelay(heartbeatCommand, buttondelay);
+            sendCommandWithDelay(startADCStream, buttondelay);
+            sendCommandWithDelay(startFSWStream, buttondelay);
             console.log("Command batch finished");
 
             heartbeatInterval = setInterval(() => {
@@ -458,11 +438,9 @@ export function PropulsionPage() {
 
             pollingInterval = setInterval(() => {
                 if (wsRef.current?.readyState === WebSocket.OPEN) {
-                    sendCommandWithDelay(getSVstate1, 0);
+                    sendCommandWithDelay(getSVstate1, 50);
                     sendCommandWithDelay(getBallValveState, 50);
-                    sendCommandWithDelay(getQdState, 100);
-                    sendCommandWithDelay(getIgniterContinuity1, 150);
-                    sendCommandWithDelay(getIgniterContinuity2, 200);
+                    sendCommandWithDelay(getQdState, 50);
                 }
             }, 3000);
         };
@@ -490,7 +468,7 @@ export function PropulsionPage() {
     }, [wsReady]); // Re-run effect if WebSocket connection status changes
 
     return (
-        <PropulsionContext.Provider value={{ confirmedVentSecondsRef, canInteractRef, buttonInteractionState, setButtonInteractionState, valveDataRef, fillUIActive, setFillUIActive, ventUIActive, setVentUIActive, isVentingRef, isFillingRef, manualVentRef, handleButtonClickRef, fillState, setFillState, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, valveData, adcDataRef: adcDataRef, telemetryDataRef: umbilicalDataRef }}>
+        <PropulsionContext.Provider value={{ ventTimeoutRef, confirmedVentSecondsRef, canInteractRef, buttonInteractionState, setButtonInteractionState, valveDataRef, fillUIActive, setFillUIActive, ventUIActive, setVentUIActive, isVentingRef, isFillingRef, manualVentRef, handleButtonClickRef, fillState, setFillState, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, valveData, adcDataRef: adcDataRef, telemetryDataRef: umbilicalDataRef }}>
             <div className={`min-h-screen bg-white ${ventUIActive ? 'cursor-wait' : ''}`}>
                 {/* Header */}
                 <Header
@@ -530,7 +508,7 @@ export function PropulsionPage() {
 
 
                         {/* Home Assistant Tank Heaters */}
-                         <HeaterPanelComponent />
+                        <HeaterPanelComponent />
                     </div>
                 </div>
             </div>

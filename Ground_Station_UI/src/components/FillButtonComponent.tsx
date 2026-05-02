@@ -21,12 +21,12 @@ export default function FillButtonComponent() {
             //     );
 
             
-            case 'SAFE_PROCEDURE':
+            case 'SAFE_PROCEDURE': //<- Currently unused, but this is where we would render the safe procedure component if we wanted to add it in.
                 return(
                     <SafeFillComponent/>
                 );  
 
-            case 'STOP_FILL': 
+            case 'STOP_FILL': //<- Currently unused, but this is where we would render the stop fill procedure component if we wanted to add it in.
                 return (
                     <StopFillComponent/>
                 );

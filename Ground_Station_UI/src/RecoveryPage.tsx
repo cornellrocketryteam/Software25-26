@@ -3,7 +3,7 @@ import ConfirmationOverlay from './components/ConfirmationOverlayComponent';
 import { useEffect, useState } from "react";
 import { useAppContext } from "./App";
 
-type BasicAction = "OPEN_PAYLOAD" | "RETRACT_PAYLOAD";
+type BasicAction = "OPEN_PAYLOAD";
 
 export function RecoveryPage() {
     const [showConfirmation, setShowConfirmation] = useState(false);
@@ -19,9 +19,9 @@ export function RecoveryPage() {
     };
 
     const handleConfirm = () => {
-        if (pendingAction !== null) { //Do Something here with commands
+        if (pendingAction !== null) {
             if(pendingAction === "OPEN_PAYLOAD"){
-                wsRef.current?.send(JSON.stringify({"command": "fsw_payload_n1"})); //Send command to extend payload
+                wsRef.current?.send(JSON.stringify({"command": "fsw_payload_n1"})); //Send command to extend payload, IMMEDIATELY, no checks needed.
             }
         }
         setShowConfirmation(false);
@@ -38,7 +38,6 @@ export function RecoveryPage() {
     };
 
     useEffect(() => {
-        // Bug 9 fix: declare outside onOpen so cleanup can clear it
         let heartbeatInterval: ReturnType<typeof setInterval>;
 
         if (!wsReady) return;
@@ -111,7 +110,6 @@ export function RecoveryPage() {
                                 const lat = Number(latitude);
                                 const lon = Number(longitude);
                                 setConfirmedCoords({ lat: latitude, lng: longitude });
-                                // Bug 4 fix: actually send the command with correct field names (lat/lon per server)
                                 wsRef.current?.send(JSON.stringify({ "command": "fsw_set_blims_target", lat, lon }));
                             }}
                             disabled={!latitude || !longitude}
@@ -131,12 +129,6 @@ export function RecoveryPage() {
                             className="bg-[#5A87FF] border-[3px] border-black rounded-2xl px-12 py-3 font-inter font-bold text-white text-xl hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             Open
-                        </button>
-                        <button
-                            onClick={() => toggleAction("RETRACT_PAYLOAD")}
-                            className="bg-[#4A4A4A] border-[3px] border-black rounded-2xl px-12 py-3 font-inter font-bold text-white text-xl hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            Retract
                         </button>
                     </div>
                 </div>

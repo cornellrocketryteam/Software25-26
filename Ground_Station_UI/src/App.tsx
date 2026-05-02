@@ -25,8 +25,8 @@ export const useAppContext = () => {
 
 function App() {
   const wsRef = useRef<WebSocket | null>(null);
-  const uri = "ws://192.168.1.106:9000";
-  //const uri = "ws://localhost:9000";
+  const uri = "ws://192.168.1.106:9000"; //<- Whenever you push uncomment this line and comment the one below
+  //const uri = "ws://localhost:9000"; //<- For local testing only, comment this out before pushing
   const [wsReady, setWsReady] = useState(false);
   const [currFlightMode, setCurrFlightMode] = useState<FlightMode>('.....');
 

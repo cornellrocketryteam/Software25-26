@@ -36,7 +36,7 @@ const labelMap: { [key: string]: [string, string] } = {
     "Solenoid Valve 2": ["OPEN",      "CLOSE"],
     "Ball Valve":       ["OPEN",      "CLOSE"],
     "MAV":              ["OPEN",      "CLOSE"],
-    "Quick Disconnect": ["EXTEND",      "RETRACT"],
+    "Quick Disconnect": ["RETRACT",      "EXTEND"],
   };
   
   const stateMap: { [key: string]: [string, string] } = {
