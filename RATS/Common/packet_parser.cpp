@@ -52,20 +52,15 @@ void PacketParser::radioPacketToJSON(const RadioPacket& packet, char* json_buffe
         "\"s_acc\":%u,\"head_acc\":%u,"
         "\"fix_type\":%u,"
         "\"head_mot\":%d,"
-        "\"blims_motor_position\":%.4f,"
+        "\"blims_brakeline_diff\":%.4f,"
         "\"blims_phase_id\":%d,"
         "\"blims_pid_p\":%.4f,\"blims_pid_i\":%.4f,"
         "\"blims_bearing\":%.4f,"
-        "\"blims_loiter_step\":%d,"
-        "\"blims_heading_des\":%.4f,"
-        "\"blims_heading_error\":%.4f,"
-        "\"blims_error_integral\":%.4f,"
-        "\"blims_dist_to_target_m\":%.4f,"
-        "\"blims_target_lat\":%.6f,"
-        "\"blims_target_lon\":%.6f,"
+        "\"blims_upwind_lat\":%.6f,"
+        "\"blims_upwind_lon\":%.6f,"
+        "\"blims_downwind_lat\":%.6f,"
+        "\"blims_downwind_lon\":%.6f,"
         "\"blims_wind_from_deg\":%.4f,"
-        "\"blims_downwind\":%.4f,"
-        "\"blims_upwind\":%.4f,"
         "\"ms_since_boot_cfc\":%u"
         "}",
         packet.sync_word,
@@ -87,15 +82,11 @@ void PacketParser::radioPacketToJSON(const RadioPacket& packet, char* json_buffe
         packet.vel_n, packet.vel_e, packet.vel_d, packet.g_speed,
         packet.s_acc, packet.head_acc, packet.fix_type,
         packet.head_mot,
-        packet.blims_motor_position, packet.blims_phase_id,
+        packet.blims_brakeline_diff, packet.blims_phase_id,
         packet.blims_pid_p, packet.blims_pid_i, packet.blims_bearing,
-        packet.blims_loiter_step,
-        packet.blims_heading_des, packet.blims_heading_error,
-        packet.blims_error_integral, packet.blims_dist_to_target_m,
-        packet.blims_target_lat, packet.blims_target_lon,
+        packet.blims_upwind_lat, packet.blims_upwind_lon,
+        packet.blims_downwind_lat, packet.blims_downwind_lon,
         packet.blims_wind_from_deg,
-        packet.blims_downwind,
-        packet.blims_upwind,
         packet.ms_since_boot_cfc
     );
 }

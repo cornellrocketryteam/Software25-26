@@ -87,7 +87,7 @@ void PacketSimulator::generateRadioPacket(RadioPacket& packet) {
     packet.pt3 = 800.0f + 50.0f * sinf(t * 0.1f);
     packet.pt4 = 750.0f + 30.0f * cosf(t * 0.1f);
     packet.rtd = 25.0f + 2.0f * sinf(t * 0.05f);
-    packet.blims_motor_position = (current_mode == MAIN_DEPLOYED) ? 2.5f : 0.0f;
+    packet.blims_brakeline_diff = (current_mode == MAIN_DEPLOYED) ? 2.5f : 0.0f;
 }
 
 void PacketSimulator::serializeRadioPacket(const RadioPacket& packet, uint8_t* buffer) {

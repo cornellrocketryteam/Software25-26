@@ -68,10 +68,8 @@ bool SDLogger::init() {
         "cmd_n1,cmd_n2,cmd_n3,cmd_n4,cmd_a1,cmd_a2,cmd_a3,"
         "airbrake_deployment,predicted_apogee,"
         "h_acc,v_acc,vel_n,vel_e,vel_d,g_speed,s_acc,head_acc,fix_type,head_mot,"
-        "blims_motor_position,blims_phase_id,blims_pid_p,blims_pid_i,blims_bearing,"
-        "blims_loiter_step,blims_heading_des,blims_heading_error,blims_error_integral,"
-        "blims_dist_to_target_m,blims_target_lat,blims_target_lon,blims_wind_from_deg,"
-        "blims_downwind,blims_upwind,"
+        "blims_brakeline_diff,blims_phase_id,blims_pid_p,blims_pid_i,blims_bearing,"
+        "blims_upwind_lat,blims_upwind_lon,blims_downwind_lat,blims_downwind_lon,blims_wind_from_deg,"
         "ms_since_boot_cfc\n";
 
     if (!writeString(header)) {
@@ -111,9 +109,7 @@ bool SDLogger::logPacket(const RadioPacket& packet) {
         "%.3f,%.3f,"                                      // airbrake_deployment, predicted_apogee
         "%lu,%lu,%.6f,%.6f,%.6f,%.6f,%lu,%lu,%u,%ld,"   // advanced GPS
         "%.3f,%d,%.6f,%.6f,%.3f,"                       // blims motor/phase/pid/bearing
-        "%d,%.3f,%.3f,%.6f,"                            // blims loiter/heading/err/integral
-        "%.3f,%.6f,%.6f,%.3f,"                          // blims dist/target/wind
-        "%.4f,%.4f,"                                    // blims_downwind, blims_upwind
+        "%.6f,%.6f,%.6f,%.6f,%.3f,"                     // blims lat/lon config
         "%lu\n",                                        // ms_since_boot_cfc
         (unsigned long)packet.sync_word,
         (unsigned long)packet.flight_mode,
@@ -144,20 +140,15 @@ bool SDLogger::logPacket(const RadioPacket& packet) {
         (unsigned long)packet.head_acc,
         packet.fix_type,
         (long)packet.head_mot,
-        packet.blims_motor_position,
+        packet.blims_brakeline_diff,
         (int)packet.blims_phase_id,
         packet.blims_pid_p, packet.blims_pid_i,
         packet.blims_bearing,
-        (int)packet.blims_loiter_step,
-        packet.blims_heading_des,
-        packet.blims_heading_error,
-        packet.blims_error_integral,
-        packet.blims_dist_to_target_m,
-        packet.blims_target_lat,
-        packet.blims_target_lon,
+        packet.blims_upwind_lat,
+        packet.blims_upwind_lon,
+        packet.blims_downwind_lat,
+        packet.blims_downwind_lon,
         packet.blims_wind_from_deg,
-        packet.blims_downwind,
-        packet.blims_upwind,
         (unsigned long)packet.ms_since_boot_cfc
     );
 
