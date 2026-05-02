@@ -64,6 +64,8 @@ void PacketParser::radioPacketToJSON(const RadioPacket& packet, char* json_buffe
         "\"blims_target_lat\":%.6f,"
         "\"blims_target_lon\":%.6f,"
         "\"blims_wind_from_deg\":%.4f,"
+        "\"blims_downwind\":%.4f,"
+        "\"blims_upwind\":%.4f,"
         "\"ms_since_boot_cfc\":%u"
         "}",
         packet.sync_word,
@@ -92,6 +94,8 @@ void PacketParser::radioPacketToJSON(const RadioPacket& packet, char* json_buffe
         packet.blims_error_integral, packet.blims_dist_to_target_m,
         packet.blims_target_lat, packet.blims_target_lon,
         packet.blims_wind_from_deg,
+        packet.blims_downwind,
+        packet.blims_upwind,
         packet.ms_since_boot_cfc
     );
 }

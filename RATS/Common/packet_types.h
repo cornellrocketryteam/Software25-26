@@ -13,8 +13,8 @@ enum FlightMode {
     FAULT = 5
 };
 
-// Full Radio Packet Structure (206 bytes)
-// 4 byte sync word + 202 byte payload from Rust
+// Full Radio Packet Structure (214 bytes)
+// 4 byte sync word + 210 byte payload from Rust
 #pragma pack(push, 1)
 struct RadioPacket {
     // Byte 0-3: Sync word
@@ -103,6 +103,8 @@ struct RadioPacket {
     float blims_target_lat;
     float blims_target_lon;
     float blims_wind_from_deg;
+    float blims_downwind;
+    float blims_upwind;
     
     // monotonic clock: milliseconds since CFC boot
     uint32_t ms_since_boot_cfc;
