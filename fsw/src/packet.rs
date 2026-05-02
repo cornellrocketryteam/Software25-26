@@ -52,8 +52,8 @@ pub struct Packet {
     pub cmd_a1: u8,
     pub cmd_a2: u8,
     pub cmd_a3: u8,
-    // airbrake state (0 = idle, 1 = deployed, 2 = retracted)
-    pub airbrake_state: u8,
+    // airbrake deployment (0.0 = retracted, 1.0 = fully deployed; PWM duty fraction)
+    pub airbrake_deployment: f32,
     // airbrake controller output
     pub predicted_apogee: f32,
     pub h_acc: u32,    // horizontal accuracy (mm)
@@ -92,8 +92,8 @@ impl Packet {
     //               + 1(loiter_step) + 4(heading_des) + 4(heading_error) + 4(error_integral)
     //               + 4(dist_to_target) + 4(target_lat) + 4(target_lon) + 4(wind_from_deg) = 195
     //               + 4(blims_downwind) + 4(blims_upwind) = 203
-    // + 4(ms_since_boot_cfc) = 207
-    pub const SIZE: usize = 207;
+    //               + airbrake_state u8→f32 (+3) + 4(ms_since_boot_cfc) = 210
+    pub const SIZE: usize = 210;
 
     pub fn to_bytes(&self) -> [u8; Self::SIZE] {
         let mut data = [0u8; Self::SIZE];
@@ -128,34 +128,34 @@ impl Packet {
         data[88] = self.cmd_a1;
         data[89] = self.cmd_a2;
         data[90] = self.cmd_a3;
-        data[91] = self.airbrake_state;
-        data[92..96].copy_from_slice(&self.predicted_apogee.to_le_bytes());
-        data[96..100].copy_from_slice(&self.h_acc.to_le_bytes());
-        data[100..104].copy_from_slice(&self.v_acc.to_le_bytes());
-        data[104..112].copy_from_slice(&self.vel_n.to_le_bytes());
-        data[112..120].copy_from_slice(&self.vel_e.to_le_bytes());
-        data[120..128].copy_from_slice(&self.vel_d.to_le_bytes());
-        data[128..136].copy_from_slice(&self.g_speed.to_le_bytes());
-        data[136..140].copy_from_slice(&self.s_acc.to_le_bytes());
-        data[140..144].copy_from_slice(&self.head_acc.to_le_bytes());
-        data[144] = self.fix_type;
-        data[145..149].copy_from_slice(&self.head_mot.to_le_bytes());
-        data[149..153].copy_from_slice(&self.blims_motor_position.to_le_bytes());
-        data[153] = self.blims_phase_id as u8;
-        data[154..158].copy_from_slice(&self.blims_pid_p.to_le_bytes());
-        data[158..162].copy_from_slice(&self.blims_pid_i.to_le_bytes());
-        data[162..166].copy_from_slice(&self.blims_bearing.to_le_bytes());
-        data[166] = self.blims_loiter_step as u8;
-        data[167..171].copy_from_slice(&self.blims_heading_des.to_le_bytes());
-        data[171..175].copy_from_slice(&self.blims_heading_error.to_le_bytes());
-        data[175..179].copy_from_slice(&self.blims_error_integral.to_le_bytes());
-        data[179..183].copy_from_slice(&self.blims_dist_to_target_m.to_le_bytes());
-        data[183..187].copy_from_slice(&self.blims_target_lat.to_le_bytes());
-        data[187..191].copy_from_slice(&self.blims_target_lon.to_le_bytes());
-        data[191..195].copy_from_slice(&self.blims_wind_from_deg.to_le_bytes());
-        data[195..199].copy_from_slice(&self.blims_downwind.to_le_bytes());
-        data[199..203].copy_from_slice(&self.blims_upwind.to_le_bytes());
-        data[203..207].copy_from_slice(&self.ms_since_boot_cfc.to_le_bytes());
+        data[91..95].copy_from_slice(&self.airbrake_deployment.to_le_bytes());
+        data[95..99].copy_from_slice(&self.predicted_apogee.to_le_bytes());
+        data[99..103].copy_from_slice(&self.h_acc.to_le_bytes());
+        data[103..107].copy_from_slice(&self.v_acc.to_le_bytes());
+        data[107..115].copy_from_slice(&self.vel_n.to_le_bytes());
+        data[115..123].copy_from_slice(&self.vel_e.to_le_bytes());
+        data[123..131].copy_from_slice(&self.vel_d.to_le_bytes());
+        data[131..139].copy_from_slice(&self.g_speed.to_le_bytes());
+        data[139..143].copy_from_slice(&self.s_acc.to_le_bytes());
+        data[143..147].copy_from_slice(&self.head_acc.to_le_bytes());
+        data[147] = self.fix_type;
+        data[148..152].copy_from_slice(&self.head_mot.to_le_bytes());
+        data[152..156].copy_from_slice(&self.blims_motor_position.to_le_bytes());
+        data[156] = self.blims_phase_id as u8;
+        data[157..161].copy_from_slice(&self.blims_pid_p.to_le_bytes());
+        data[161..165].copy_from_slice(&self.blims_pid_i.to_le_bytes());
+        data[165..169].copy_from_slice(&self.blims_bearing.to_le_bytes());
+        data[169] = self.blims_loiter_step as u8;
+        data[170..174].copy_from_slice(&self.blims_heading_des.to_le_bytes());
+        data[174..178].copy_from_slice(&self.blims_heading_error.to_le_bytes());
+        data[178..182].copy_from_slice(&self.blims_error_integral.to_le_bytes());
+        data[182..186].copy_from_slice(&self.blims_dist_to_target_m.to_le_bytes());
+        data[186..190].copy_from_slice(&self.blims_target_lat.to_le_bytes());
+        data[190..194].copy_from_slice(&self.blims_target_lon.to_le_bytes());
+        data[194..198].copy_from_slice(&self.blims_wind_from_deg.to_le_bytes());
+        data[198..202].copy_from_slice(&self.blims_downwind.to_le_bytes());
+        data[202..206].copy_from_slice(&self.blims_upwind.to_le_bytes());
+        data[206..210].copy_from_slice(&self.ms_since_boot_cfc.to_le_bytes());
         data
     }
 
@@ -196,38 +196,38 @@ impl Packet {
             cmd_a1: bytes[88],
             cmd_a2: bytes[89],
             cmd_a3: bytes[90],
-            airbrake_state: bytes[91],
-            predicted_apogee: f32::from_le_bytes(bytes[92..96].try_into().unwrap()),
-            h_acc:     u32::from_le_bytes(bytes[96..100].try_into().unwrap()),
-            v_acc:     u32::from_le_bytes(bytes[100..104].try_into().unwrap()),
-            vel_n:     f64::from_le_bytes(bytes[104..112].try_into().unwrap()),
-            vel_e:     f64::from_le_bytes(bytes[112..120].try_into().unwrap()),
-            vel_d:     f64::from_le_bytes(bytes[120..128].try_into().unwrap()),
-            g_speed:   f64::from_le_bytes(bytes[128..136].try_into().unwrap()),
-            s_acc:     u32::from_le_bytes(bytes[136..140].try_into().unwrap()),
-            head_acc:  u32::from_le_bytes(bytes[140..144].try_into().unwrap()),
-            fix_type:  bytes[144],
-            head_mot:  i32::from_le_bytes(bytes[145..149].try_into().unwrap()),
-            blims_motor_position:   f32::from_le_bytes(bytes[149..153].try_into().unwrap()),
-            blims_phase_id:         bytes[153] as i8,
-            blims_pid_p:            f32::from_le_bytes(bytes[154..158].try_into().unwrap()),
-            blims_pid_i:            f32::from_le_bytes(bytes[158..162].try_into().unwrap()),
-            blims_bearing:          f32::from_le_bytes(bytes[162..166].try_into().unwrap()),
-            blims_loiter_step:      bytes[166] as i8,
-            blims_heading_des:      f32::from_le_bytes(bytes[167..171].try_into().unwrap()),
-            blims_heading_error:    f32::from_le_bytes(bytes[171..175].try_into().unwrap()),
-            blims_error_integral:   f32::from_le_bytes(bytes[175..179].try_into().unwrap()),
-            blims_dist_to_target_m: f32::from_le_bytes(bytes[179..183].try_into().unwrap()),
-            blims_target_lat:       f32::from_le_bytes(bytes[183..187].try_into().unwrap()),
-            blims_target_lon:       f32::from_le_bytes(bytes[187..191].try_into().unwrap()),
-            blims_wind_from_deg:    f32::from_le_bytes(bytes[191..195].try_into().unwrap()),
-            blims_downwind:         f32::from_le_bytes(bytes[195..199].try_into().unwrap()),
-            blims_upwind:           f32::from_le_bytes(bytes[199..203].try_into().unwrap()),
-            ms_since_boot_cfc:      u32::from_le_bytes(bytes[203..207].try_into().unwrap()),
+            airbrake_deployment: f32::from_le_bytes(bytes[91..95].try_into().unwrap()),
+            predicted_apogee: f32::from_le_bytes(bytes[95..99].try_into().unwrap()),
+            h_acc:     u32::from_le_bytes(bytes[99..103].try_into().unwrap()),
+            v_acc:     u32::from_le_bytes(bytes[103..107].try_into().unwrap()),
+            vel_n:     f64::from_le_bytes(bytes[107..115].try_into().unwrap()),
+            vel_e:     f64::from_le_bytes(bytes[115..123].try_into().unwrap()),
+            vel_d:     f64::from_le_bytes(bytes[123..131].try_into().unwrap()),
+            g_speed:   f64::from_le_bytes(bytes[131..139].try_into().unwrap()),
+            s_acc:     u32::from_le_bytes(bytes[139..143].try_into().unwrap()),
+            head_acc:  u32::from_le_bytes(bytes[143..147].try_into().unwrap()),
+            fix_type:  bytes[147],
+            head_mot:  i32::from_le_bytes(bytes[148..152].try_into().unwrap()),
+            blims_motor_position:   f32::from_le_bytes(bytes[152..156].try_into().unwrap()),
+            blims_phase_id:         bytes[156] as i8,
+            blims_pid_p:            f32::from_le_bytes(bytes[157..161].try_into().unwrap()),
+            blims_pid_i:            f32::from_le_bytes(bytes[161..165].try_into().unwrap()),
+            blims_bearing:          f32::from_le_bytes(bytes[165..169].try_into().unwrap()),
+            blims_loiter_step:      bytes[169] as i8,
+            blims_heading_des:      f32::from_le_bytes(bytes[170..174].try_into().unwrap()),
+            blims_heading_error:    f32::from_le_bytes(bytes[174..178].try_into().unwrap()),
+            blims_error_integral:   f32::from_le_bytes(bytes[178..182].try_into().unwrap()),
+            blims_dist_to_target_m: f32::from_le_bytes(bytes[182..186].try_into().unwrap()),
+            blims_target_lat:       f32::from_le_bytes(bytes[186..190].try_into().unwrap()),
+            blims_target_lon:       f32::from_le_bytes(bytes[190..194].try_into().unwrap()),
+            blims_wind_from_deg:    f32::from_le_bytes(bytes[194..198].try_into().unwrap()),
+            blims_downwind:         f32::from_le_bytes(bytes[198..202].try_into().unwrap()),
+            blims_upwind:           f32::from_le_bytes(bytes[202..206].try_into().unwrap()),
+            ms_since_boot_cfc:      u32::from_le_bytes(bytes[206..210].try_into().unwrap()),
         }
     }
 
-    pub const CSV_HEADER: &'static str = "flight_mode,pressure,temp,altitude,latitude,longitude,num_satellites,timestamp,mag_x,mag_y,mag_z,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,pt3,pt4,rtd,sv_open,mav_open,ssa_drogue_deployed,ssa_main_deployed,cmd_n1,cmd_n2,cmd_n3,cmd_n4,cmd_a1,cmd_a2,cmd_a3,airbrake_state,predicted_apogee,h_acc,v_acc,vel_n,vel_e,vel_d,g_speed,s_acc,head_acc,fix_type,head_mot,blims_motor_position,blims_phase_id,blims_pid_p,blims_pid_i,blims_bearing,blims_loiter_step,blims_heading_des,blims_heading_error,blims_error_integral,blims_dist_to_target_m,blims_target_lat,blims_target_lon,blims_wind_from_deg,blims_downwind,blims_upwind,ms_since_boot_cfc\n";
+    pub const CSV_HEADER: &'static str = "flight_mode,pressure,temp,altitude,latitude,longitude,num_satellites,timestamp,mag_x,mag_y,mag_z,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,pt3,pt4,rtd,sv_open,mav_open,ssa_drogue_deployed,ssa_main_deployed,cmd_n1,cmd_n2,cmd_n3,cmd_n4,cmd_a1,cmd_a2,cmd_a3,airbrake_deployment,predicted_apogee,h_acc,v_acc,vel_n,vel_e,vel_d,g_speed,s_acc,head_acc,fix_type,head_mot,blims_motor_position,blims_phase_id,blims_pid_p,blims_pid_i,blims_bearing,blims_loiter_step,blims_heading_des,blims_heading_error,blims_error_integral,blims_dist_to_target_m,blims_target_lat,blims_target_lon,blims_wind_from_deg,blims_downwind,blims_upwind,ms_since_boot_cfc\n";
 
     pub fn to_csv(&self, buf: &mut [u8]) -> usize {
         use core::fmt::Write;
@@ -266,7 +266,7 @@ impl Packet {
             self.cmd_a1,
             self.cmd_a2,
             self.cmd_a3,
-            self.airbrake_state,
+            self.airbrake_deployment,
             self.predicted_apogee,
             self.h_acc,
             self.v_acc,
