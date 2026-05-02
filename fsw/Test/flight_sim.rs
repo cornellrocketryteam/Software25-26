@@ -96,8 +96,8 @@ pub async fn simulate_flight_simple(flight_loop: &mut FlightLoop) {
             // Simulate MAV Close when passing 1000m (Ascent -> Coast)
             if !mav_close_simulated && flight_loop.get_altitude() > constants::ARMING_ALTITUDE {
                 log::info!("[SIM] Simulating MAV/SV Close at {:.2}m", alt);
-                flight_loop.set_mav_open(false);
-                flight_loop.set_sv_open(false);
+                //flight_loop.set_mav_open(false);
+                //flight_loop.set_sv_open(false);
                 mav_close_simulated = true;
 
                 // The next cycle check_transitions move to Coast
@@ -677,67 +677,120 @@ pub async fn simulate_real_flight(flight_loop: &mut FlightLoop) {
     flight_loop.sim_key_armed_override = None;
 }
 
-// Runs BLiMS parafoil guidance hardware against real GPS with the L3 Launch 4
-// real descent altitude profile (~2000 ft → ~58 ft AGL, 3072 samples at 20 Hz).
+// Mirrors the car_test.rs pattern: real GPS + simulated altitude descent.
 //
-// Each cycle explicitly:
-//   1. Reads live sensors (real GPS lat/lon/heading, IMU)
-//   2. Injects descent altitude directly into the packet (no execute() indirection)
-//   3. Calls check_transitions() — this is where blims.execute() is called in
-//      the MainDeployed branch, which sets the ODrive PWM and moves the motor
-//   4. Transmits telemetry and logs to flash
+// Each 20 Hz cycle:
+//   1. Read live GPS via read_sensors() (lat/lon/heading/velocity)
+//   2. Pack BlimsDataIn directly (altitude counts down 2000 -> 0 ft)
+//   3. Call flight_loop.blims_execute() — drives ODrive PWM directly
+//   4. Log CSV: lat,lon,target_lat,target_lon,heading,bearing,motor_pos,
+//               timestamp_ms,P,I,phase,altitude_ft
 //
-// Prerequisites before calling:
-//   flight_loop.set_blims(blims);
-//   flight_loop.set_blims_target(lat, lon);
+// Prerequisites (done in main.rs sim_blims block):
+//   blims.set_upwind_target / set_downwind_target / set_wind_from_deg
+//   flight_loop.set_blims(blims)
 //
 // Flash with:  cargo build --release --features sim_blims
 pub async fn simulate_blims_descent(flight_loop: &mut FlightLoop) {
-    use blims::sim_data::{DESCENT_ALT_FT, DESCENT_DATA_SIZE};
+    use blims::blims_state::BlimsDataIn;
+    use core::fmt::Write as FmtWrite;
 
-    log::info!("\n--- STARTING BLiMS DESCENT SIMULATION ---");
-    log::info!("Real GPS + L3 Launch 4 descent profile ({} samples @ 20 Hz)", DESCENT_DATA_SIZE);
-    log::info!("BLiMS motor active ~2000 ft → ~58 ft AGL");
+    // 4000 cycles @ 20 Hz = 200 s; 2000 ft -> 0 ft at 0.5 ft/cycle.
+    // Phase schedule: InitialHold (0-9s), Upwind (>1000ft), Downwind (200-1000ft), Neutral (<200ft)
+    const N_CYCLES: usize = 4000;
+    const ALT_START_FT: f32 = 2000.0;
+    const ALT_STEP_FT:  f32 = ALT_START_FT / N_CYCLES as f32;
 
-    // Force into MainDeployed for the whole run so check_transitions always
-    // reaches the BLiMS branch.
-    flight_loop.set_flight_mode(FlightMode::MainDeployed);
-    flight_loop.main_chutes_deployed = true;
+    let target_lat = constants::BLIMS_TARGET_LAT;
+    let target_lon = constants::BLIMS_TARGET_LON;
 
-    for (i, &alt_ft) in DESCENT_ALT_FT.iter().enumerate() {
-        // 1. Read real hardware: GPS provides live lat/lon/heading/velocity for BLiMS.
+    log::info!("# ================================================");
+    log::info!("# BLiMS Descent Simulation (car_test pattern)");
+    log::info!("# Real GPS + 2000->0 ft simulated altitude");
+    log::info!("# Cycles: {} @ 20 Hz = {} s", N_CYCLES, N_CYCLES / 20);
+    log::info!("# CSV: lat,lon,target_lat,target_lon,heading,bearing,motor_pos,timestamp_ms,P,I,phase,altitude_ft");
+    log::info!("# ================================================");
+    log::info!("# Waiting for GPS fix...");
+
+    let mut last_phase_id: i8 = -1;
+
+    for i in 0..N_CYCLES {
+        let cycle_start = embassy_time::Instant::now();
+
+        // 1. Read live GPS / IMU
         flight_loop.flight_state.read_sensors().await;
 
-        // 2. Inject simulated altitude directly — feet → meters, force VALID so
-        //    check_transitions doesn't abort to Fault on a missing barometer.
-        flight_loop.flight_state.packet.altitude = alt_ft / 3.28084_f32;
-        flight_loop.flight_state.altimeter_state = SensorState::VALID;
+        let alt_ft = ALT_START_FT - (i as f32 * ALT_STEP_FT);
 
-        // 3. Run check_transitions. In MainDeployed mode this calls blims.execute()
-        //    which computes the motor command and writes it to the ODrive PWM pin.
-        flight_loop.check_transitions().await;
-
-        // 4. Transmit telemetry over radio + USB and write to flash.
-        flight_loop.flight_state.transmit().await;
-        flight_loop.flight_state.save_packet_to_flash(false).await;
-
-        if i % 20 == 0 {
+        // 2. Pack BlimsDataIn — copy all fields out of p so the borrow ends
+        //    before blims_execute() takes &mut flight_loop.
+        let data_in = {
             let p = &flight_loop.flight_state.packet;
-            log::info!(
-                "[BLIMS SIM] i={:4}  alt={:.1}ft  motor={:.4}  phase={}  bearing={:.1}  dist={:.1}m",
-                i,
-                alt_ft,
-                p.blims_motor_position,
-                p.blims_phase_id,
-                p.blims_bearing,
-                p.blims_dist_to_target_m,
-            );
+            BlimsDataIn {
+                lat:         (p.latitude  * 1e7_f32) as i32,
+                lon:         (p.longitude * 1e7_f32) as i32,
+                altitude_ft: alt_ft,
+                fix_type:    p.fix_type,
+                gps_state:   p.num_satellites > 0,
+                head_mot:    p.head_mot,
+                vel_n:       p.vel_n as i32,
+                vel_e:       p.vel_e as i32,
+                vel_d:       p.vel_d as i32,
+                g_speed:     p.g_speed as i32,
+                h_acc:       p.h_acc,
+                v_acc:       p.v_acc,
+                s_acc:       p.s_acc,
+                head_acc:    p.head_acc,
+            }
+        };
+        // Also copy the logging fields we need after execute()
+        let lat_log     = flight_loop.flight_state.packet.latitude;
+        let lon_log     = flight_loop.flight_state.packet.longitude;
+        let head_log    = flight_loop.flight_state.packet.head_mot;
+        let fix_log     = flight_loop.flight_state.packet.fix_type;
+
+        // 3. Run BLiMS controller directly — drives ODrive PWM
+        if let Some(out) = flight_loop.blims_execute(&data_in) {
+            if out.phase_id != last_phase_id {
+                log::info!("# PHASE: {} (alt={:.1} ft)", out.phase_id, alt_ft);
+                last_phase_id = out.phase_id;
+            }
+
+            if fix_log >= 2 {
+                let heading_deg = head_log as f32 * 1e-5;
+                let now_ms = embassy_time::Instant::now().as_millis();
+                let mut row: heapless::String<192> = heapless::String::new();
+                let _ = write!(
+                    row,
+                    "{:.7},{:.7},{:.6},{:.6},{:.5},{:.5},{:.4},{},{:.6},{:.6},{},{:.2}",
+                    lat_log, lon_log,
+                    target_lat, target_lon,
+                    heading_deg,
+                    out.bearing,
+                    out.brakeline_diff_in,
+                    now_ms,
+                    out.pid_p, out.pid_i,
+                    out.phase_id,
+                    alt_ft,
+                );
+                log::info!("{}", row.as_str());
+            } else if i % 20 == 0 {
+                log::info!("# No fix (fix_type={})", fix_log);
+            }
         }
 
-        Timer::after_millis(constants::MAIN_LOOP_DELAY_MS).await;
+        // 4. Cycle timing
+        let elapsed_ms = cycle_start.elapsed().as_millis();
+        if elapsed_ms < constants::MAIN_LOOP_DELAY_MS {
+            Timer::after_millis(constants::MAIN_LOOP_DELAY_MS - elapsed_ms).await;
+        } else {
+            log::warn!("# WARN: sim_blims cycle overrun {} ms", elapsed_ms);
+        }
     }
 
-    log::info!("\n--- BLiMS DESCENT SIMULATION COMPLETE ({} cycles) ---", DESCENT_DATA_SIZE);
+    log::info!("# ================================================");
+    log::info!("# BLiMS Simulation complete ({} cycles)", N_CYCLES);
+    log::info!("# ================================================");
 }
 
 // Verifies the exact 4-stage launch sequence and apogee override

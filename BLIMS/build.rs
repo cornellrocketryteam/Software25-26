@@ -12,7 +12,6 @@ fn main() {
     println!("cargo:rustc-link-search={}", out.display());
     println!("cargo:rerun-if-changed=memory.x");
 
-    println!("cargo:rustc-link-arg=--nmagic");
-    println!("cargo:rustc-link-arg=-Tlink.x");
-    println!("cargo:rustc-link-arg=-Tdefmt.x");
+    // REMOVED: --nmagic, -Tlink.x, -Tdefmt.x
+    // embassy-rp already emits these
 }

@@ -120,9 +120,16 @@ pub const LAUNCH_ACCEL_Y_THRESHOLD_G: f32 = 4.0;
 /// 1 g in m/s² (LSM6DSOX accel is in m/s²).
 pub const G_TO_MS2: f32 = 9.80665;
 
-/// L3: BLiMS landing-zone target (degrees). Hard-coded; no ground command.
+/// L3: BLiMS landing-zone targets (degrees). Hard-coded; no ground command.
+/// Both upwind and downwind phases aim for the same landing zone.
 pub const BLIMS_TARGET_LAT: f32 = 42.446610;
 pub const BLIMS_TARGET_LON: f32 = -76.461304;
+pub const BLIMS_UPWIND_LAT: f32 = BLIMS_TARGET_LAT;
+pub const BLIMS_UPWIND_LON: f32 = BLIMS_TARGET_LON;
+pub const BLIMS_DOWNWIND_LAT: f32 = BLIMS_TARGET_LAT;
+pub const BLIMS_DOWNWIND_LON: f32 = BLIMS_TARGET_LON;
+/// Surface wind direction (degrees FROM, 0=N, 90=E). Used when no altitude profile is set.
+pub const BLIMS_WIND_FROM_DEG: f32 = 45.0;
 
 pub const MAIN_LOG_TIMEOUT_MS: u64 = 1_200_000; // 20 minutes
 

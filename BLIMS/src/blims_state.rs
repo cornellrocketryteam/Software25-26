@@ -1,3 +1,13 @@
+// MVP BLIMS states
+
+// Phases: 
+// 0 = Held (GPS Invalid, pre-activation)
+// 1 = Initial Hold (GPS valid, 10 sec. for canopy to stabilize)
+// 2 = Upwind (head INTO wind - wind_from direction)
+// 3 = Downwind (head WITH wind - wind_from + 180 degrees)
+// 4 = Neutral (below ALT_NEUTRAL_FT, hands-off))
+
+
 use crate::blims_constants::*;
 
 // ============================================================================
@@ -8,28 +18,16 @@ use crate::blims_constants::*;
 #[repr(i8)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Phase {
-    Held     = 0,
-    Track    = 1,
-    Downwind = 2,
-    Base     = 3,
-    Final    = 4,
-    Neutral  = 5,
-    Loiter   = 6,
-}
-
-/// Sub-state within the Loiter phase.
-#[repr(i8)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum LoiterStep {
-    TurnRight  = 0,
-    PauseRight = 1,
-    TurnLeft   = 2,
-    PauseLeft  = 3,
+    Held     = 0, // no GPS lock/BLIMS not yet activated by FSW - motor holds neutral, no PI controller actuation
+    InitialHold = 1, // GPS valid, 10 sec. for canopy to stabilize
+    Upwind    = 2, // altitude above ALT_UPWIND_FT - observe parafoil response to a controlled heading hold, stabilize canopy after deployment
+    Downwind = 3, // altitude between ALT_NEUTRAL_FT and ALT_UPWIND_FT - head with wind toward target, observe turn-reversal dynamics
+    Neutral   = 4, // altitude below ALT_NEUTRAL_FT - motor returns to neutral 
 }
 
 /// Sensor data passed into Blims::execute() every cycle.
 /// All GPS fields come directly from the u-blox UBX-NAV-PVT message.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct BlimsDataIn {
     // Position
     pub lon: i32, // Longitude  × 1e7
@@ -39,8 +37,8 @@ pub struct BlimsDataIn {
     pub altitude_ft: f32, // Altitude AGL in feet
 
     // Accuracy estimates
-    pub h_acc: u32, // Horizontal accuracy  (mm)
-    pub v_acc: u32, // Vertical accuracy    (mm)
+    pub h_acc: u32, // Horizontal acceleration (m/s)
+    pub v_acc: u32, // Vertical acceleration    (mm)
 
     // Velocity
     pub vel_n: i32, // North velocity (mm/s)
@@ -52,8 +50,8 @@ pub struct BlimsDataIn {
     pub head_mot: i32, // Heading of motion × 1e5 (degrees)
 
     // Accuracy estimates
-    pub s_acc:    u32, // Speed accuracy   (mm/s)
-    pub head_acc: u32, // Heading accuracy × 1e5 (degrees)
+    pub s_acc:    u32, // Speed acceleration   (mm/s)
+    pub head_acc: u32, // Heading acceleration × 1e5 (degrees)
 
     // GPS status
     pub fix_type:  u8,   // 0=none, 2=2D, 3=3D, 4=3D+DGPS
@@ -63,16 +61,14 @@ pub struct BlimsDataIn {
 /// Control outputs returned from Blims::execute() every cycle.
 #[derive(Clone, Copy, Default, Debug)]
 pub struct BlimsDataOut {
-    pub motor_position: f32,    // 0.3–0.7; 0.5 = neutral
-    pub pid_p: f32,
-    pub pid_i: f32,
-    pub bearing: f32,           // bearing to target, degrees [0, 360)
-    pub phase_id: i8,           // Phase as integer (0–6)
-    pub loiter_step: i8,        // LoiterStep as integer (0–3); 0 outside Loiter
-    pub heading_des: f32,       // desired heading, degrees [0, 360)
-    pub heading_error: f32,     // error in (−180, 180]
-    pub error_integral: f32,    // PI integral accumulator
-    pub dist_to_target_m: f32,  // distance to landing target, metres
+    ///// String differential in inches; range [MOTOR_MIN, MOTOR_MAX] = [−6, +6].
+    /// Positive = right brake pulled; negative = left brake pulled.
+    /// 0.0 = neutral (both lines equal).
+    pub brakeline_diff_in: f32, 
+    pub pid_p: f32, //degrees of error × KP
+    pub pid_i: f32, // degrees * s x Ki
+    pub bearing: f32,    // bearing to target, degrees [0, 360)
+    pub phase_id: i8,    // Phase as integer (0–3)
 }
 
 // ============================================================================
@@ -105,7 +101,7 @@ pub struct BLIMSDataIn {
 
 #[derive(Clone, Copy, Default, Debug)]
 pub struct BLIMSDataOut {
-    pub motor_position: f32,
+    pub brakeline_diff_in: f32,
     pub pid_p:          f32,
     pub pid_i:          f32,
     pub bearing:        f32,
@@ -119,7 +115,7 @@ pub struct Flight {
     pub blims_enable_pin: u8,
     pub blims_init:       bool,
     pub flight_mode:      BLIMSMode,
-    pub motor_position:   f32,
+    pub brakeline_diff_in:   f32,
     pub data_out:         BLIMSDataOut,
     pub gps_lon:          f32,
     pub gps_lat:          f32,
@@ -146,7 +142,7 @@ impl Default for Flight {
             blims_enable_pin: 0,
             blims_init:       false,
             flight_mode:      BLIMSMode::STANDBY,
-            motor_position:   0.0,
+            brakeline_diff_in:   0.0,
             data_out:         BLIMSDataOut::default(),
             gps_lon:          0.0,
             gps_lat:          0.0,

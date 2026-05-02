@@ -230,26 +230,17 @@ async fn main(spawner: Spawner) {
         #[cfg(feature = "sim_blims")]
         {
             log::info!("Starting BLiMS Descent Simulation...");
-            flight_loop.set_blims(blims);
-
-            // Pick a pseudo-random landing-zone target within ~500 m of the base
-            // coordinates each run. LCG seeded from boot time so it varies.
-            const BASE_LAT: f32 = 42.446610;
-            const BASE_LON: f32 = -76.461304;
-            let seed = Instant::now().as_millis() as u32;
-            let r1 = 1664525_u32.wrapping_mul(seed).wrapping_add(1013904223);
-            let r2 = 1664525_u32.wrapping_mul(r1).wrapping_add(1013904223);
-            // Map each u32 to [-0.005, +0.005] degrees (~500 m per axis).
-            let lat_off = ((r1 % 1001) as f32 / 1000.0 - 0.5) * 0.01;
-            let lon_off = ((r2 % 1001) as f32 / 1000.0 - 0.5) * 0.01;
-            let target_lat = BASE_LAT + lat_off;
-            let target_lon = BASE_LON + lon_off;
+            let mut b = blims;
+            b.set_upwind_target(constants::BLIMS_UPWIND_LAT, constants::BLIMS_UPWIND_LON);
+            b.set_downwind_target(constants::BLIMS_DOWNWIND_LAT, constants::BLIMS_DOWNWIND_LON);
+            b.set_wind_from_deg(constants::BLIMS_WIND_FROM_DEG);
+            flight_loop.set_blims(b);
             log::info!(
-                "BLiMS random target: lat={:.6} lon={:.6} (offset {:.4},{:.4} deg)",
-                target_lat, target_lon, lat_off, lon_off
+                "BLiMS target: upwind=({:.6},{:.6}) downwind=({:.6},{:.6}) wind_from={:.1}°",
+                constants::BLIMS_UPWIND_LAT, constants::BLIMS_UPWIND_LON,
+                constants::BLIMS_DOWNWIND_LAT, constants::BLIMS_DOWNWIND_LON,
+                constants::BLIMS_WIND_FROM_DEG,
             );
-            flight_loop.set_blims_target(target_lat, target_lon);
-
             flight_sim::simulate_blims_descent(&mut flight_loop).await;
             log::info!("Simulation Complete.");
         }
@@ -661,26 +652,26 @@ async fn main(spawner: Spawner) {
         log::info!("=== BLiMS Motor PWM Test ===");
         log::info!("PIN_34 = ENABLE (going HIGH now)");
         log::info!("PIN_35 = PWM signal (50 Hz)");
-        log::info!("Motor range: 0.3=max left  0.5=neutral  0.7=max right");
+        log::info!("Motor range: -9 in = max left  0 in = neutral  +9 in = max right");
 
         // Blims::new() already drives enable HIGH and parks at neutral.
         let mut b = blims;
 
         let steps: &[(f32, &str)] = &[
-            (0.5, "neutral   (0.5) — 1500 us"),
-            (0.7, "max right (0.7) — 1700 us"),
-            (0.5, "neutral   (0.5) — 1500 us"),
-            (0.3, "max left  (0.3) — 1300 us"),
-            (0.5, "neutral   (0.5) — 1500 us — SAFE END"),
+            ( 0.0, "neutral    (  0 in) — 1500 µs"),
+            ( 3.6, "right      (+3.6in) — 1700 µs"),
+            ( 0.0, "neutral    (  0 in) — 1500 µs"),
+            (-3.6, "left       (-3.6in) — 1300 µs"),
+            ( 0.0, "neutral    (  0 in) — 1500 µs — SAFE END"),
         ];
 
         // Give the ODrive 3 seconds to power up before the first command.
         Timer::after_millis(3000).await;
 
         loop {
-            for &(pos, label) in steps {
+            for &(inches, label) in steps {
                 log::info!("BLiMS: setting motor → {}", label);
-                b.set_motor_raw(pos);
+                b.set_position_inches(inches);
                 led.toggle();
                 Timer::after_millis(5000).await;
             }
