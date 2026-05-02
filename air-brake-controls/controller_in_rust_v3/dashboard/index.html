@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Airbrakes V3 Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Airbrakes V3 <span>Simulator</span></h1>
+            <p>Real-time Closed-Loop Physics Engine</p>
+        </header>
+
+        <main>
+            <div class="panel controls">
+                <h2>Initial Conditions</h2>
+                <div class="slider-group">
+                    <label for="alt">Altitude (m): <span id="alt-val">800</span></label>
+                    <input type="range" id="alt" min="0" max="4000" value="800" step="10">
+                </div>
+                <div class="slider-group">
+                    <label for="vel">Velocity (m/s): <span id="vel-val">240</span></label>
+                    <input type="range" id="vel" min="0" max="500" value="240" step="1">
+                </div>
+                <button id="run-btn">Run Simulation</button>
+            </div>
+
+            <div class="panel stats">
+                <div class="stat-box">
+                    <h3>Target Apogee</h3>
+                    <div class="value">3048.0 <span class="unit">m</span></div>
+                </div>
+                <div class="stat-box">
+                    <h3>Actual Apogee</h3>
+                    <div class="value" id="actual-apogee">-- <span class="unit">m</span></div>
+                </div>
+                <div class="stat-box">
+                    <h3>Error</h3>
+                    <div class="value" id="error-val">-- <span class="unit">m</span></div>
+                </div>
+            </div>
+
+            <div class="panel chart-container">
+                <canvas id="telemetryChart"></canvas>
+            </div>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
