@@ -76,6 +76,8 @@ INSERT INTO telemetry_data (
     blims_target_lat,
     blims_target_lon,
     blims_wind_from_deg,
+    blims_downwind,
+    blims_upwind,
 
     -- Fill Station Specific (Umbilical)
     pt_1_pressure,
@@ -164,6 +166,8 @@ INSERT INTO telemetry_data (
     ${blims_target_lat},
     ${blims_target_lon},
     ${blims_wind_from_deg},
+    ${blims_downwind},
+    ${blims_upwind},
 
     -- Fill Station Specific
     ${pt_1_pressure},

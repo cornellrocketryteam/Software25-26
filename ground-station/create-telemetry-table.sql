@@ -74,6 +74,8 @@ CREATE TABLE telemetry_data (
     blims_target_lat DOUBLE PRECISION,     -- f32
     blims_target_lon DOUBLE PRECISION,     -- f32
     blims_wind_from_deg DOUBLE PRECISION,  -- f32
+    blims_downwind DOUBLE PRECISION,       -- f32
+    blims_upwind DOUBLE PRECISION,         -- f32
 
     -- Fill Station Specific (Umbilical)
     pt_1_pressure DOUBLE PRECISION,    -- Fill Station PT1

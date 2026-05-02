@@ -71,6 +71,8 @@ SELECT
     payload.blims_target_lat as blims_target_lat,
     payload.blims_target_lon as blims_target_lon,
     payload.blims_wind_from_deg as blims_wind_from_deg,
+    payload.blims_downwind as blims_downwind,
+    payload.blims_upwind as blims_upwind,
 
     -- Fill Station Specific (Umbilical)
     payload.pt_1_pressure as pt_1_pressure,
