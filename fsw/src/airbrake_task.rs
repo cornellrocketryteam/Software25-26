@@ -30,8 +30,8 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
 
-use controller_in_rust::airbrakes::AirbrakeSystem;
-use controller_in_rust::controller::Phase;
+use controller_in_rust_v3::AirbrakeSystem;
+use controller_in_rust_v3::{Phase, SensorInput};
 
 // ---------------------------------------------------------------------------
 // Shared phase enum — mirrors controller::Phase without importing it into the
@@ -52,8 +52,11 @@ pub enum AirbrakePhase {
 pub struct AirbrakeInput {
     pub time: f32,
     pub altitude: f32,
+    pub vel_d: f32,
+    pub reference_pressure: f32,
     pub gyro_x: f32,
     pub gyro_y: f32,
+    pub gyro_z: f32,
     pub accel_x: f32,
     pub accel_y: f32,
     pub accel_z: f32,
@@ -101,16 +104,21 @@ pub async fn airbrake_core1_task() {
             AirbrakePhase::Coast => Phase::Coast,
         };
 
-        let output = system.execute(
-            input.time as _,
-            input.altitude as _,
-            input.gyro_x as _,
-            input.gyro_y as _,
-            input.accel_x as _,
-            input.accel_y as _,
-            input.accel_z as _,
-            ctrl_phase,
-        );
+        let sensor_input = SensorInput {
+            time: input.time,
+            altitude: input.altitude,
+            vel_d: input.vel_d,
+            reference_pressure: input.reference_pressure,
+            gyro_x: input.gyro_x,
+            gyro_y: input.gyro_y,
+            gyro_z: input.gyro_z,
+            accel_x: input.accel_x,
+            accel_y: input.accel_y,
+            accel_z: input.accel_z,
+            phase: ctrl_phase,
+        };
+
+        let output = system.execute(&sensor_input);
 
         AIRBRAKE_DEPLOYMENT.store((output.deployment as f32).to_bits(), Ordering::Release);
         AIRBRAKE_PREDICTED_APOGEE.store((output.predicted_apogee as f32).to_bits(), Ordering::Release);

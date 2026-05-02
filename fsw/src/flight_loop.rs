@@ -48,6 +48,10 @@ pub struct FlightLoop {
     // Internal state tracking
     alt_buffer: [f32; 10],
     alt_index: usize,
+    // L3 launch-detect: 10-sample moving avg of Y-axis accel (m/s²).
+    accel_buffer: [f32; 10],
+    accel_index: usize,
+    accel_sum: f32,
     filtered_alt: [f32; 3],
     drogue_entry_time: Option<Instant>,
     main_entry_time: Option<Instant>,
@@ -180,14 +184,18 @@ impl FlightLoop {
             blims_armed: false,
             log_armed: false,
             blims: None,
-            blims_target_set: false,
-            blims_target_lat: 0.0,
-            blims_target_lon: 0.0,
+            // L3: BLiMS target is hard-coded — no ground command.
+            blims_target_set: true,
+            blims_target_lat: constants::BLIMS_TARGET_LAT,
+            blims_target_lon: constants::BLIMS_TARGET_LON,
             blims_wind_from_deg: 0.0,
 
             // Initialize internal state
             alt_buffer: [0.0; 10],
             alt_index: 0,
+            accel_buffer: [0.0; 10],
+            accel_index: 0,
+            accel_sum: 0.0,
             filtered_alt: [-1.0; 3],
             drogue_entry_time: None,
             main_entry_time: None,
@@ -273,8 +281,11 @@ impl FlightLoop {
             AIRBRAKE_INPUT.signal(AirbrakeInput {
                 time:     self.flight_state.packet.ms_since_boot_cfc as f32 / 1000.0,
                 altitude: self.flight_state.packet.altitude,
+                vel_d:    self.flight_state.packet.vel_d as f32,
+                reference_pressure: self.flight_state.reference_pressure,
                 gyro_x:   self.flight_state.packet.gyro_x,
                 gyro_y:   self.flight_state.packet.gyro_y,
+                gyro_z:   self.flight_state.packet.gyro_z,
                 accel_x:  self.flight_state.packet.accel_x,
                 accel_y:  self.flight_state.packet.accel_y,
                 accel_z:  self.flight_state.packet.accel_z,
@@ -412,6 +423,11 @@ impl FlightLoop {
     }
 
     pub async fn check_umbilical_commands(&mut self) {
+        // L3: umbilical commanding removed — drain queue and discard.
+        while let Some(_cmd) = umbilical::try_recv_command() {}
+        return;
+
+        #[allow(unreachable_code)]
         while let Some(cmd) = umbilical::try_recv_command() {
             match cmd {
                 UmbilicalCommand::Launch => {
@@ -576,6 +592,9 @@ impl FlightLoop {
     /// fired, further calls are a no-op so sensor noise can't re-issue
     /// commands or overwrite mode decisions.
     pub async fn check_overpressure(&mut self) {
+        // L3: no ADC, no PT3 — overpressure detection disabled.
+        return;
+        #[allow(unreachable_code)]
         if self.overpressure_triggered {
             return;
         }
@@ -610,18 +629,7 @@ impl FlightLoop {
         let _packet = &self.flight_state.packet;
         let _mode = self.flight_state.flight_mode;
 
-        // One-shot vent: open SV on first entry to any recovery/fault mode.
-        if !self.recovery_vent_sent
-            && matches!(
-                self.flight_state.flight_mode,
-                FlightMode::DrogueDeployed | FlightMode::MainDeployed | FlightMode::Fault
-            )
-        {
-            log::warn!("Recovery vent: opening SV on entry to {:?}", self.flight_state.flight_mode);
-            self.flight_state.open_sv(0).await;
-            self.sv_open = true;
-            self.recovery_vent_sent = true;
-        }
+        // L3: SV removed — recovery vent disabled.
 
         // CFC_ARM rising edge: buzz once when arming signal goes high
         let cfc_arm_now = self.flight_state.cfc_arm_active;
@@ -642,33 +650,6 @@ impl FlightLoop {
                         self.flight_state.reference_pressure
                     );
                 }
-                if self.flight_state.umbilical_connected {
-                    log::info!("Umbilical connected");
-                    self.umbilical_disconnect_time = None;
-                    self.vent_signal_sent = false;
-                    if !self.umbilical_prev {
-                        self.flight_state.buzz(2); // just reconnected
-                    }
-                } else {
-                    log::info!("Umbilical disconnected");
-                    // Start timer if not started
-                    if self.umbilical_disconnect_time.is_none() {
-                        self.umbilical_disconnect_time = Some(Instant::now());
-                    } else if let Some(disconnect_time) = self.umbilical_disconnect_time {
-                        if disconnect_time.elapsed().as_millis() as u64
-                            > constants::UMBILICAL_TIMEOUT_MS
-                            && !self.vent_signal_sent
-                        {
-                            log::warn!("Umbilical Disconnected > 15s. Opening SV to vent.");
-                            self.flight_state.open_sv(0).await;
-                            self.sv_open = true;
-                            self.vent_signal_sent = true;
-                        }
-                    }
-                    if self.umbilical_prev {
-                        self.flight_state.buzz(3); // just disconnected
-                    }
-                }
                 if self.flight_state.altimeter_state == crate::state::SensorState::INVALID {
                     self.alt_armed = false;
                     self.flight_state.flight_mode = FlightMode::Fault;
@@ -676,30 +657,29 @@ impl FlightLoop {
                     log::error!("Altimeter invalid at Startup; transitioning to Fault");
                     return;
                 }
-                // key_armed is driven by umbilical KeyArm/KeyDisarm commands (<K>/<k>).
-                if self.key_armed && self.flight_state.umbilical_connected {
-                    if self.flight_state.altimeter_state == crate::state::SensorState::VALID {
-                        // Record arming altitude (TODO: implement into storage)
-                        self.alt_armed = true;
-                        self.flight_state.arming_altitude = self.flight_state.read_altimeter();
-                        log::info!(
-                            "Arming altitude set to {}",
-                            self.flight_state.arming_altitude
-                        );
-                        self.flight_state.flight_mode = FlightMode::Standby;
-                        self.flight_state.write_packet_to_fram().await;
-                        log::info!("Transitioning to Standby");
-                    }
+                // L3: arming is driven solely by GPIO 41 (CFC_ARM). High = armed.
+                if self.flight_state.cfc_arm_active
+                    && self.flight_state.altimeter_state == crate::state::SensorState::VALID
+                {
+                    self.alt_armed = true;
+                    self.flight_state.arming_altitude = self.flight_state.read_altimeter();
+                    log::info!(
+                        "Arming altitude set to {}",
+                        self.flight_state.arming_altitude
+                    );
+
+                    // L3: arm payload on Standby entry — send N1 (camera deploy).
+                    let _ = self.flight_state.payload_uart.write(b"N1\n").await;
+                    self.flight_state.packet.cmd_n1 = 1;
+                    log::info!("PAYLOAD: Sent N1 (arm) on Standby entry");
+
+                    self.flight_state.flight_mode = FlightMode::Standby;
+                    self.flight_state.write_packet_to_fram().await;
+                    log::info!("Transitioning to Standby (CFC_ARM high)");
                 }
             }
             FlightMode::Standby => {
-                /* Maybe go back to startup? Or some buzzer or way to signal the altimeter is bad?
-                Add an indicator if the altimeter is bad for either standby and/or startup so we can try to fix it, if no fix
-                then go to fault mode
-                */
-
                 if self.flight_state.altimeter_state != crate::state::SensorState::VALID {
-                    // altimeter is not working
                     self.alt_armed = false;
                     self.flight_state.flight_mode = FlightMode::Fault;
                     self.flight_state.write_packet_to_fram().await;
@@ -707,61 +687,38 @@ impl FlightLoop {
                     return;
                 }
 
-                if self.flight_state.umbilical_connected {
-                    log::info!("Umbilical connected");
-                    self.umbilical_disconnect_time = None;
-                    self.vent_signal_sent = false;
-                    if !self.umbilical_prev {
-                        self.flight_state.buzz(2); // just reconnected
-                    }
-                } else {
-                    log::info!("Umbilical disconnected");
-                    self.umbilical_launch = false; // Abort any pending launch command if umbilical drops
-                    // Start timer if not started
-                    if self.umbilical_disconnect_time.is_none() {
-                        self.umbilical_disconnect_time = Some(Instant::now());
-                    } else if let Some(disconnect_time) = self.umbilical_disconnect_time {
-                        if disconnect_time.elapsed().as_millis() as u64
-                            > constants::UMBILICAL_TIMEOUT_MS
-                            && !self.vent_signal_sent
-                        {
-                            log::warn!("Umbilical Disconnected > 15s. Opening SV to vent.");
-                            self.flight_state.open_sv(0).await;
-                            self.sv_open = true;
-                            self.vent_signal_sent = true;
-                        }
-                    }
-                    if self.umbilical_prev {
-                        self.flight_state.buzz(3); // just disconnected
-                    }
-                }
-                self.umbilical_prev = self.flight_state.umbilical_connected;
-
-                // Check altimeter for launch with umbilical
-                if self.umbilical_launch && self.flight_state.umbilical_connected {
-                    // START LAUNCH SEQUENCE
-                    log::warn!("LAUNCH INITIATED: Starting actuator sequence.");
-                    self.launch_sequence_stage = LaunchStage::PreVent;
-                    self.launch_stage_start_time = Some(Instant::now());
-
-                    self.flight_state.reference_pressure = self.flight_state.read_barometer();
-                    log::info!(
-                        "Reference pressure set to {}",
-                        self.flight_state.reference_pressure
-                    );
-
-                    // Stage 1: SV Open (2s vent)
-                    self.flight_state.open_sv(0).await;
-                    self.sv_open = true;
-
-                    self.alt_armed = true;
-                    self.flight_state.flight_mode = FlightMode::Ascent;
-                    self.flight_state.write_packet_to_fram().await;
-                    log::info!("Transitioning to Ascent");
-                } else if !self.key_armed {
+                // L3: if GPIO 41 (CFC_ARM) goes low while in Standby, drop back to Startup.
+                if !self.flight_state.cfc_arm_active {
                     self.flight_state.flight_mode = FlightMode::Startup;
                     self.flight_state.write_packet_to_fram().await;
-                    log::info!("Key not armed; Transitioning to Startup");
+                    log::info!("CFC_ARM low in Standby; transitioning back to Startup");
+                    return;
+                }
+
+                // L3 launch detect: 10-sample moving avg of Y-axis accel > 4 g.
+                let ay = self.flight_state.packet.accel_y;
+                self.accel_sum -= self.accel_buffer[self.accel_index];
+                self.accel_buffer[self.accel_index] = ay;
+                self.accel_sum += ay;
+                self.accel_index = (self.accel_index + 1) % 10;
+                let avg_ay_ms2 = self.accel_sum / 10.0;
+                let threshold_ms2 =
+                    constants::LAUNCH_ACCEL_Y_THRESHOLD_G * constants::G_TO_MS2;
+
+                if avg_ay_ms2 > threshold_ms2 {
+                    log::warn!(
+                        "LAUNCH DETECTED: avg accel_y = {:.2} m/s² (> {:.2})",
+                        avg_ay_ms2, threshold_ms2
+                    );
+                    self.flight_state.reference_pressure = self.flight_state.read_barometer();
+                    self.alt_armed = true;
+                    // Use existing MavOpen stage as the 3500 ms Ascent timer.
+                    // No SV/MAV actuation — just reuses the timer + Ascent→Coast hand-off.
+                    self.launch_sequence_stage = LaunchStage::MavOpen;
+                    self.launch_stage_start_time = Some(Instant::now());
+                    self.flight_state.flight_mode = FlightMode::Ascent;
+                    self.flight_state.write_packet_to_fram().await;
+                    log::info!("Transitioning to Ascent (3.2s timer to Coast)");
                 }
             }
             FlightMode::Ascent => {
@@ -915,7 +872,9 @@ impl FlightLoop {
                 // Get time since entry
                 if let Some(entry_time) = self.drogue_entry_time {
                     if entry_time.elapsed().as_millis() >= constants::MAIN_DEPLOY_DELAY_MS {
-                        if self.flight_state.read_altimeter() < constants::MAIN_DEPLOY_ALTITUDE {
+                        // L3: deploy main below 2000 ft AGL. Altimeter is in meters, convert.
+                        let alt_ft = self.flight_state.read_altimeter() * 3.28084;
+                        if alt_ft < constants::MAIN_DEPLOY_ALTITUDE_FT {
                             // Deploy Main
                             self.flight_state.trigger_main().await;
                             self.flight_state.packet.ssa_main_deployed = 1;
@@ -1148,47 +1107,23 @@ impl FlightLoop {
         let sequence_now = Instant::now();
         match self.launch_sequence_stage {
             LaunchStage::PreVent => {
-                if let Some(start) = self.launch_stage_start_time {
-                    if sequence_now.duration_since(start).as_millis()
-                        >= constants::LAUNCH_SV_PREVENT_MS
-                    {
-                        log::info!("Pre-launch vent complete (2s). Closing SV.");
-                        self.flight_state.close_sv().await;
-                        self.sv_open = false;
-
-                        self.launch_sequence_stage = LaunchStage::SvToMavWait;
-                        self.launch_stage_start_time = Some(sequence_now);
-                    }
-                }
+                // L3: SV/MAV actuation removed — stage unreachable, no-op.
+                self.launch_sequence_stage = LaunchStage::None;
             }
             LaunchStage::SvToMavWait => {
-                if let Some(start) = self.launch_stage_start_time {
-                    if sequence_now.duration_since(start).as_millis()
-                        >= constants::LAUNCH_SV_TO_MAV_WAIT_MS
-                    {
-                        log::info!("1s gap complete. Opening MAV.");
-                        self.flight_state
-                            .open_mav(constants::MAV_OPEN_DURATION_MS)
-                            .await;
-                        self.mav_open = true;
-
-                        self.launch_sequence_stage = LaunchStage::MavOpen;
-                        self.launch_stage_start_time = Some(sequence_now);
-                    }
-                }
+                // L3: SV/MAV actuation removed — stage unreachable, no-op.
+                self.launch_sequence_stage = LaunchStage::None;
             }
             LaunchStage::MavOpen => {
+                // L3: repurposed as fixed Ascent→Coast timer (MAV_OPEN_DURATION_MS).
+                // No MAV actuation occurs.
                 if let Some(start) = self.launch_stage_start_time {
                     if sequence_now.duration_since(start).as_millis()
                         >= constants::MAV_OPEN_DURATION_MS
                     {
-                        log::info!("MAV cycle complete. Closing MAV.");
-                        self.flight_state.close_mav().await;
-                        self.mav_open = false;
-
                         // TRANSITION TO COAST if currently in Ascent
                         if self.flight_state.flight_mode == FlightMode::Ascent {
-                            log::warn!("MAV closed; Transitioning from Ascent to Coast.");
+                            log::warn!("Ascent timer complete; transitioning Ascent → Coast.");
                             self.flight_state.airbrake_system.enable();
                             // Seed alt_buffer with the current altitude so the 10-entry
                             // moving average starts at the real value, not 0m.

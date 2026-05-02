@@ -150,6 +150,14 @@ async fn main(spawner: Spawner) {
     )
     .await;
     log::info!("INIT [6/8]: Flight State initialized — all sensors probed");
+
+    // L3 buzzer: 1 beep on AV bay power-up.
+    flight_state.buzz(1);
+    for _ in 0..15 {
+        flight_state.update_actuators().await;
+        Timer::after_millis(50).await;
+    }
+
     log::info!("INIT [7/8]: Skipping snapshot ring reset (flight mode)");
     log::info!("INIT [8/8]: Entering flight loop...");
 

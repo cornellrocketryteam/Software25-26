@@ -1,0 +1,12 @@
+[package]
+name = "controller_in_rust_v3"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+std = []
+
+[dependencies]
+heapless = { version = "0.8", default-features = false }
+libm     = { version = "0.2", default-features = false }

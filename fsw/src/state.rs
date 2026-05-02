@@ -345,9 +345,9 @@ impl FlightState {
         self.mav.update();
         self.sv.update();
 
-        // Sync actuator state into telemetry packet
-        self.packet.sv_open = self.sv.is_open();
-        self.packet.mav_open = self.mav.is_open();
+        // L3: no MAV/SV actuation. Keep packet layout stable but report 0.
+        self.packet.sv_open = false;
+        self.packet.mav_open = false;
     }
 
     // Actuator wrappers with FRAM writing
@@ -529,23 +529,11 @@ impl FlightState {
             }
         }
 
-        // Read ADC and update packet
-        match with_timeout(read_to, self.adc.read_into_packet(&mut self.packet)).await {
-            Ok(Ok(_)) => {
-                log::info!(
-                    "ADC | PT3={:.0} PT4={:.0} RTD={:.0} (raw)",
-                    self.packet.pt3,
-                    self.packet.pt4,
-                    self.packet.rtd
-                );
-            }
-            Ok(Err(e)) => {
-                log::error!("Failed to read ADS1015 ADC: {:?}", e);
-            }
-            Err(_) => {
-                log::error!("ADS1015 ADC read TIMEOUT");
-            }
-        }
+        // L3: no ADC. Keep packet layout stable but write zeros for PT3/PT4/RTD.
+        self.packet.pt3 = 0.0;
+        self.packet.pt4 = 0.0;
+        self.packet.rtd = 0.0;
+        let _ = &self.adc; // suppress unused warning
 
         log::info!("Flight mode: {:?}\n", self.flight_mode);
     }

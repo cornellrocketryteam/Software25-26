@@ -110,9 +110,19 @@ pub const PRESSURE_MAX_PA: f32 = 120_000.0;
 
 pub const ALT_SAMPLE_INTERVAL: u32 = 10;
 
-pub const MAIN_DEPLOY_DELAY_MS: u64 = 1000; // talk to R&P to find this exact number 
+pub const MAIN_DEPLOY_DELAY_MS: u64 = 1000; // talk to R&P to find this exact number
 
-pub const MAIN_DEPLOY_ALTITUDE: f32 = 2000.0;
+pub const MAIN_DEPLOY_ALTITUDE_FT: f32 = 2000.0;
+
+/// L3: Y-axis acceleration (g) launch-detect threshold.
+/// 10-sample moving average crossing this triggers Standby → Ascent.
+pub const LAUNCH_ACCEL_Y_THRESHOLD_G: f32 = 4.0;
+/// 1 g in m/s² (LSM6DSOX accel is in m/s²).
+pub const G_TO_MS2: f32 = 9.80665;
+
+/// L3: BLiMS landing-zone target (degrees). Hard-coded; no ground command.
+pub const BLIMS_TARGET_LAT: f32 = 42.446610;
+pub const BLIMS_TARGET_LON: f32 = -76.461304;
 
 pub const MAIN_LOG_TIMEOUT_MS: u64 = 1_200_000; // 20 minutes
 
@@ -126,7 +136,7 @@ pub const UMBILICAL_TIMEOUT_MS: u64 = 15_000; // 15 seconds
 /// is considered down. Independent of `UMBILICAL_TIMEOUT_MS`, which gates the
 /// vent-on-disconnect action.
 pub const HEARTBEAT_TIMEOUT_MS: u64 = 5_000; // 5 s — 3 s was too tight for USB CDC jitter
-pub const MAV_OPEN_DURATION_MS: u64 = 3200; // 4 seconds for L3 - 7.88 for LV - 12 for Wet Dress
+pub const MAV_OPEN_DURATION_MS: u64 = 3500; // 4 seconds for L3 - 7.88 for LV - 12 for Wet Dress
 pub const LAUNCH_SV_PREVENT_MS: u64 = 2_000;  // 2 s SV open before closing
 pub const LAUNCH_SV_TO_MAV_WAIT_MS: u64 = 1_000; // 1 s wait between SV close and MAV open
 pub const SSA_THRESHOLD_MS: u64 = 1000; // Duration to fire ematch
