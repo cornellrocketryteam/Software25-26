@@ -66,7 +66,7 @@ bool SDLogger::init() {
         "sv_open,mav_open,"
         "ssa_drogue_deployed,ssa_main_deployed,"
         "cmd_n1,cmd_n2,cmd_n3,cmd_n4,cmd_a1,cmd_a2,cmd_a3,"
-        "airbrake_state,predicted_apogee,"
+        "airbrake_deployment,predicted_apogee,"
         "h_acc,v_acc,vel_n,vel_e,vel_d,g_speed,s_acc,head_acc,fix_type,head_mot,"
         "blims_motor_position,blims_phase_id,blims_pid_p,blims_pid_i,blims_bearing,"
         "blims_loiter_step,blims_heading_des,blims_heading_error,blims_error_integral,"
@@ -107,7 +107,7 @@ bool SDLogger::logPacket(const RadioPacket& packet) {
         "%u,%u,"                                        // sv_open, mav_open
         "%u,%u,"                                        // ssa drogue/main
         "%u,%u,%u,%u,%u,%u,%u,"                         // cmd_n1..n4, cmd_a1..a3
-        "%u,%.3f,"                                      // airbrake_state, predicted_apogee
+        "%.3f,%.3f,"                                      // airbrake_deployment, predicted_apogee
         "%lu,%lu,%.6f,%.6f,%.6f,%.6f,%lu,%lu,%u,%ld,"   // advanced GPS
         "%.3f,%d,%.6f,%.6f,%.3f,"                       // blims motor/phase/pid/bearing
         "%d,%.3f,%.3f,%.6f,"                            // blims loiter/heading/err/integral
@@ -132,7 +132,7 @@ bool SDLogger::logPacket(const RadioPacket& packet) {
         packet.ssa_main_deployed,
         packet.cmd_n1, packet.cmd_n2, packet.cmd_n3, packet.cmd_n4,
         packet.cmd_a1, packet.cmd_a2, packet.cmd_a3,
-        packet.airbrake_state,
+        packet.airbrake_deployment,
         packet.predicted_apogee,
         (unsigned long)packet.h_acc,
         (unsigned long)packet.v_acc,

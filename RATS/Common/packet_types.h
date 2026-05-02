@@ -13,8 +13,9 @@ enum FlightMode {
     FAULT = 5
 };
 
-// Full Radio Packet Structure (203 bytes)
-// 4 byte sync word + 199 byte payload from Rust
+// Full Radio Packet Structure (206 bytes)
+// 4 byte sync word + 202 byte payload from Rust
+const size_t RADIO_PACKET_SIZE = 206;
 #pragma pack(push, 1)
 struct RadioPacket {
     // Byte 0-3: Sync word
@@ -70,7 +71,7 @@ struct RadioPacket {
     uint8_t cmd_a3;
     
     // airbrake state
-    uint8_t airbrake_state;
+    float airbrake_deployment;
     
     // airbrake controller output
     float predicted_apogee;

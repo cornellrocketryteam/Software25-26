@@ -181,6 +181,6 @@ void PacketSimulator::generateRadioPacket(RadioPacket &packet) {
 
 void PacketSimulator::serializeRadioPacket(const RadioPacket &packet,
                                            uint8_t *buffer) {
-  // Serialize full 199-byte Radio Packet
+  // Serialize full 202-byte Radio Packet
   memcpy(buffer, &packet, sizeof(RadioPacket));
 }

@@ -188,7 +188,7 @@ int main() {
         if (now - last_transmit_time >= 50) {
             last_transmit_time = now;
 
-            // Generate full 199-byte Radio Packet
+            // Generate full 202-byte Radio Packet
             RadioPacket sim_packet;
             simulator.generateRadioPacket(sim_packet);
 

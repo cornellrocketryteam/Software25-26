@@ -45,7 +45,7 @@ void PacketParser::radioPacketToJSON(const RadioPacket& packet, char* json_buffe
         "\"ssa_main_deployed\":%u,"
         "\"cmd_n1\":%u,\"cmd_n2\":%u,\"cmd_n3\":%u,\"cmd_n4\":%u,"
         "\"cmd_a1\":%u,\"cmd_a2\":%u,\"cmd_a3\":%u,"
-        "\"airbrake_state\":%u,"
+        "\"airbrake_deployment\":%.3f,"
         "\"predicted_apogee\":%.4f,"
         "\"h_acc\":%u,\"v_acc\":%u,"
         "\"vel_n\":%.4f,\"vel_e\":%.4f,\"vel_d\":%.4f,\"g_speed\":%.4f,"
@@ -80,7 +80,7 @@ void PacketParser::radioPacketToJSON(const RadioPacket& packet, char* json_buffe
         packet.ssa_drogue_deployed, packet.ssa_main_deployed,
         packet.cmd_n1, packet.cmd_n2, packet.cmd_n3, packet.cmd_n4,
         packet.cmd_a1, packet.cmd_a2, packet.cmd_a3,
-        packet.airbrake_state, packet.predicted_apogee,
+        packet.airbrake_deployment, packet.predicted_apogee,
         packet.h_acc, packet.v_acc,
         packet.vel_n, packet.vel_e, packet.vel_d, packet.g_speed,
         packet.s_acc, packet.head_acc, packet.fix_type,
