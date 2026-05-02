@@ -43,7 +43,7 @@ CREATE TABLE telemetry_data (
     cmd_a3 SMALLINT,                   -- u8
 
     -- Airbrake & Control States
-    airbrake_deployment REAL,          -- f32 (0.0=retracted, 1.0=fully deployed)
+    airbrake_deployment DOUBLE PRECISION, -- f32 (0.0=retracted, 1.0=fully deployed)
     predicted_apogee DOUBLE PRECISION, -- f32
 
     -- Advanced GPS / U-Blox Metrics
