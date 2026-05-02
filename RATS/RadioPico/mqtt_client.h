@@ -11,6 +11,8 @@ struct MQTT_CLIENT_T {
     mqtt_client_t *mqtt_client;
     bool connected;
     absolute_time_t last_retry;
+    absolute_time_t last_dns_retry;
+    absolute_time_t last_wifi_retry;
     char client_id_str[32];
 };
 

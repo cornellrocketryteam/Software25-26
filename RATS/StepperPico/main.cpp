@@ -16,14 +16,14 @@
 #include "pico/util/queue.h"
 
 // Set to 1 to use internal packet simulator, 0 for real radio data
-#define USE_PACKET_SIMULATOR 1
+#define USE_PACKET_SIMULATOR 0
 
 #if USE_PACKET_SIMULATOR
 #include "packet_simulator.h"
 #endif
 
 // Set USE_GPS = false to disable Native GPS NMEA Parser for testing without module
-static constexpr bool USE_GPS = false;
+static constexpr bool USE_GPS = true;
 
 // Maximum apogee to predict (10,000 feet in meters)
 static constexpr double MAX_APOGEE_METERS = 3048.0;

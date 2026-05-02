@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 // Set to 1 to run a deterministic math and motor interrupt test sequence
-#define MATH_TEST_MODE 1
+#define MATH_TEST_MODE 0
 // Simulates generating telemetry packets for testing
 class PacketSimulator {
 public:

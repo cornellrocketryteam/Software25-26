@@ -15,7 +15,6 @@ enum FlightMode {
 
 // Full Radio Packet Structure (206 bytes)
 // 4 byte sync word + 202 byte payload from Rust
-const size_t RADIO_PACKET_SIZE = 206;
 #pragma pack(push, 1)
 struct RadioPacket {
     // Byte 0-3: Sync word
