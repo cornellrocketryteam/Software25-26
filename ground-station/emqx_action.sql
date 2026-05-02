@@ -61,23 +61,18 @@ INSERT INTO telemetry_data (
     head_mot,
 
     -- BLiMS Outputs
-    blims_motor_position,
+    blims_brakeline_diff,
     blims_phase_id,
     blims_pid_p,
     blims_pid_i,
     blims_bearing,
-    blims_loiter_step,
-    blims_heading_des,
-    blims_heading_error,
-    blims_error_integral,
-    blims_dist_to_target_m,
 
     -- BLiMS Config
-    blims_target_lat,
-    blims_target_lon,
+    blims_upwind_lat,
+    blims_upwind_lon,
+    blims_downwind_lat,
+    blims_downwind_lon,
     blims_wind_from_deg,
-    blims_downwind,
-    blims_upwind,
 
     -- Fill Station Specific (Umbilical)
     pt_1_pressure,
@@ -151,23 +146,18 @@ INSERT INTO telemetry_data (
     ${head_mot},
 
     -- BLiMS Outputs
-    ${blims_motor_position},
+    ${blims_brakeline_diff},
     ${blims_phase_id},
     ${blims_pid_p},
     ${blims_pid_i},
     ${blims_bearing},
-    ${blims_loiter_step},
-    ${blims_heading_des},
-    ${blims_heading_error},
-    ${blims_error_integral},
-    ${blims_dist_to_target_m},
 
     -- BLiMS Config
-    ${blims_target_lat},
-    ${blims_target_lon},
+    ${blims_upwind_lat},
+    ${blims_upwind_lon},
+    ${blims_downwind_lat},
+    ${blims_downwind_lon},
     ${blims_wind_from_deg},
-    ${blims_downwind},
-    ${blims_upwind},
 
     -- Fill Station Specific
     ${pt_1_pressure},

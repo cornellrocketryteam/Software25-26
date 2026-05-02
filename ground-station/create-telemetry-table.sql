@@ -59,23 +59,18 @@ CREATE TABLE telemetry_data (
     head_mot INTEGER,                  -- i32 (deg*1e5)
 
     -- BLiMS Outputs
-    blims_motor_position DOUBLE PRECISION, -- f32
+    blims_brakeline_diff DOUBLE PRECISION, -- f32
     blims_phase_id SMALLINT,               -- i8
     blims_pid_p DOUBLE PRECISION,          -- f32
     blims_pid_i DOUBLE PRECISION,          -- f32
     blims_bearing DOUBLE PRECISION,        -- f32
-    blims_loiter_step SMALLINT,            -- i8
-    blims_heading_des DOUBLE PRECISION,    -- f32
-    blims_heading_error DOUBLE PRECISION,  -- f32
-    blims_error_integral DOUBLE PRECISION, -- f32
-    blims_dist_to_target_m DOUBLE PRECISION, -- f32
 
     -- BLiMS Config
-    blims_target_lat DOUBLE PRECISION,     -- f32
-    blims_target_lon DOUBLE PRECISION,     -- f32
+    blims_upwind_lat DOUBLE PRECISION,     -- f32
+    blims_upwind_lon DOUBLE PRECISION,     -- f32
+    blims_downwind_lat DOUBLE PRECISION,   -- f32
+    blims_downwind_lon DOUBLE PRECISION,   -- f32
     blims_wind_from_deg DOUBLE PRECISION,  -- f32
-    blims_downwind DOUBLE PRECISION,       -- f32
-    blims_upwind DOUBLE PRECISION,         -- f32
 
     -- Fill Station Specific (Umbilical)
     pt_1_pressure DOUBLE PRECISION,    -- Fill Station PT1

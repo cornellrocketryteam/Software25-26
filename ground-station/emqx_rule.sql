@@ -56,23 +56,18 @@ SELECT
     payload.head_mot as head_mot,
 
     -- BLiMS Outputs
-    payload.blims_motor_position as blims_motor_position,
+    payload.blims_brakeline_diff as blims_brakeline_diff,
     payload.blims_phase_id as blims_phase_id,
     payload.blims_pid_p as blims_pid_p,
     payload.blims_pid_i as blims_pid_i,
     payload.blims_bearing as blims_bearing,
-    payload.blims_loiter_step as blims_loiter_step,
-    payload.blims_heading_des as blims_heading_des,
-    payload.blims_heading_error as blims_heading_error,
-    payload.blims_error_integral as blims_error_integral,
-    payload.blims_dist_to_target_m as blims_dist_to_target_m,
 
     -- BLiMS Config
-    payload.blims_target_lat as blims_target_lat,
-    payload.blims_target_lon as blims_target_lon,
+    payload.blims_upwind_lat as blims_upwind_lat,
+    payload.blims_upwind_lon as blims_upwind_lon,
+    payload.blims_downwind_lat as blims_downwind_lat,
+    payload.blims_downwind_lon as blims_downwind_lon,
     payload.blims_wind_from_deg as blims_wind_from_deg,
-    payload.blims_downwind as blims_downwind,
-    payload.blims_upwind as blims_upwind,
 
     -- Fill Station Specific (Umbilical)
     payload.pt_1_pressure as pt_1_pressure,
