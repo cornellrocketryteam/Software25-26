@@ -159,7 +159,7 @@ async fn main(spawner: Spawner) {
     // BLiMS: GPIO 34 = enable, GPIO 35 = PWM (PWM_SLICE5B, 50 Hz)
     // test_blims initialises the same slice directly — skip library init to keep the peripheral free.
     #[cfg(not(feature = "test_blims"))]
-    let blims = module::init_blims(p.PIN_12, p.PWM_SLICE6, p.PIN_13);//34, 9, 35
+    let blims = module::init_blims(p.PIN_34, p.PWM_SLICE9, p.PIN_35);//34, 9, 35
 
     // --- FLIGHT SIMULATIONS --- //
     #[cfg(any(
