@@ -219,7 +219,9 @@ async fn main(spawner: Spawner) {
             log::info!("Starting Real Flight Simulation...");
             flight_loop.flight_state.wipe_flash_storage().await;
             flight_loop.flight_state.reset_fram().await;
-            
+
+            flight_loop.set_blims(blims);
+
             // Reset in-memory state so the simulation starts fresh
             flight_loop.flight_state.packet = crate::packet::Packet::default();
             flight_loop.flight_state.flight_mode = crate::state::FlightMode::Startup;

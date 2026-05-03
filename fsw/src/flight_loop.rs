@@ -1005,7 +1005,7 @@ impl FlightLoop {
 
                 // BLiMS: upwind target >1000 ft, downwind target <1000 ft, neutral <200 ft
                 self.flight_state.run_blims();
-                
+
             }
             FlightMode::Fault => {
                 if !self.fault_signal_sent {
