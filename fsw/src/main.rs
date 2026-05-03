@@ -672,7 +672,6 @@ async fn main(spawner: Spawner) {
         const TOP: u16 = 65_535;
 
         let mut enable_pin = Output::new(p.PIN_34, Level::High);
-        Timer::after_millis(500).await;
         enable_pin.set_low();
         Timer::after_millis(500).await;
         enable_pin.set_high();
@@ -681,6 +680,7 @@ async fn main(spawner: Spawner) {
         pwm_config.top = TOP;
         pwm_config.divider = 46u8.into();
         pwm_config.compare_b = 0;
+        pwm_config.enable = true;
         let mut pwm = Pwm::new_output_b(p.PWM_SLICE9, p.PIN_35, pwm_config.clone());
 
         log::info!("=== BLiMS Motor PWM Test (av bay) ===");
