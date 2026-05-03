@@ -96,6 +96,14 @@ pub struct FlightLoop {
     /// Sim only: if Some, overrides packet.accel_z (m/s²) after read_sensors().
     /// Inject converted TEST_ACCS_LST values (G × 9.81) here.
     pub sim_accel_z_override: Option<f32>,
+
+    /// Sim only: if Some, overrides packet.accel_y (m/s²) after read_sensors().
+    /// Required for launch detection (Standby → Ascent uses a 10-sample accel_y average).
+    pub sim_accel_y_override: Option<f32>,
+
+    /// Sim only: if Some, forces cfc_arm_active after read_sensors() overwrites it from
+    /// the physical GPIO pin. Required for Startup → Standby transition without hardware.
+    pub sim_cfc_arm_override: Option<bool>,
 }
 
 impl FlightLoop {
@@ -211,6 +219,8 @@ impl FlightLoop {
             sim_vel_d_override: None,
             sim_key_armed_override: None,
             sim_accel_z_override: None,
+            sim_accel_y_override: None,
+            sim_cfc_arm_override: None,
         }
     }
 
@@ -259,6 +269,12 @@ impl FlightLoop {
         // Sim override: inject pre-recorded vertical acceleration (m/s²).
         if let Some(accel_z) = self.sim_accel_z_override {
             self.flight_state.packet.accel_z = accel_z;
+        }
+        if let Some(accel_y) = self.sim_accel_y_override {
+            self.flight_state.packet.accel_y = accel_y;
+        }
+        if let Some(cfc_arm) = self.sim_cfc_arm_override {
+            self.flight_state.cfc_arm_active = cfc_arm;
         }
 
         // 2b. Forward latest sensor data to the airbrake controller on Core 1.
@@ -532,7 +548,7 @@ impl FlightLoop {
                 }
                 UmbilicalCommand::SetBlimsTarget { lat, lon } => {
                     log::warn!("UMBILICAL CMD: Set BLiMS target lat={} lon={}", lat, lon);
-                    self.set_blims_target(lat, lon);
+                    self.set_blims_downwind_target(lat, lon);
                 }
                 UmbilicalCommand::TriggerDrogue => {
                     log::warn!("UMBILICAL CMD: Trigger Drogue");
@@ -666,7 +682,7 @@ impl FlightLoop {
                     return;
                 }
                 // L3: arming is driven solely by GPIO 41 (CFC_ARM). High = armed.
-                if self.flight_state.cfc_arm_active && self.flight_state.umbilical_connected {
+                if self.flight_state.cfc_arm_active {
                     if self.flight_state.altimeter_state == crate::state::SensorState::VALID {
                         // Record arming altitude (TODO: implement into storage)
                         self.alt_armed = true;
@@ -820,7 +836,8 @@ impl FlightLoop {
                     // Remove old value from sum
                     self.alt_sum -= alt_half_sec_ago;
                     // Read new value
-                    let current_alt = self.flight_state.read_altimeter();
+                    // TODO: change to read_altitude() 
+                    let current_alt = self.flight_state.packet.altitude;
                     self.alt_buffer[self.alt_index] = current_alt;
                     // Add new value to sum
                     self.alt_sum += current_alt;
@@ -920,7 +937,8 @@ impl FlightLoop {
                 if let Some(entry_time) = self.drogue_entry_time {
                     if entry_time.elapsed().as_millis() >= constants::MAIN_DEPLOY_DELAY_MS {
                         // L3: deploy main below 2000 ft AGL. Altimeter is in meters, convert.
-                        let alt_ft = self.flight_state.read_altimeter() * 3.28084;
+                        // TODO: change to read_altitude() 
+                        let alt_ft = self.flight_state.packet.altitude;
                         if alt_ft < constants::MAIN_DEPLOY_ALTITUDE_FT {
                             // Deploy Main
                             self.flight_state.trigger_main().await;
@@ -1054,9 +1072,9 @@ impl FlightLoop {
         self.flight_state.set_blims_upwind_target(lat, lon);
     }
 
-    /// Set the landing-zone target (<1000 ft AGL phase).
-    pub fn set_blims_target(&mut self, lat: f32, lon: f32) {
-        self.flight_state.set_blims_target(lat, lon);
+    /// Set the landing-zone (downwind) target (<1000 ft AGL phase).
+    pub fn set_blims_downwind_target(&mut self, lat: f32, lon: f32) {
+        self.flight_state.set_blims_downwind_target(lat, lon);
     }
 
     /// Confirm BLiMS hardware is attached (motor control is handled internally by the library).

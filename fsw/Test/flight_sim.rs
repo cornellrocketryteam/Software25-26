@@ -77,7 +77,7 @@ pub async fn simulate_flight_simple(flight_loop: &mut FlightLoop) {
         if _i % 20 == 0 {
             log::info!("[SIM] Current Simulated Altitude: {:.2}m", alt);
         }
-        flight_loop.set_altitude(*alt);
+        flight_loop.set_altitude(*alt as f32);
         Timer::after_millis(10).await; // Reduced delay to speed up simulation loop
 
         // Run logic for this altitude
@@ -89,7 +89,7 @@ pub async fn simulate_flight_simple(flight_loop: &mut FlightLoop) {
 
         // ASCENT Checks
         if mode == FlightMode::Ascent {
-            if flight_loop.alt_armed && *alt > constants::ARMING_ALTITUDE {
+            if flight_loop.alt_armed && *alt as f32 > constants::ARMING_ALTITUDE {
                 // Altimeter arming verification happens continuously
             }
 
@@ -519,98 +519,77 @@ pub async fn simulate_flash_storage(flight_loop: &mut FlightLoop) {
 // Release: insert key switch, type <L> over USB to launch.
 // Debug:   key + umbilical auto-asserted; launch fires after 5 standby cycles.
 pub async fn simulate_real_flight(flight_loop: &mut FlightLoop) {
-    log::info!("\n--- STARTING REAL FLIGHT SIMULATION (REBOOT RECOVERY MODE) ---");
-    log::info!("Altitude injected from TEST_ALTS_LST ({} points).", constants::TEST_ALTS_LST.len());
-    log::info!("Each mode dwells 60s — reboot during the dwell to test snapshot recovery.");
+    log::info!("\n--- STARTING REAL FLIGHT SIMULATION ---");
+    log::info!("Altitude from TEST_ALTS_LST ({} pts), accel from TEST_ACCS_LST ({} pts).",
+        constants::TEST_ALTS_LST.len(), constants::TEST_ACCS_LST.len());
+    log::info!("Sitting in Standby 5s, then auto-launching and feeding data.");
 
-    // How long to pause after entering each new flight mode before advancing
-    // the altitude profile. 5 s gives plenty of time to power-cycle the board
-    // and confirm it recovers to the correct mode.
-    const DWELL_MS: u64 = 5_000;
+    const STANDBY_DWELL_MS: u64 = 5_000;
+    const DT_S: f64 = constants::MAIN_LOOP_DELAY_MS as f64 / 1000.0;
+    const FT_TO_M: f64 = 1.0 / 3.28084;
+    const G_TO_MS2: f32 = 9.81;
 
+    let sim_start = Instant::now();
     let mut alt_index: usize = 0;
-    let mut sim_standby_cycles: u32 = 0;
-
-    // Sentinel value that won't match any real FlightMode, so the very first
-    // loop iteration always triggers the mode-entry banner and starts the dwell.
-    let mut last_mode = FlightMode::Fault;
-    let mut mode_entry_time: Option<Instant> = None;
-    // Altitude held fixed while dwelling so the mode doesn't spuriously advance.
-    let mut dwell_alt: f32 = 0.0;
-    // Previous cycle's altitude — used to derive vertical velocity each step.
-    let mut prev_alt: f32 = 0.0;
+    let mut prev_alt: f64 = 0.0;
+    let mut launch_sent = false;
 
     loop {
         let current_mode = flight_loop.flight_state.flight_mode;
+        let elapsed_ms = sim_start.elapsed().as_millis();
 
-        // ── Mode-entry detection ──────────────────────────────────────────────
-        let in_flight_mode = matches!(
-            current_mode,
-            FlightMode::Ascent
-                | FlightMode::Coast
-                | FlightMode::DrogueDeployed
-                | FlightMode::MainDeployed
-        );
-        if current_mode != last_mode {
-            log::info!("[SIM] ================================================");
-            log::info!("[SIM]  ENTERED MODE: {}", flight_loop.flight_state.flight_mode_name());
-            if !in_flight_mode {
-                log::info!("[SIM]  REBOOT NOW to verify snapshot recovery.");
-                log::info!("[SIM]  Dwelling {}s before advancing.", DWELL_MS / 1000);
-            }
-            log::info!("[SIM] ================================================");
-            mode_entry_time = Some(Instant::now());
-            dwell_alt = if alt_index == 0 {
-                0.0
-            } else {
-                constants::TEST_ALTS_LST[(alt_index - 1).min(constants::TEST_ALTS_LST.len() - 1)]
-                    / 3.28084_f32
-            };
-            last_mode = current_mode;
+        // ── Hardware overrides ────────────────────────────────────────────────
+        // cfc_arm_active gates Startup→Standby and keeps Standby from dropping back.
+        flight_loop.sim_cfc_arm_override = Some(true);
+        flight_loop.sim_key_armed_override = Some(true);
+        if matches!(current_mode, FlightMode::Startup | FlightMode::Standby) {
+            flight_loop.flight_state.umbilical_connected = true;
+            crate::umbilical::inject_heartbeat();
+        } else {
+            flight_loop.flight_state.umbilical_connected = false;
         }
 
-        let elapsed_ms = mode_entry_time
-            .map(|t| t.elapsed().as_millis())
-            .unwrap_or(0);
-        // Dwell only applies during Startup/Standby (reboot-recovery testing).
-        // Flight modes (Ascent onward) always feed the altitude profile immediately
-        // so mode transitions, payload comms, and airbrakes trigger correctly.
-        let in_dwell = !in_flight_mode && elapsed_ms < DWELL_MS;
+        // ── Altitude / velocity / acceleration override ───────────────────────
+        if elapsed_ms < STANDBY_DWELL_MS {
+            // Sit at 0 m, 1 g on Y-axis (rocket upright on pad, won't trigger 4g threshold).
+            flight_loop.sim_altitude_override = Some(0.0);
+            flight_loop.sim_vel_d_override = Some(0.0);
+            flight_loop.sim_accel_y_override = Some(G_TO_MS2); // 1g — below launch threshold
+            flight_loop.sim_accel_z_override = None;
 
-        // ── Altitude + velocity + acceleration override ───────────────────────
-        // Altitude profile is in feet — convert to metres for the packet.
-        // vel_d is NED-down (positive = descending). Derived each cycle from the
-        // altitude delta so payload comms (A2 fault signal) and BLiMS data see
-        // realistic vertical speed instead of 0 from a bench GPS reading.
-        // Acceleration profile is in G's — convert to m/s² (× 9.81).
-        const DT_S: f32 = constants::MAIN_LOOP_DELAY_MS as f32 / 1000.0;
-        const FT_TO_M: f32 = 1.0 / 3.28084;
-        const G_TO_MS2: f32 = 9.81;
+            let secs_left = (STANDBY_DWELL_MS - elapsed_ms) / 1000 + 1;
+            if elapsed_ms % 1000 < constants::MAIN_LOOP_DELAY_MS as u64 {
+                log::info!("[SIM] Standby — launching in {}s", secs_left);
+            }
+        } else {
+            // After dwell: log once, then feed data every cycle.
+            if !launch_sent {
+                log::info!("[SIM] 5s elapsed — starting data feed (accel_y will trigger launch detection).");
+                launch_sent = true;
+            }
 
-        if in_flight_mode {
-            // Feed the altitude profile every cycle from Ascent onward.
+            // Feed altitude and acceleration data until the arrays are exhausted.
             if alt_index < constants::TEST_ALTS_LST.len() {
-                let alt_m = constants::TEST_ALTS_LST[alt_index] * FT_TO_M;
-                // vel_d: positive = descending (NED), so climbing is negative.
-                let vel_up_ms = (alt_m - prev_alt) / DT_S;
-                flight_loop.sim_altitude_override = Some(alt_m);
-                flight_loop.sim_vel_d_override = Some(-vel_up_ms as f64);
+                let alt_m: f64 = constants::TEST_ALTS_LST[alt_index] * FT_TO_M;
+                // vel_d is NED-down: climbing = negative.
+                let vel_up_ms: f64 = (alt_m - prev_alt) / DT_S;
+                flight_loop.sim_altitude_override = Some(alt_m as f32);
+                flight_loop.sim_vel_d_override = Some(-vel_up_ms);
 
-                // Map acceleration index proportionally across the two lists.
+                // Proportionally map the acceleration array onto the altitude array.
                 let acc_index = (alt_index as f64
                     * constants::TEST_ACCS_LST.len() as f64
                     / constants::TEST_ALTS_LST.len() as f64) as usize;
                 let acc_index = acc_index.min(constants::TEST_ACCS_LST.len() - 1);
-                let accel_z_ms2 = constants::TEST_ACCS_LST[acc_index] as f32 * G_TO_MS2;
-                flight_loop.sim_accel_z_override = Some(accel_z_ms2);
+                let accel_ms2 = constants::TEST_ACCS_LST[acc_index] as f32 * G_TO_MS2;
+                // Launch detection averages accel_y; accel_z is used by apogee detection.
+                flight_loop.sim_accel_y_override = Some(accel_ms2);
+                flight_loop.sim_accel_z_override = Some(accel_ms2);
 
                 if alt_index % 50 == 0 {
                     log::info!(
-                        "[SIM] alt: {:.1}m  vel_up: {:.1}m/s  accel_z: {:.2}m/s²  idx: {}  mode: {}",
-                        alt_m,
-                        vel_up_ms,
-                        accel_z_ms2,
-                        alt_index,
+                        "[SIM] alt: {:.1}m  vel_up: {:.1}m/s  accel: {:.2}m/s2  idx: {}  mode: {}",
+                        alt_m, vel_up_ms, accel_ms2, alt_index,
                         flight_loop.flight_state.flight_mode_name()
                     );
                 }
@@ -620,63 +599,18 @@ pub async fn simulate_real_flight(flight_loop: &mut FlightLoop) {
                 log::info!("[SIM] End of TEST_ALTS_LST — simulation complete.");
                 break;
             }
-        } else if in_dwell {
-            // Startup/Standby dwell: hold altitude at 0, stationary.
-            flight_loop.sim_altitude_override = Some(dwell_alt);
-            flight_loop.sim_vel_d_override = Some(0.0);
-            prev_alt = dwell_alt;
-            if elapsed_ms % 10_000 < 1_100 {
-                let secs_left = (DWELL_MS - elapsed_ms) / 1000;
-                log::info!(
-                    "[SIM] {} | {}s left in dwell | alt held {:.0}m",
-                    flight_loop.flight_state.flight_mode_name(),
-                    secs_left,
-                    dwell_alt
-                );
-            }
-        } else {
-            // Startup/Standby outside dwell: altitude = 0.
-            flight_loop.sim_altitude_override = Some(0.0);
-            flight_loop.sim_vel_d_override = Some(0.0);
-            prev_alt = 0.0;
         }
 
-        // ── Hardware overrides (run every cycle, debug and release) ───────────
-        // Force key, umbilical, and key_armed via sim overrides so no physical
-        // hardware is required. These are applied inside execute() AFTER
-        // read_sensors() would otherwise overwrite them from real GPIOs/atomics.
-        flight_loop.sim_key_armed_override = Some(true);
-        if matches!(current_mode, FlightMode::Startup | FlightMode::Standby) {
-            flight_loop.flight_state.umbilical_connected = true;
-            // Inject a fake heartbeat so that read_sensors() → is_connected()
-            // returns true when execute() runs. Without this, the real heartbeat
-            // atomics are stale and umbilical_connected gets overwritten to false.
-            crate::umbilical::inject_heartbeat();
-        } else {
-            flight_loop.flight_state.umbilical_connected = false;
-        }
-        // Launch only fires after the Standby dwell completes, giving the
-        // operator time to reboot and verify Standby recovery first.
-        if current_mode == FlightMode::Standby && !in_dwell {
-            sim_standby_cycles += 1;
-            if sim_standby_cycles == 3 {
-                log::info!("[SIM] Auto-injecting Launch Command...");
-                flight_loop.set_launch_command(true);
-            }
-        }
-
-        // ── Execute and sleep ─────────────────────────────────────────────────
         flight_loop.execute().await;
-
-        // 20 Hz in flight modes so the altitude profile advances at its sample rate.
-        // 1 Hz only during Startup/Standby dwell (reboot-recovery window).
-        Timer::after_millis(if in_dwell { 1_000 } else { constants::MAIN_LOOP_DELAY_MS }).await;
+        Timer::after_millis(constants::MAIN_LOOP_DELAY_MS).await;
     }
 
     flight_loop.sim_altitude_override = None;
     flight_loop.sim_vel_d_override = None;
     flight_loop.sim_key_armed_override = None;
     flight_loop.sim_accel_z_override = None;
+    flight_loop.sim_accel_y_override = None;
+    flight_loop.sim_cfc_arm_override = None;
 }
 
 // Runs BLiMS parafoil guidance hardware against real GPS with the L3 Launch 4
@@ -691,9 +625,10 @@ pub async fn simulate_real_flight(flight_loop: &mut FlightLoop) {
 //
 // Prerequisites before calling:
 //   flight_loop.set_blims(blims);
-//   flight_loop.set_blims_target(lat, lon);
+//   flight_loop.set_blims_downwind_target(lat, lon);
 //
 // Flash with:  cargo build --release --features sim_blims
+#[cfg(feature = "sim_blims")]
 pub async fn simulate_blims_descent(flight_loop: &mut FlightLoop) {
     use blims::sim_data::{DESCENT_ALT_FT, DESCENT_DATA_SIZE};
 
@@ -726,13 +661,12 @@ pub async fn simulate_blims_descent(flight_loop: &mut FlightLoop) {
         if i % 20 == 0 {
             let p = &flight_loop.flight_state.packet;
             log::info!(
-                "[BLIMS SIM] i={:4}  alt={:.1}ft  motor={:.4}  phase={}  bearing={:.1}  dist={:.1}m",
+                "[BLIMS SIM] i={:4}  alt={:.1}ft  brakeline={:.4}in  phase={}  bearing={:.1}deg",
                 i,
                 alt_ft,
-                p.blims_motor_position,
+                p.blims_brakeline_diff,
                 p.blims_phase_id,
                 p.blims_bearing,
-                p.blims_dist_to_target_m,
             );
         }
 

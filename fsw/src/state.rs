@@ -862,7 +862,7 @@ impl FlightState {
 
     /// Set the landing-zone target (switched to at <1000 ft AGL).
     /// Also pushes the new target into the BLiMS controller if already armed.
-    pub fn set_blims_target(&mut self, lat: f32, lon: f32) {
+    pub fn set_blims_downwind_target(&mut self, lat: f32, lon: f32) {
         self.blims_downwind_lat = lat;
         self.blims_downwind_lon = lon;
         self.packet.blims_downwind_lat = lat;

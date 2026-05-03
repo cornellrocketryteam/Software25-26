@@ -257,7 +257,7 @@ async fn main(spawner: Spawner) {
                 upwind_lat, upwind_lon
             );
             flight_loop.set_blims_upwind_target(upwind_lat, upwind_lon);
-            flight_loop.set_blims_target(target_lat, target_lon);
+            flight_loop.set_blims_downwind_target(target_lat, target_lon);
 
             flight_sim::simulate_blims_descent(&mut flight_loop).await;
             log::info!("Simulation Complete.");

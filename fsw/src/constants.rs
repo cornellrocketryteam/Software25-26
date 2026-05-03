@@ -77,7 +77,7 @@ pub const WATCHDOG_TIMEOUT_MS: u32 = 120;
 /// Must be > WATCHDOG_TIMEOUT_MS so the chip resets during the stall.
 pub const WATCHDOG_TEST_STALL_MS: u64 = 200;
 
-pub const MAIN_DEPLOY_ALTITUDE_FT: f32 = 2000.0;
+pub const MAIN_DEPLOY_ALTITUDE_FT: f32 = 2000.0; // feet (~610 m AGL)
 
 /// L3: Y-axis acceleration (g) launch-detect threshold.
 pub const LAUNCH_ACCEL_Y_THRESHOLD_G: f32 = 4.0;
