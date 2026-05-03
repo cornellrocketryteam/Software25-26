@@ -851,10 +851,10 @@ impl FlightLoop {
                     // Read latest airbrake deployment from Core 1
                     // and drive the ODrive RC PWM servo
                     let deployment = crate::airbrake_task::get_deployment();
-                    self.flight_state.airbrake_system.set_deployment(deployment);
+                    self.flight_state.airbrake_system.set_deployment(0.63);
                     self.flight_state.packet.predicted_apogee = crate::airbrake_task::get_predicted_apogee();
                     self.flight_state.packet.airbrake_deployment = deployment;
-                    log::info!("Airbrake deployment: {:.1}%", deployment * 100.0);
+                    log::info!("Airbrake deployment: {:.1}%", 0.63 * 100.0);
 
                     // N2: vertical speed < 50 ft/s for 5 consecutive loops, only above arming altitude
                     // Slope over 0.5 s (10 loops) smooths altimeter noise vs. frame-to-frame diff
@@ -936,10 +936,9 @@ impl FlightLoop {
                 // Get time since entry
                 if let Some(entry_time) = self.drogue_entry_time {
                     if entry_time.elapsed().as_millis() >= constants::MAIN_DEPLOY_DELAY_MS {
-                        // L3: deploy main below 2000 ft AGL. Altimeter is in meters, convert.
-                        // TODO: change to read_altitude() 
-                        let alt_ft = self.flight_state.packet.altitude;
-                        if alt_ft < constants::MAIN_DEPLOY_ALTITUDE_FT {
+                        // L3: deploy main below 610 m AGL. Altimeter is in meters.
+                        let alt_m = self.flight_state.packet.altitude;
+                        if alt_m < constants::MAIN_DEPLOY_ALTITUDE {
                             // Deploy Main
                             self.flight_state.trigger_main().await;
                             self.flight_state.packet.ssa_main_deployed = 1;
