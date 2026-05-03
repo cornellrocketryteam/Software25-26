@@ -77,6 +77,17 @@ pub const WATCHDOG_TIMEOUT_MS: u32 = 120;
 /// Must be > WATCHDOG_TIMEOUT_MS so the chip resets during the stall.
 pub const WATCHDOG_TEST_STALL_MS: u64 = 200;
 
+pub const MAIN_DEPLOY_ALTITUDE_FT: f32 = 2000.0;
+
+/// L3: Y-axis acceleration (g) launch-detect threshold.
+pub const LAUNCH_ACCEL_Y_THRESHOLD_G: f32 = 4.0;
+/// 1 g in m/s² (LSM6DSOX accel is in m/s²).
+pub const G_TO_MS2: f32 = 9.80665;
+
+pub const BLIMS_TARGET_LAT: f32 = 42.446610;
+pub const BLIMS_TARGET_LON: f32 = -76.461304;
+pub const BLIMS_WIND_FROM_DEG: f32 = 270.0;
+
 pub const FLASH_LOGGING_PERIOD_MS: u64 = 50;   // Fast record rate: 20 Hz
 pub const FULL_LOGGING_PERIOD_MS:  u64 = 1000; // Full record rate:  1 Hz
 pub const SNAPSHOT_LOGGING_PERIOD_MS: u64 = 200; // Snapshot ring rate: 5 Hz

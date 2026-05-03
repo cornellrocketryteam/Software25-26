@@ -48,6 +48,10 @@ pub struct FlightLoop {
     // Internal state tracking
     alt_buffer: [f32; 10],
     alt_index: usize,
+    // L3 launch-detect: 10-sample moving avg of Y-axis accel (m/s²).
+    accel_buffer: [f32; 10],
+    accel_index: usize,
+    accel_sum: f32,
     filtered_alt: [f32; 3],
     drogue_entry_time: Option<Instant>,
     main_entry_time: Option<Instant>,
@@ -188,6 +192,9 @@ impl FlightLoop {
             // Initialize internal state
             alt_buffer: [0.0; 10],
             alt_index: 0,
+            accel_buffer: [0.0; 10],
+            accel_index: 0,
+            accel_sum: 0.0,
             filtered_alt: [-1.0; 3],
             drogue_entry_time: None,
             main_entry_time: None,
@@ -573,6 +580,9 @@ impl FlightLoop {
     /// fired, further calls are a no-op so sensor noise can't re-issue
     /// commands or overwrite mode decisions.
     pub async fn check_overpressure(&mut self) {
+        // L3: no ADC, no PT3 — overpressure detection disabled.
+        return;
+        #[allow(unreachable_code)]
         if self.overpressure_triggered {
             return;
         }
@@ -607,18 +617,7 @@ impl FlightLoop {
         let _packet = &self.flight_state.packet;
         let _mode = self.flight_state.flight_mode;
 
-        // One-shot vent: open SV on first entry to any recovery/fault mode.
-        if !self.recovery_vent_sent
-            && matches!(
-                self.flight_state.flight_mode,
-                FlightMode::DrogueDeployed | FlightMode::MainDeployed | FlightMode::Fault
-            )
-        {
-            log::warn!("Recovery vent: opening SV on entry to {:?}", self.flight_state.flight_mode);
-            self.flight_state.open_sv(0).await;
-            self.sv_open = true;
-            self.recovery_vent_sent = true;
-        }
+        // L3: SV removed — recovery vent disabled.
 
         // CFC_ARM rising edge: buzz once when arming signal goes high
         let cfc_arm_now = self.flight_state.cfc_arm_active;
@@ -673,8 +672,8 @@ impl FlightLoop {
                     log::error!("Altimeter invalid at Startup; transitioning to Fault");
                     return;
                 }
-                // key_armed is driven by umbilical KeyArm/KeyDisarm commands (<K>/<k>).
-                if self.key_armed && self.flight_state.umbilical_connected {
+                // L3: arming is driven solely by GPIO 41 (CFC_ARM). High = armed.
+                if self.flight_state.cfc_arm_active && self.flight_state.umbilical_connected {
                     if self.flight_state.altimeter_state == crate::state::SensorState::VALID {
                         // Record arming altitude (TODO: implement into storage)
                         self.alt_armed = true;
@@ -683,9 +682,15 @@ impl FlightLoop {
                             "Arming altitude set to {}",
                             self.flight_state.arming_altitude
                         );
+
+                        // L3: arm payload on Standby entry — send N1 (camera deploy).
+                        let _ = self.flight_state.payload_uart.write(b"N1\n").await;
+                        self.flight_state.packet.cmd_n1 = 1;
+                        log::info!("PAYLOAD: Sent N1 (arm) on Standby entry");
+
                         self.flight_state.flight_mode = FlightMode::Standby;
                         self.flight_state.write_packet_to_fram().await;
-                        log::info!("Transitioning to Standby");
+                        log::info!("Transitioning to Standby (CFC_ARM high)");
                     }
                 }
             }
@@ -734,11 +739,30 @@ impl FlightLoop {
                 }
                 self.umbilical_prev = self.flight_state.umbilical_connected;
 
-                // Check altimeter for launch with umbilical
-                if self.umbilical_launch && self.flight_state.umbilical_connected {
-                    // START LAUNCH SEQUENCE
-                    log::warn!("LAUNCH INITIATED: Starting actuator sequence.");
-                    self.launch_sequence_stage = LaunchStage::PreVent;
+                // L3: if GPIO 41 (CFC_ARM) goes low while in Standby, drop back to Startup.
+                if !self.flight_state.cfc_arm_active {
+                    self.flight_state.flight_mode = FlightMode::Startup;
+                    self.flight_state.write_packet_to_fram().await;
+                    log::info!("CFC_ARM low in Standby; transitioning back to Startup");
+                    return;
+                }
+
+                // L3 launch detect: 10-sample moving avg of Y-axis accel > 4 g.
+                let ay = self.flight_state.packet.accel_y;
+                self.accel_sum -= self.accel_buffer[self.accel_index];
+                self.accel_buffer[self.accel_index] = ay;
+                self.accel_sum += ay;
+                self.accel_index = (self.accel_index + 1) % 10;
+                let avg_ay_ms2 = self.accel_sum / 10.0;
+                let threshold_ms2 =
+                    constants::LAUNCH_ACCEL_Y_THRESHOLD_G * constants::G_TO_MS2;
+
+                if avg_ay_ms2 > threshold_ms2 {
+                    log::warn!(
+                        "LAUNCH DETECTED: avg_ay={:.2} m/s² > {:.2} m/s²",
+                        avg_ay_ms2, threshold_ms2
+                    );
+                    self.launch_sequence_stage = LaunchStage::MavOpen;
                     self.launch_stage_start_time = Some(Instant::now());
 
                     self.flight_state.reference_pressure = self.flight_state.read_barometer();
@@ -747,18 +771,10 @@ impl FlightLoop {
                         self.flight_state.reference_pressure
                     );
 
-                    // Stage 1: SV Open (2s vent)
-                    self.flight_state.open_sv(0).await;
-                    self.sv_open = true;
-
                     self.alt_armed = true;
                     self.flight_state.flight_mode = FlightMode::Ascent;
                     self.flight_state.write_packet_to_fram().await;
                     log::info!("Transitioning to Ascent");
-                } else if !self.key_armed {
-                    self.flight_state.flight_mode = FlightMode::Startup;
-                    self.flight_state.write_packet_to_fram().await;
-                    log::info!("Key not armed; Transitioning to Startup");
                 }
             }
             FlightMode::Ascent => {
@@ -910,7 +926,9 @@ impl FlightLoop {
                 // Get time since entry
                 if let Some(entry_time) = self.drogue_entry_time {
                     if entry_time.elapsed().as_millis() >= constants::MAIN_DEPLOY_DELAY_MS {
-                        if self.flight_state.read_altimeter() < constants::MAIN_DEPLOY_ALTITUDE {
+                        // L3: deploy main below 2000 ft AGL. Altimeter is in meters, convert.
+                        let alt_ft = self.flight_state.read_altimeter() * 3.28084;
+                        if alt_ft < constants::MAIN_DEPLOY_ALTITUDE_FT {
                             // Deploy Main
                             self.flight_state.trigger_main().await;
                             self.flight_state.packet.ssa_main_deployed = 1;
@@ -980,19 +998,13 @@ impl FlightLoop {
                     // ground never set a target, BLiMS stays disarmed — we will not
                     // fly to a default coordinate.
                     if !self.blims_armed {
-                        if self.blims_target_set {
-                            blims.set_target(self.blims_target_lat, self.blims_target_lon);
-                            self.blims_armed = true;
-                            log::info!(
-                                "BLiMS: target set lat={} lon={}, guidance active",
-                                self.blims_target_lat,
-                                self.blims_target_lon
-                            );
-                        } else {
-                            log::error!(
-                                "BLiMS: no target set from ground; guidance disabled"
-                            );
-                        }
+                        blims.set_target(constants::BLIMS_TARGET_LAT, constants::BLIMS_TARGET_LON);
+                        log::info!(
+                            "BLiMS: armed on L3 fixed target ({}, {})",
+                            constants::BLIMS_TARGET_LAT,
+                            constants::BLIMS_TARGET_LON
+                        );
+                        self.blims_armed = true;
                     }
 
                     if self.blims_armed {
@@ -1143,43 +1155,20 @@ impl FlightLoop {
         let sequence_now = Instant::now();
         match self.launch_sequence_stage {
             LaunchStage::PreVent => {
-                if let Some(start) = self.launch_stage_start_time {
-                    if sequence_now.duration_since(start).as_millis()
-                        >= constants::LAUNCH_SV_PREVENT_MS
-                    {
-                        log::info!("Pre-launch vent complete (2s). Closing SV.");
-                        self.flight_state.close_sv().await;
-                        self.sv_open = false;
-
-                        self.launch_sequence_stage = LaunchStage::SvToMavWait;
-                        self.launch_stage_start_time = Some(sequence_now);
-                    }
-                }
+                // L3: SV/MAV actuation removed — stage unreachable, no-op.
+                self.launch_sequence_stage = LaunchStage::None;
             }
             LaunchStage::SvToMavWait => {
-                if let Some(start) = self.launch_stage_start_time {
-                    if sequence_now.duration_since(start).as_millis()
-                        >= constants::LAUNCH_SV_TO_MAV_WAIT_MS
-                    {
-                        log::info!("1s gap complete. Opening MAV.");
-                        self.flight_state
-                            .open_mav(constants::MAV_OPEN_DURATION_MS)
-                            .await;
-                        self.mav_open = true;
-
-                        self.launch_sequence_stage = LaunchStage::MavOpen;
-                        self.launch_stage_start_time = Some(sequence_now);
-                    }
-                }
+                // L3: SV/MAV actuation removed — stage unreachable, no-op.
+                self.launch_sequence_stage = LaunchStage::None;
             }
             LaunchStage::MavOpen => {
+                // L3: repurposed as fixed Ascent→Coast timer (MAV_OPEN_DURATION_MS).
+                // No MAV actuation occurs.
                 if let Some(start) = self.launch_stage_start_time {
                     if sequence_now.duration_since(start).as_millis()
                         >= constants::MAV_OPEN_DURATION_MS
                     {
-                        log::info!("MAV cycle complete. Closing MAV.");
-                        self.flight_state.close_mav().await;
-                        self.mav_open = false;
 
                         // TRANSITION TO COAST if currently in Ascent
                         if self.flight_state.flight_mode == FlightMode::Ascent {

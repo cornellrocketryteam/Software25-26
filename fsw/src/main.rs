@@ -215,6 +215,13 @@ async fn main(spawner: Spawner) {
         #[cfg(feature = "sim_real_flight")]
         {
             log::info!("Starting Real Flight Simulation...");
+            flight_loop.flight_state.wipe_flash_storage().await;
+            flight_loop.flight_state.reset_fram().await;
+            
+            // Reset in-memory state so the simulation starts fresh
+            flight_loop.flight_state.packet = crate::packet::Packet::default();
+            flight_loop.flight_state.flight_mode = crate::state::FlightMode::Startup;
+
             flight_sim::simulate_real_flight(&mut flight_loop).await;
             log::info!("Simulation Complete.");
         }

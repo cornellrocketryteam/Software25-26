@@ -524,9 +524,9 @@ pub async fn simulate_real_flight(flight_loop: &mut FlightLoop) {
     log::info!("Each mode dwells 60s — reboot during the dwell to test snapshot recovery.");
 
     // How long to pause after entering each new flight mode before advancing
-    // the altitude profile. 60 s gives plenty of time to power-cycle the board
+    // the altitude profile. 5 s gives plenty of time to power-cycle the board
     // and confirm it recovers to the correct mode.
-    const DWELL_MS: u64 = 60_000;
+    const DWELL_MS: u64 = 5_000;
 
     let mut alt_index: usize = 0;
     let mut sim_standby_cycles: u32 = 0;
