@@ -803,6 +803,7 @@ impl FlightLoop {
                     log::error!("Altimeter invalid at Ascent; transitioning to Fault");
                     return;
                 }
+                self.flight_state.airbrake_system.enable();
 
                 // Look at scenario where not above armed altitude and MAV is closed
                 if self.flight_state.altimeter_state == SensorState::VALID
@@ -853,7 +854,7 @@ impl FlightLoop {
                     let deployment = crate::airbrake_task::get_deployment();
                     self.flight_state.airbrake_system.set_deployment(0.63);
                     self.flight_state.packet.predicted_apogee = crate::airbrake_task::get_predicted_apogee();
-                    self.flight_state.packet.airbrake_deployment = deployment;
+                    self.flight_state.packet.airbrake_deployment = 0.63;
                     log::info!("Airbrake deployment: {:.1}%", 0.63 * 100.0);
 
                     // N2: vertical speed < 50 ft/s for 5 consecutive loops, only above arming altitude
@@ -888,13 +889,13 @@ impl FlightLoop {
                         self.camera_deployed = true;
                         // Airbrakes retract at apogee
                         // Coast signals so it will hold at 0.0 deployment
+
                         self.flight_state.airbrake_system.retract();
                         self.airbrakes_init = false;
                         self.flight_state.packet.airbrake_deployment = 0.0;
                         log::info!("Airbrakes retracted");
                         log::info!("Cameras deployed");
                         log::info!("Apogee reached at {:.2} m", self.filtered_alt[1]);
-
                         // Deploy Drogue
                         self.flight_state.trigger_drogue().await;
                         self.flight_state.packet.ssa_drogue_deployed = 1;
@@ -962,6 +963,7 @@ impl FlightLoop {
                     log::error!("Altimeter invalid at MainDeployed; transitioning to Fault");
                     return;
                 }
+                self.flight_state.airbrake_system.disable();
 
                 // N3: altitude < 76.2m (250ft) for 1s
                 if self.flight_state.packet.altitude < 76.2 && !self.n3_sent {
