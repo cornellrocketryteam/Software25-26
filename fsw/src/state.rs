@@ -10,6 +10,8 @@ use crate::driver::ublox_max_m10s::{UbloxMaxM10s, GpsError};
 use crate::driver::ads1015::Ads1015Sensor;
 use crate::driver::onboard_flash::OnboardFlash;
 
+use blims::blims_state::BlimsDataIn;
+
 use embassy_rp::gpio::{Input, Output};
 use embassy_rp::uart::{Async, Uart, UartTx};
 use embassy_time::{Duration, Instant, with_timeout};
@@ -90,6 +92,19 @@ pub struct FlightState {
     pub mav: Mav<'static>,
     pub sv: SV<'static>,
     pub airbrake_system: AirbrakeActuator<'static>,
+
+    // BLiMS parafoil guidance system
+    pub blims: Option<blims::Blims<'static>>,
+    pub blims_armed: bool,
+    // Upwind waypoint: steer here immediately after main deploy (>1000 ft AGL)
+    pub blims_upwind_lat: f32,
+    pub blims_upwind_lon: f32,
+    // Downwind landing target: switch to this at <1000 ft AGL
+    pub blims_downwind_lat: f32,
+    pub blims_downwind_lon: f32,
+    pub blims_wind_from_deg: f32,
+    blims_in_downwind_phase: bool,
+    blims_targets_dirty: bool, // force immediate snapshot when targets change
 
     // telemetry
     radio: Rfd900x<'static>,
@@ -175,6 +190,10 @@ impl FlightState {
         let mut stored_sv_open  = true;  // SV  defaults open  (matches SV::new())
         let mut stored_launch_stage = 0u32;
         let mut stored_launch_elapsed_ms = 0u32;
+        let mut stored_blims_upwind_lat   = constants::BLIMS_UPWIND_TARGET_LAT;
+        let mut stored_blims_upwind_lon   = constants::BLIMS_UPWIND_TARGET_LON;
+        let mut stored_blims_downwind_lat = constants::BLIMS_TARGET_LAT;
+        let mut stored_blims_downwind_lon = constants::BLIMS_TARGET_LON;
         if flash_ok {
             match with_timeout(scan_to, flash.initialize_snapshot_ring()).await {
                 Ok(Ok(_)) => match with_timeout(scan_to, flash.read_latest_snapshot()).await {
@@ -185,11 +204,17 @@ impl FlightState {
                         stored_sv_open   = snap.sv_open  != 0;
                         stored_launch_stage = snap.launch_stage;
                         stored_launch_elapsed_ms = snap.launch_elapsed_ms;
+                        stored_blims_upwind_lat   = snap.blims_upwind_lat;
+                        stored_blims_upwind_lon   = snap.blims_upwind_lon;
+                        stored_blims_downwind_lat = snap.blims_downwind_lat;
+                        stored_blims_downwind_lon = snap.blims_downwind_lon;
                         log::info!(
-                            "Snapshot recovered: mode={:?} cycle={} alt={:.2} mav={} sv={} launch_stage={} elapsed_ms={}",
+                            "Snapshot recovered: mode={:?} cycle={} alt={:.2} mav={} sv={} launch_stage={} elapsed_ms={} upwind=({:.6},{:.6}) downwind=({:.6},{:.6})",
                             stored_mode, stored_cycle_count, snap.altitude,
                             stored_mav_open, stored_sv_open,
-                            stored_launch_stage, stored_launch_elapsed_ms
+                            stored_launch_stage, stored_launch_elapsed_ms,
+                            stored_blims_upwind_lat, stored_blims_upwind_lon,
+                            stored_blims_downwind_lat, stored_blims_downwind_lon,
                         );
                     }
                     Ok(Ok(None)) => log::info!("Snapshot ring empty — starting fresh."),
@@ -320,6 +345,15 @@ impl FlightState {
             mav,
             sv,
             airbrake_system,
+            blims: None,
+            blims_armed: false,
+            blims_upwind_lat: stored_blims_upwind_lat,
+            blims_upwind_lon: stored_blims_upwind_lon,
+            blims_downwind_lat: stored_blims_downwind_lat,
+            blims_downwind_lon: stored_blims_downwind_lon,
+            blims_wind_from_deg: constants::BLIMS_WIND_FROM_DEG,
+            blims_in_downwind_phase: false,
+            blims_targets_dirty: false,
             flash,
             last_snapshot_log: Instant::now(),
             snap_launch_stage: stored_launch_stage,
@@ -665,10 +699,12 @@ impl FlightState {
     /// are safe — just slow. At 5 Hz an erase fires every ~12 s.
     pub async fn log_to_fram(&mut self) {
         let now = Instant::now();
-        if now.duration_since(self.last_snapshot_log) < Duration::from_millis(constants::SNAPSHOT_LOGGING_PERIOD_MS) {
+        let throttle_elapsed = now.duration_since(self.last_snapshot_log) >= Duration::from_millis(constants::SNAPSHOT_LOGGING_PERIOD_MS);
+        if !throttle_elapsed && !self.blims_targets_dirty {
             return;
         }
         self.last_snapshot_log = now;
+        self.blims_targets_dirty = false;
         self.write_packet_to_fram().await;
     }
 
@@ -728,6 +764,10 @@ impl FlightState {
             sv_open: self.packet.sv_open as u32,
             launch_stage: self.snap_launch_stage,
             launch_elapsed_ms: self.snap_launch_elapsed_ms,
+            blims_upwind_lat: self.blims_upwind_lat,
+            blims_upwind_lon: self.blims_upwind_lon,
+            blims_downwind_lat: self.blims_downwind_lat,
+            blims_downwind_lon: self.blims_downwind_lon,
         };
         let to = Duration::from_millis(constants::FLASH_TIMEOUT_MS);
         match with_timeout(to, self.flash.write_snapshot(&mut snap)).await {
@@ -803,6 +843,92 @@ impl FlightState {
                 log::error!("Flash wipe TIMEOUT");
                 crate::umbilical::print_str("ERASE TIMEOUT!\n");
             }
+        }
+    }
+
+    /// Attach the BLiMS hardware to this FlightState.
+    pub fn set_blims(&mut self, blims: blims::Blims<'static>) {
+        self.blims = Some(blims);
+    }
+
+    /// Set the upwind waypoint (steered to immediately after main deploy, >1000 ft AGL).
+    pub fn set_blims_upwind_target(&mut self, lat: f32, lon: f32) {
+        self.blims_upwind_lat = lat;
+        self.blims_upwind_lon = lon;
+        self.packet.blims_upwind_lat = lat;
+        self.packet.blims_upwind_lon = lon;
+        self.blims_targets_dirty = true;
+    }
+
+    /// Set the landing-zone target (switched to at <1000 ft AGL).
+    /// Also pushes the new target into the BLiMS controller if already armed.
+    pub fn set_blims_target(&mut self, lat: f32, lon: f32) {
+        self.blims_downwind_lat = lat;
+        self.blims_downwind_lon = lon;
+        self.packet.blims_downwind_lat = lat;
+        self.packet.blims_downwind_lon = lon;
+        self.blims_targets_dirty = true;
+        if self.blims_armed {
+            if let Some(b) = &mut self.blims {
+                b.set_downwind_target(lat, lon);
+            }
+        }
+    }
+
+    /// Run one BLiMS guidance cycle. Call every loop tick while in MainDeployed.
+    /// The library handles Upwind (>1000 ft) / Downwind (200-1000 ft) / Neutral (<200 ft) internally.
+    pub fn run_blims(&mut self) {
+        let Some(blims) = &mut self.blims else { return };
+
+        // Arm on first call: push both waypoints and wind direction into the library.
+        if !self.blims_armed {
+            blims.set_upwind_target(self.blims_upwind_lat, self.blims_upwind_lon);
+            blims.set_downwind_target(self.blims_downwind_lat, self.blims_downwind_lon);
+            blims.set_wind_from_deg(self.blims_wind_from_deg);
+            log::info!(
+                "BLiMS: armed — upwind ({:.6}, {:.6}), downwind ({:.6}, {:.6}), wind from {:.1}°",
+                self.blims_upwind_lat, self.blims_upwind_lon,
+                self.blims_downwind_lat, self.blims_downwind_lon,
+                self.blims_wind_from_deg
+            );
+            self.blims_armed = true;
+        }
+
+        let alt_ft = self.packet.altitude * 3.28084_f32;
+
+        let data_in = BlimsDataIn {
+            lat:         (self.packet.latitude  * 1e7_f32) as i32,
+            lon:         (self.packet.longitude * 1e7_f32) as i32,
+            altitude_ft:  alt_ft,
+            fix_type:     self.packet.fix_type,
+            gps_state:    self.packet.num_satellites > 0,
+            head_mot:     self.packet.head_mot,
+            vel_n:        self.packet.vel_n as i32,
+            vel_e:        self.packet.vel_e as i32,
+            vel_d:        self.packet.vel_d as i32,
+            g_speed:      self.packet.g_speed as i32,
+            h_acc:        self.packet.h_acc,
+            v_acc:        self.packet.v_acc,
+            s_acc:        self.packet.s_acc,
+            head_acc:     self.packet.head_acc,
+        };
+
+        let out = blims.execute(&data_in);
+        self.packet.blims_brakeline_diff = out.brakeline_diff_in;
+        self.packet.blims_phase_id       = out.phase_id;
+        self.packet.blims_pid_p          = out.pid_p;
+        self.packet.blims_pid_i          = out.pid_i;
+        self.packet.blims_bearing        = out.bearing;
+        self.packet.blims_wind_from_deg  = self.blims_wind_from_deg;
+
+        // Log which waypoint is actively being tracked
+        use blims::blims_state::Phase;
+        if out.phase_id == Phase::Upwind as i8 {
+            self.packet.blims_target_lat = self.blims_upwind_lat;
+            self.packet.blims_target_lon = self.blims_upwind_lon;
+        } else {
+            self.packet.blims_target_lat = self.blims_downwind_lat;
+            self.packet.blims_target_lon = self.blims_downwind_lon;
         }
     }
 

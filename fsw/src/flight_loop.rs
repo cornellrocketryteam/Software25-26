@@ -1,8 +1,6 @@
 use core::f32;
 use embassy_time::{Duration, Instant, Timer};
 
-use blims::blims_state::BlimsDataIn;
-
 use crate::airbrake_task::{AirbrakeInput, AirbrakePhase, AIRBRAKE_INPUT};
 use crate::constants;
 use crate::state::SensorState;
@@ -35,15 +33,7 @@ pub struct FlightLoop {
     pub airbrakes_init: bool,
     pub drogue_deployed: bool,
     pub main_chutes_deployed: bool,
-    pub blims_armed: bool,
     pub log_armed: bool,
-
-    // BLiMS parafoil guidance system (None until hardware is wired)
-    blims: Option<blims::Blims<'static>>,
-    blims_target_set: bool,
-    blims_target_lat: f32,
-    blims_target_lon: f32,
-    blims_wind_from_deg: f32,
 
     // Internal state tracking
     alt_buffer: [f32; 10],
@@ -181,13 +171,7 @@ impl FlightLoop {
             airbrakes_init: false,
             drogue_deployed,
             main_chutes_deployed,
-            blims_armed: false,
             log_armed: false,
-            blims: None,
-            blims_target_set: false,
-            blims_target_lat: 0.0,
-            blims_target_lon: 0.0,
-            blims_wind_from_deg: 0.0,
 
             // Initialize internal state
             alt_buffer: [0.0; 10],
@@ -539,7 +523,6 @@ impl FlightLoop {
                 UmbilicalCommand::SetBlimsTarget { lat, lon } => {
                     log::warn!("UMBILICAL CMD: Set BLiMS target lat={} lon={}", lat, lon);
                     self.set_blims_target(lat, lon);
-                    self.blims_target_set = true;
                 }
                 UmbilicalCommand::TriggerDrogue => {
                     log::warn!("UMBILICAL CMD: Trigger Drogue");
@@ -991,58 +974,8 @@ impl FlightLoop {
                     }
                 }
 
-                // BLiMS
-                if let Some(blims) = &mut self.blims {
-                    // Arm guidance on first entry to MainDeployed only if a target
-                    // has been set via the umbilical SetBlimsTarget command. If the
-                    // ground never set a target, BLiMS stays disarmed — we will not
-                    // fly to a default coordinate.
-                    if !self.blims_armed {
-                        blims.set_target(constants::BLIMS_TARGET_LAT, constants::BLIMS_TARGET_LON);
-                        log::info!(
-                            "BLiMS: armed on L3 fixed target ({}, {})",
-                            constants::BLIMS_TARGET_LAT,
-                            constants::BLIMS_TARGET_LON
-                        );
-                        self.blims_armed = true;
-                    }
-
-                    if self.blims_armed {
-                        let p = &self.flight_state.packet;
-                        let data_in = BlimsDataIn {
-                            lat:         (p.latitude  * 1e7_f32) as i32,
-                            lon:         (p.longitude * 1e7_f32) as i32,
-                            altitude_ft:  p.altitude * 3.28084_f32,
-                            fix_type:     p.fix_type,
-                            gps_state:    p.num_satellites > 0,
-                            head_mot:     p.head_mot,
-                            vel_n:        p.vel_n as i32,
-                            vel_e:        p.vel_e as i32,
-                            vel_d:        p.vel_d as i32,
-                            g_speed:      p.g_speed as i32,
-                            h_acc:        p.h_acc,
-                            v_acc:        p.v_acc,
-                            s_acc:        p.s_acc,
-                            head_acc:     p.head_acc,
-                        };
-
-                        let out = blims.execute(&data_in);
-                        let p = &mut self.flight_state.packet;
-                        p.blims_motor_position   = out.motor_position;
-                        p.blims_phase_id         = out.phase_id;
-                        p.blims_pid_p            = out.pid_p;
-                        p.blims_pid_i            = out.pid_i;
-                        p.blims_bearing          = out.bearing;
-                        p.blims_loiter_step      = out.loiter_step;
-                        p.blims_heading_des      = out.heading_des;
-                        p.blims_heading_error    = out.heading_error;
-                        p.blims_error_integral   = out.error_integral;
-                        p.blims_dist_to_target_m = out.dist_to_target_m;
-                        p.blims_target_lat       = self.blims_target_lat;
-                        p.blims_target_lon       = self.blims_target_lon;
-                        p.blims_wind_from_deg    = self.blims_wind_from_deg;
-                    }
-                }
+                // BLiMS: upwind target >1000 ft, downwind target <1000 ft, neutral <200 ft
+                self.flight_state.run_blims();
             }
             FlightMode::Fault => {
                 if !self.fault_signal_sent {
@@ -1103,35 +1036,25 @@ impl FlightLoop {
     }
 
     pub fn set_blims(&mut self, blims: blims::Blims<'static>) {
-        self.blims = Some(blims);
+        self.flight_state.set_blims(blims);
     }
 
-    /// Set the BLiMS landing-zone target. Updates the stored coordinates and,
-    /// if the BLiMS hardware is wired, pushes the target into the controller
-    /// so a retarget mid-flight takes effect immediately. Arming (enabling
-    /// guidance execution) is decided separately on entry to MainDeployed.
+    /// Set the upwind waypoint (>1000 ft AGL phase).
+    pub fn set_blims_upwind_target(&mut self, lat: f32, lon: f32) {
+        self.flight_state.set_blims_upwind_target(lat, lon);
+    }
+
+    /// Set the landing-zone target (<1000 ft AGL phase).
     pub fn set_blims_target(&mut self, lat: f32, lon: f32) {
-        self.blims_target_lat = lat;
-        self.blims_target_lon = lon;
-        self.blims_target_set = true;
-        self.flight_state.packet.blims_target_lat = lat;
-        self.flight_state.packet.blims_target_lon = lon;
-        if let Some(b) = &mut self.blims {
-            b.set_target(lat, lon);
-        }
+        self.flight_state.set_blims_target(lat, lon);
     }
 
-    /// Nudge the BLiMS motor slightly right then return to neutral.
-    /// Safe to call at any time — keeps movement small to protect the airframe.
+    /// Confirm BLiMS hardware is attached (motor control is handled internally by the library).
     pub async fn trigger_blims(&mut self) {
-        use blims::blims_constants::{LOITER_RIGHT_POS, NEUTRAL_POS};
-        if let Some(b) = &mut self.blims {
-            b.set_motor_raw(LOITER_RIGHT_POS); // 0.65 — slight right
-            Timer::after_millis(1_000).await;
-            b.set_motor_raw(NEUTRAL_POS);       // 0.5 — back to neutral
-            log::info!("BLiMS nudge complete → neutral");
+        if self.flight_state.blims.is_some() {
+            log::info!("BLiMS: hardware present, phase control active via execute()");
         } else {
-            log::warn!("BLiMS nudge: no BLiMS hardware attached");
+            log::warn!("BLiMS: no hardware attached");
         }
     }
 

@@ -66,31 +66,27 @@ pub struct Packet {
     pub head_acc: u32, // heading accuracy (deg*1e5)
     pub fix_type: u8,  // 0=none, 2=2D, 3=3D, 4=3D+DGPS
     pub head_mot: i32, // heading of motion (deg*1e5)
-    // BLiMS outputs
-    pub blims_motor_position: f32,
+    // BLiMS control outputs (from BlimsDataOut each execute() cycle)
+    pub blims_brakeline_diff: f32, // inches of differential; + = right turn, - = left turn
     pub blims_phase_id: i8,
     pub blims_pid_p: f32,
     pub blims_pid_i: f32,
     pub blims_bearing: f32,
-    pub blims_loiter_step: i8,
-    pub blims_heading_des: f32,
-    pub blims_heading_error: f32,
-    pub blims_error_integral: f32,
-    pub blims_dist_to_target_m: f32,
-    // BLiMS config
+    // BLiMS config (set pre-flight)
+    pub blims_upwind_lat: f32,
+    pub blims_upwind_lon: f32,
+    pub blims_downwind_lat: f32,
+    pub blims_downwind_lon: f32,
+    pub blims_wind_from_deg: f32,
+    // BLiMS active target (which waypoint is being homed to this cycle)
     pub blims_target_lat: f32,
     pub blims_target_lon: f32,
-    pub blims_wind_from_deg: f32,
     // monotonic clock: milliseconds since CFC boot (resets to 0 on reboot)
     pub ms_since_boot_cfc: u32,
 }
 
 impl Packet {
-    // 149 GPS fields + 4(motor_pos) + 1(phase_id) + 4(pid_p) + 4(pid_i) + 4(bearing)
-    //               + 1(loiter_step) + 4(heading_des) + 4(heading_error) + 4(error_integral)
-    //               + 4(dist_to_target) + 4(target_lat) + 4(target_lon) + 4(wind_from_deg) = 195
-    // airbrake_deployment changed u8→f32 (+3), so total 199+3 = 202
-    pub const SIZE: usize = 202;
+    pub const SIZE: usize = 201;
 
     pub fn to_bytes(&self) -> [u8; Self::SIZE] {
         let mut data = [0u8; Self::SIZE];
@@ -137,20 +133,19 @@ impl Packet {
         data[143..147].copy_from_slice(&self.head_acc.to_le_bytes());
         data[147] = self.fix_type;
         data[148..152].copy_from_slice(&self.head_mot.to_le_bytes());
-        data[152..156].copy_from_slice(&self.blims_motor_position.to_le_bytes());
+        data[152..156].copy_from_slice(&self.blims_brakeline_diff.to_le_bytes());
         data[156] = self.blims_phase_id as u8;
         data[157..161].copy_from_slice(&self.blims_pid_p.to_le_bytes());
         data[161..165].copy_from_slice(&self.blims_pid_i.to_le_bytes());
         data[165..169].copy_from_slice(&self.blims_bearing.to_le_bytes());
-        data[169] = self.blims_loiter_step as u8;
-        data[170..174].copy_from_slice(&self.blims_heading_des.to_le_bytes());
-        data[174..178].copy_from_slice(&self.blims_heading_error.to_le_bytes());
-        data[178..182].copy_from_slice(&self.blims_error_integral.to_le_bytes());
-        data[182..186].copy_from_slice(&self.blims_dist_to_target_m.to_le_bytes());
-        data[186..190].copy_from_slice(&self.blims_target_lat.to_le_bytes());
-        data[190..194].copy_from_slice(&self.blims_target_lon.to_le_bytes());
-        data[194..198].copy_from_slice(&self.blims_wind_from_deg.to_le_bytes());
-        data[198..202].copy_from_slice(&self.ms_since_boot_cfc.to_le_bytes());
+        data[169..173].copy_from_slice(&self.blims_upwind_lat.to_le_bytes());
+        data[173..177].copy_from_slice(&self.blims_upwind_lon.to_le_bytes());
+        data[177..181].copy_from_slice(&self.blims_downwind_lat.to_le_bytes());
+        data[181..185].copy_from_slice(&self.blims_downwind_lon.to_le_bytes());
+        data[185..189].copy_from_slice(&self.blims_wind_from_deg.to_le_bytes());
+        data[189..193].copy_from_slice(&self.blims_target_lat.to_le_bytes());
+        data[193..197].copy_from_slice(&self.blims_target_lon.to_le_bytes());
+        data[197..201].copy_from_slice(&self.ms_since_boot_cfc.to_le_bytes());
         data
     }
 
@@ -203,31 +198,30 @@ impl Packet {
             head_acc:  u32::from_le_bytes(bytes[143..147].try_into().unwrap()),
             fix_type:  bytes[147],
             head_mot:  i32::from_le_bytes(bytes[148..152].try_into().unwrap()),
-            blims_motor_position:   f32::from_le_bytes(bytes[152..156].try_into().unwrap()),
-            blims_phase_id:         bytes[156] as i8,
-            blims_pid_p:            f32::from_le_bytes(bytes[157..161].try_into().unwrap()),
-            blims_pid_i:            f32::from_le_bytes(bytes[161..165].try_into().unwrap()),
-            blims_bearing:          f32::from_le_bytes(bytes[165..169].try_into().unwrap()),
-            blims_loiter_step:      bytes[169] as i8,
-            blims_heading_des:      f32::from_le_bytes(bytes[170..174].try_into().unwrap()),
-            blims_heading_error:    f32::from_le_bytes(bytes[174..178].try_into().unwrap()),
-            blims_error_integral:   f32::from_le_bytes(bytes[178..182].try_into().unwrap()),
-            blims_dist_to_target_m: f32::from_le_bytes(bytes[182..186].try_into().unwrap()),
-            blims_target_lat:       f32::from_le_bytes(bytes[186..190].try_into().unwrap()),
-            blims_target_lon:       f32::from_le_bytes(bytes[190..194].try_into().unwrap()),
-            blims_wind_from_deg:    f32::from_le_bytes(bytes[194..198].try_into().unwrap()),
-            ms_since_boot_cfc:      u32::from_le_bytes(bytes[198..202].try_into().unwrap()),
+            blims_brakeline_diff: f32::from_le_bytes(bytes[152..156].try_into().unwrap()),
+            blims_phase_id:       bytes[156] as i8,
+            blims_pid_p:          f32::from_le_bytes(bytes[157..161].try_into().unwrap()),
+            blims_pid_i:          f32::from_le_bytes(bytes[161..165].try_into().unwrap()),
+            blims_bearing:        f32::from_le_bytes(bytes[165..169].try_into().unwrap()),
+            blims_upwind_lat:     f32::from_le_bytes(bytes[169..173].try_into().unwrap()),
+            blims_upwind_lon:     f32::from_le_bytes(bytes[173..177].try_into().unwrap()),
+            blims_downwind_lat:   f32::from_le_bytes(bytes[177..181].try_into().unwrap()),
+            blims_downwind_lon:   f32::from_le_bytes(bytes[181..185].try_into().unwrap()),
+            blims_wind_from_deg:  f32::from_le_bytes(bytes[185..189].try_into().unwrap()),
+            blims_target_lat:     f32::from_le_bytes(bytes[189..193].try_into().unwrap()),
+            blims_target_lon:     f32::from_le_bytes(bytes[193..197].try_into().unwrap()),
+            ms_since_boot_cfc:    u32::from_le_bytes(bytes[197..201].try_into().unwrap()),
         }
     }
 
-    pub const CSV_HEADER: &'static str = "flight_mode,pressure,temp,altitude,latitude,longitude,num_satellites,timestamp,mag_x,mag_y,mag_z,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,pt3,pt4,rtd,sv_open,mav_open,ssa_drogue_deployed,ssa_main_deployed,cmd_n1,cmd_n2,cmd_n3,cmd_n4,cmd_a1,cmd_a2,cmd_a3,airbrake_deployment,predicted_apogee,h_acc,v_acc,vel_n,vel_e,vel_d,g_speed,s_acc,head_acc,fix_type,head_mot,blims_motor_position,blims_phase_id,blims_pid_p,blims_pid_i,blims_bearing,blims_loiter_step,blims_heading_des,blims_heading_error,blims_error_integral,blims_dist_to_target_m,blims_target_lat,blims_target_lon,blims_wind_from_deg,ms_since_boot_cfc\n";
+    pub const CSV_HEADER: &'static str = "flight_mode,pressure,temp,altitude,latitude,longitude,num_satellites,timestamp,mag_x,mag_y,mag_z,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,pt3,pt4,rtd,sv_open,mav_open,ssa_drogue_deployed,ssa_main_deployed,cmd_n1,cmd_n2,cmd_n3,cmd_n4,cmd_a1,cmd_a2,cmd_a3,airbrake_deployment,predicted_apogee,h_acc,v_acc,vel_n,vel_e,vel_d,g_speed,s_acc,head_acc,fix_type,head_mot,blims_brakeline_diff,blims_phase_id,blims_pid_p,blims_pid_i,blims_bearing,blims_upwind_lat,blims_upwind_lon,blims_downwind_lat,blims_downwind_lon,blims_wind_from_deg,blims_target_lat,blims_target_lon,ms_since_boot_cfc\n";
 
     pub fn to_csv(&self, buf: &mut [u8]) -> usize {
         use core::fmt::Write;
         let mut wrapper = WriteWrapper::new(buf);
         let _ = write!(
             wrapper,
-            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
             self.flight_mode,
             self.pressure,
             self.temp,
@@ -271,19 +265,18 @@ impl Packet {
             self.head_acc,
             self.fix_type,
             self.head_mot,
-            self.blims_motor_position,
+            self.blims_brakeline_diff,
             self.blims_phase_id,
             self.blims_pid_p,
             self.blims_pid_i,
             self.blims_bearing,
-            self.blims_loiter_step,
-            self.blims_heading_des,
-            self.blims_heading_error,
-            self.blims_error_integral,
-            self.blims_dist_to_target_m,
+            self.blims_upwind_lat,
+            self.blims_upwind_lon,
+            self.blims_downwind_lat,
+            self.blims_downwind_lon,
+            self.blims_wind_from_deg,
             self.blims_target_lat,
             self.blims_target_lon,
-            self.blims_wind_from_deg,
             self.ms_since_boot_cfc,
         );
         wrapper.offset
@@ -294,9 +287,10 @@ impl Packet {
 pub const FAST_RECORD_TAG: u8 = 0xFA;
 pub const FULL_RECORD_TAG: u8 = 0xFB;
 
-/// High-rate record written at 20 Hz. Contains only sensors that update at
-/// ≥20 Hz (IMU, baro, ADC, valves, events, airbrakes). GPS and BLiMS are
-/// excluded — they update at ≤1 Hz and are covered by the full record.
+/// High-rate record written at 20 Hz. Contains sensors that update at ≥20 Hz
+/// (IMU, baro, ADC, valves, events, airbrakes) plus BLiMS control outputs
+/// which change each guidance cycle. GPS config fields update at ≤1 Hz and
+/// are covered by the full record.
 #[derive(Default)]
 pub struct FastRecord {
     pub ms_since_boot_cfc: u32,
@@ -329,11 +323,14 @@ pub struct FastRecord {
     pub cmd_a3: u8,
     pub airbrake_deployment: f32,
     pub predicted_apogee: f32,
+    // BLiMS control outputs (change every guidance cycle)
+    pub blims_brakeline_diff: f32,
+    pub blims_phase_id: i8,
 }
 
 impl FastRecord {
     /// Byte length of the serialised payload (tag byte not included).
-    pub const SIZE: usize = 87;
+    pub const SIZE: usize = 92;
 
     pub fn from_packet(p: &Packet) -> Self {
         Self {
@@ -367,6 +364,8 @@ impl FastRecord {
             cmd_a3: p.cmd_a3,
             airbrake_deployment: p.airbrake_deployment,
             predicted_apogee: p.predicted_apogee,
+            blims_brakeline_diff: p.blims_brakeline_diff,
+            blims_phase_id: p.blims_phase_id,
         }
     }
 
@@ -402,6 +401,8 @@ impl FastRecord {
         d[78] = self.cmd_a3;
         d[79..83].copy_from_slice(&self.airbrake_deployment.to_le_bytes());
         d[83..87].copy_from_slice(&self.predicted_apogee.to_le_bytes());
+        d[87..91].copy_from_slice(&self.blims_brakeline_diff.to_le_bytes());
+        d[91] = self.blims_phase_id as u8;
         d
     }
 }

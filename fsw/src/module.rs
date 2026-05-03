@@ -272,7 +272,7 @@ pub fn init_blims(
     config.top = WRAP_CYCLE_COUNT;
     config.divider = 46u8.into();
     let pwm = Pwm::new_output_b(pwm_slice, pwm_pin, config.clone());
-    blims::Blims::new(pwm, config, enable)
+    blims::Blims::new(blims::Hardware { pwm, pwm_config: config, enable_pin: enable })
 }
 
 /// Initialize onboard SPI flash for packet storage

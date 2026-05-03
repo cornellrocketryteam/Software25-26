@@ -231,22 +231,32 @@ async fn main(spawner: Spawner) {
             log::info!("Starting BLiMS Descent Simulation...");
             flight_loop.set_blims(blims);
 
-            // Pick a pseudo-random landing-zone target within ~500 m of the base
-            // coordinates each run. LCG seeded from boot time so it varies.
+            // Pick a pseudo-random landing-zone (downwind) target within ~500 m of
+            // the base coordinates each run. LCG seeded from boot time so it varies.
             const BASE_LAT: f32 = 42.446610;
             const BASE_LON: f32 = -76.461304;
             let seed = Instant::now().as_millis() as u32;
             let r1 = 1664525_u32.wrapping_mul(seed).wrapping_add(1013904223);
             let r2 = 1664525_u32.wrapping_mul(r1).wrapping_add(1013904223);
+            let r3 = 1664525_u32.wrapping_mul(r2).wrapping_add(1013904223);
+            let r4 = 1664525_u32.wrapping_mul(r3).wrapping_add(1013904223);
             // Map each u32 to [-0.005, +0.005] degrees (~500 m per axis).
             let lat_off = ((r1 % 1001) as f32 / 1000.0 - 0.5) * 0.01;
             let lon_off = ((r2 % 1001) as f32 / 1000.0 - 0.5) * 0.01;
             let target_lat = BASE_LAT + lat_off;
             let target_lon = BASE_LON + lon_off;
+            // Upwind waypoint offset ~500 m into the wind (wind from 270° = west).
+            let upwind_lat = BASE_LAT + ((r3 % 1001) as f32 / 1000.0 - 0.5) * 0.005;
+            let upwind_lon = BASE_LON - 0.006 + ((r4 % 1001) as f32 / 1000.0 - 0.5) * 0.005;
             log::info!(
-                "BLiMS random target: lat={:.6} lon={:.6} (offset {:.4},{:.4} deg)",
+                "BLiMS downwind target: lat={:.6} lon={:.6} (offset {:.4},{:.4} deg)",
                 target_lat, target_lon, lat_off, lon_off
             );
+            log::info!(
+                "BLiMS upwind waypoint: lat={:.6} lon={:.6}",
+                upwind_lat, upwind_lon
+            );
+            flight_loop.set_blims_upwind_target(upwind_lat, upwind_lon);
             flight_loop.set_blims_target(target_lat, target_lon);
 
             flight_sim::simulate_blims_descent(&mut flight_loop).await;
