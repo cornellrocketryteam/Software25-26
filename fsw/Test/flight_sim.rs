@@ -564,6 +564,7 @@ pub async fn simulate_real_flight(flight_loop: &mut FlightLoop) {
                 0.0
             } else {
                 constants::TEST_ALTS_LST[(alt_index - 1).min(constants::TEST_ALTS_LST.len() - 1)]
+                    / 3.28084_f32
             };
             last_mode = current_mode;
         }
@@ -576,30 +577,44 @@ pub async fn simulate_real_flight(flight_loop: &mut FlightLoop) {
         // so mode transitions, payload comms, and airbrakes trigger correctly.
         let in_dwell = !in_flight_mode && elapsed_ms < DWELL_MS;
 
-        // ── Altitude + velocity override ──────────────────────────────────────
+        // ── Altitude + velocity + acceleration override ───────────────────────
+        // Altitude profile is in feet — convert to metres for the packet.
         // vel_d is NED-down (positive = descending). Derived each cycle from the
         // altitude delta so payload comms (A2 fault signal) and BLiMS data see
         // realistic vertical speed instead of 0 from a bench GPS reading.
+        // Acceleration profile is in G's — convert to m/s² (× 9.81).
         const DT_S: f32 = constants::MAIN_LOOP_DELAY_MS as f32 / 1000.0;
+        const FT_TO_M: f32 = 1.0 / 3.28084;
+        const G_TO_MS2: f32 = 9.81;
 
         if in_flight_mode {
             // Feed the altitude profile every cycle from Ascent onward.
             if alt_index < constants::TEST_ALTS_LST.len() {
-                let alt = constants::TEST_ALTS_LST[alt_index];
+                let alt_m = constants::TEST_ALTS_LST[alt_index] * FT_TO_M;
                 // vel_d: positive = descending (NED), so climbing is negative.
-                let vel_up_ms = (alt - prev_alt) / DT_S;
-                flight_loop.sim_altitude_override = Some(alt);
+                let vel_up_ms = (alt_m - prev_alt) / DT_S;
+                flight_loop.sim_altitude_override = Some(alt_m);
                 flight_loop.sim_vel_d_override = Some(-vel_up_ms as f64);
+
+                // Map acceleration index proportionally across the two lists.
+                let acc_index = (alt_index as f64
+                    * constants::TEST_ACCS_LST.len() as f64
+                    / constants::TEST_ALTS_LST.len() as f64) as usize;
+                let acc_index = acc_index.min(constants::TEST_ACCS_LST.len() - 1);
+                let accel_z_ms2 = constants::TEST_ACCS_LST[acc_index] as f32 * G_TO_MS2;
+                flight_loop.sim_accel_z_override = Some(accel_z_ms2);
+
                 if alt_index % 50 == 0 {
                     log::info!(
-                        "[SIM] alt: {:.1}m  vel_up: {:.1}m/s  idx: {}  mode: {}",
-                        alt,
+                        "[SIM] alt: {:.1}m  vel_up: {:.1}m/s  accel_z: {:.2}m/s²  idx: {}  mode: {}",
+                        alt_m,
                         vel_up_ms,
+                        accel_z_ms2,
                         alt_index,
                         flight_loop.flight_state.flight_mode_name()
                     );
                 }
-                prev_alt = alt;
+                prev_alt = alt_m;
                 alt_index += 1;
             } else {
                 log::info!("[SIM] End of TEST_ALTS_LST — simulation complete.");
@@ -661,6 +676,7 @@ pub async fn simulate_real_flight(flight_loop: &mut FlightLoop) {
     flight_loop.sim_altitude_override = None;
     flight_loop.sim_vel_d_override = None;
     flight_loop.sim_key_armed_override = None;
+    flight_loop.sim_accel_z_override = None;
 }
 
 // Runs BLiMS parafoil guidance hardware against real GPS with the L3 Launch 4

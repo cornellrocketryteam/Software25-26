@@ -92,6 +92,10 @@ pub struct FlightLoop {
     /// Sim only: if Some, forces key_armed after read_sensors() overwrites it from
     /// the physical GPIO pin. Required for no-hardware Startup → Standby transition.
     pub sim_key_armed_override: Option<bool>,
+
+    /// Sim only: if Some, overrides packet.accel_z (m/s²) after read_sensors().
+    /// Inject converted TEST_ACCS_LST values (G × 9.81) here.
+    pub sim_accel_z_override: Option<f32>,
 }
 
 impl FlightLoop {
@@ -206,6 +210,7 @@ impl FlightLoop {
             sim_altitude_override: None,
             sim_vel_d_override: None,
             sim_key_armed_override: None,
+            sim_accel_z_override: None,
         }
     }
 
@@ -249,6 +254,11 @@ impl FlightLoop {
         if let Some(armed) = self.sim_key_armed_override {
             self.flight_state.key_armed = armed;
             self.key_armed = armed;
+        }
+
+        // Sim override: inject pre-recorded vertical acceleration (m/s²).
+        if let Some(accel_z) = self.sim_accel_z_override {
+            self.flight_state.packet.accel_z = accel_z;
         }
 
         // 2b. Forward latest sensor data to the airbrake controller on Core 1.
