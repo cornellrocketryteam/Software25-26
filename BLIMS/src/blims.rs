@@ -120,8 +120,8 @@ impl<'d> Blims<'d> {
         };
         //hold enable high continuously so motor driver stays armed
         b.enable_pin.set_low();
-        embassy_time::block_for(Duration::from_millis(500));
-        b.enable_pin.set_high();
+        //embassy_time::block_for(Duration::from_millis(500));
+        //b.enable_pin.set_high();
         //neutral until first execute() call
         b.set_brakeline_diff(NEUTRAL_POS);
         b
@@ -248,6 +248,15 @@ impl<'d> Blims<'d> {
     // =========================================================================
     // Motor
     // =========================================================================
+
+    /// Pulse enable low for 500 ms then high — resets/activates the ODrive.
+    /// Called automatically in `new()`; call again to re-arm after a delay.
+    pub fn pulse_enable(&mut self) {
+        self.enable_pin.set_low();
+        embassy_time::block_for(embassy_time::Duration::from_millis(500));
+        self.enable_pin.set_high();
+    }
+
     pub fn set_brakeline_diff(&mut self, mut position: f32) {
         position = position.clamp(MOTOR_MIN, MOTOR_MAX);
         self.brakeline_diff_in = position;
@@ -268,7 +277,7 @@ impl<'d> Blims<'d> {
         let five_pct = WRAP_CYCLE_COUNT as f32 * 0.05;
         let duty = (five_pct + pwm_normalized * five_pct) as u16;
 
-        self.pwm_config.compare_a = duty;
+        self.pwm_config.compare_b = duty;
         self.pwm.set_config(&self.pwm_config);
     }
 

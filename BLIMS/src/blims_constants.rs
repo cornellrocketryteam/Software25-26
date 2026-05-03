@@ -53,7 +53,7 @@ pub const FT_PER_M: f32 = 3.2808; // feet per meter conversion
 
 //pub const BRAKE_ALT: f32 = 10.0; - old touchdown threshold
 
-pub const INITIAL_HOLD_THRESHOLD: u32 = 10000; // parafoil stabilization
+pub const INITIAL_HOLD_THRESHOLD: u32 = 0; // parafoil stabilization//10_000
 // want wrap to be as large as possible, increases the amount of steps 
 pub const WRAP_CYCLE_COUNT: u16 = 65_535;
 
