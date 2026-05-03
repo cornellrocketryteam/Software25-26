@@ -192,8 +192,8 @@ impl FlightState {
         let mut stored_launch_elapsed_ms = 0u32;
         let mut stored_blims_upwind_lat   = constants::BLIMS_UPWIND_TARGET_LAT;
         let mut stored_blims_upwind_lon   = constants::BLIMS_UPWIND_TARGET_LON;
-        let mut stored_blims_downwind_lat = constants::BLIMS_TARGET_LAT;
-        let mut stored_blims_downwind_lon = constants::BLIMS_TARGET_LON;
+        let mut stored_blims_downwind_lat = constants::BLIMS_DOWNWIND_TARGET_LAT;
+        let mut stored_blims_downwind_lon = constants::BLIMS_DOWNWIND_TARGET_LON;
         if flash_ok {
             match with_timeout(scan_to, flash.initialize_snapshot_ring()).await {
                 Ok(Ok(_)) => match with_timeout(scan_to, flash.read_latest_snapshot()).await {
@@ -924,11 +924,11 @@ impl FlightState {
         // Log which waypoint is actively being tracked
         use blims::blims_state::Phase;
         if out.phase_id == Phase::Upwind as i8 {
-            self.packet.blims_target_lat = self.blims_upwind_lat;
-            self.packet.blims_target_lon = self.blims_upwind_lon;
+            self.packet.blims_upwind_lat = self.blims_upwind_lat;
+            self.packet.blims_upwind_lon = self.blims_upwind_lon;
         } else {
-            self.packet.blims_target_lat = self.blims_downwind_lat;
-            self.packet.blims_target_lon = self.blims_downwind_lon;
+            self.packet.blims_downwind_lat = self.blims_downwind_lat;
+            self.packet.blims_downwind_lon = self.blims_downwind_lon;
         }
     }
 

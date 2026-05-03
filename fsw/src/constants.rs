@@ -85,13 +85,13 @@ pub const LAUNCH_ACCEL_Y_THRESHOLD_G: f32 = 4.0;
 pub const G_TO_MS2: f32 = 9.80665;
 
 // Landing-zone target (switched to at <1000 ft AGL)
-pub const BLIMS_TARGET_LAT: f32 = 42.446610;
-pub const BLIMS_TARGET_LON: f32 = -76.461304;
+pub const BLIMS_DOWNWIND_TARGET_LAT: f32 = 42.703311;
+pub const BLIMS_DOWNWIND_TARGET_LON: f32 = -77.181125;
 // Upwind waypoint — steer here after main deploy (>1000 ft AGL) so the
 // parafoil drifts into position upwind of the landing zone. For wind from
 // 270° (west), offset ~500 m west of the landing target.
-pub const BLIMS_UPWIND_TARGET_LAT: f32 = 42.446610;
-pub const BLIMS_UPWIND_TARGET_LON: f32 = -76.467384;
+pub const BLIMS_UPWIND_TARGET_LAT: f32 = 42.705565;
+pub const BLIMS_UPWIND_TARGET_LON: f32 = -77.196310;
 pub const BLIMS_WIND_FROM_DEG: f32 = 270.0;
 
 pub const FLASH_LOGGING_PERIOD_MS: u64 = 50;   // Fast record rate: 20 Hz

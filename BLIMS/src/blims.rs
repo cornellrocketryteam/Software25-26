@@ -248,7 +248,7 @@ impl<'d> Blims<'d> {
     // =========================================================================
     // Motor
     // =========================================================================
-    fn set_brakeline_diff(&mut self, mut position: f32) {
+    pub fn set_brakeline_diff(&mut self, mut position: f32) {
         position = position.clamp(MOTOR_MIN, MOTOR_MAX);
         self.brakeline_diff_in = position;
         // Map inches [MOTOR_MIN, MOTOR_MAX] = [-9, +9] → normalised [0.0, 1.0].

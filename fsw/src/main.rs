@@ -157,7 +157,9 @@ async fn main(spawner: Spawner) {
     //flight_state.reset_fram().await;
 
     // BLiMS: GPIO 34 = enable, GPIO 35 = PWM (PWM_SLICE5B, 50 Hz)
-    let blims = module::init_blims(p.PIN_34, p.PWM_SLICE9, p.PIN_35);
+    // test_blims initialises the same slice directly — skip library init to keep the peripheral free.
+    #[cfg(not(feature = "test_blims"))]
+    let blims = module::init_blims(p.PIN_12, p.PWM_SLICE6, p.PIN_13);//34, 9, 35
 
     // --- FLIGHT SIMULATIONS --- //
     #[cfg(any(
@@ -243,21 +245,21 @@ async fn main(spawner: Spawner) {
             // Map each u32 to [-0.005, +0.005] degrees (~500 m per axis).
             let lat_off = ((r1 % 1001) as f32 / 1000.0 - 0.5) * 0.01;
             let lon_off = ((r2 % 1001) as f32 / 1000.0 - 0.5) * 0.01;
-            let target_lat = BASE_LAT + lat_off;
-            let target_lon = BASE_LON + lon_off;
+            let downwind_lat = BASE_LAT + lat_off;
+            let downwind_lon = BASE_LON + lon_off;
             // Upwind waypoint offset ~500 m into the wind (wind from 270° = west).
             let upwind_lat = BASE_LAT + ((r3 % 1001) as f32 / 1000.0 - 0.5) * 0.005;
             let upwind_lon = BASE_LON - 0.006 + ((r4 % 1001) as f32 / 1000.0 - 0.5) * 0.005;
             log::info!(
                 "BLiMS downwind target: lat={:.6} lon={:.6} (offset {:.4},{:.4} deg)",
-                target_lat, target_lon, lat_off, lon_off
+                downwind_lat, downwind_lon, lat_off, lon_off
             );
             log::info!(
                 "BLiMS upwind waypoint: lat={:.6} lon={:.6}",
                 upwind_lat, upwind_lon
             );
             flight_loop.set_blims_upwind_target(upwind_lat, upwind_lon);
-            flight_loop.set_blims_downwind_target(target_lat, target_lon);
+            flight_loop.set_blims_downwind_target(downwind_lat, downwind_lon);
 
             flight_sim::simulate_blims_descent(&mut flight_loop).await;
             log::info!("Simulation Complete.");
@@ -650,46 +652,58 @@ async fn main(spawner: Spawner) {
     }
 
     // --- BLiMS MOTOR PWM TEST --- //
-    // Verifies that the BLiMS ODrive motor controller receives and follows PWM
-    // commands correctly. Steps through: neutral → max right → neutral →
-    // max left → neutral, holding each position for 5 seconds so you can
-    // observe movement and measure the pulse on an oscilloscope.
+    // Directly drives the ODrive PWM without the Blims library, mirroring
+    // motor_test.rs. Steps neutral → max right → neutral → max left.
     //
     // Flash with:  cargo build --release --features test_blims
     //
-    // Hardware:
-    //   PIN_34 = enable (driven HIGH to power up the ODrive)
-    //   PIN_35 = PWM output (50 Hz, via PWM_SLICE9)
+    // Hardware (av bay):
+    //   PIN_34 = enable (active-low reset pulse, then held HIGH)
+    //   PIN_35 = PWM output (50 Hz, PWM_SLICE9 channel B, compare_b)
     //
-    // Expected pulse widths (at WRAP_CYCLE_COUNT=65535, divider=46, 50 Hz):
-    //   neutral  (0.5) → 5% + 0.5×5% = 7.5% duty → ~1500 µs
-    //   max right(0.7) → 5% + 0.7×5% = 8.5% duty → ~1700 µs
-    //   max left (0.3) → 5% + 0.3×5% = 6.5% duty → ~1300 µs
+    // Positions are normalised [0, 1]:
+    //   0.0 = full left  →  5% duty → ~1000 µs
+    //   0.5 = neutral    → 7.5% duty → ~1500 µs
+    //   1.0 = full right → 10% duty  → ~2000 µs
     #[cfg(feature = "test_blims")]
     {
-        log::info!("=== BLiMS Motor PWM Test ===");
-        log::info!("PIN_34 = ENABLE (going HIGH now)");
-        log::info!("PIN_35 = PWM signal (50 Hz)");
-        log::info!("Motor range: 0.3=max left  0.5=neutral  0.7=max right");
+        use embassy_rp::pwm::{Config as PwmConfig, Pwm};
 
-        // Blims::new() already drives enable HIGH and parks at neutral.
-        let mut b = blims;
+        const TOP: u16 = 65_535;
+
+        let mut enable_pin = Output::new(p.PIN_34, Level::High);
+        Timer::after_millis(500).await;
+        enable_pin.set_low();
+        Timer::after_millis(500).await;
+        enable_pin.set_high();
+
+        let mut pwm_config = PwmConfig::default();
+        pwm_config.top = TOP;
+        pwm_config.divider = 46u8.into();
+        pwm_config.compare_b = 0;
+        let mut pwm = Pwm::new_output_b(p.PWM_SLICE9, p.PIN_35, pwm_config.clone());
+
+        log::info!("=== BLiMS Motor PWM Test (av bay) ===");
+        log::info!("PIN_34 = ENABLE, PIN_35 = PWM (compare_b, 50 Hz)");
+        log::info!("0.0=full left  0.5=neutral  1.0=full right");
 
         let steps: &[(f32, &str)] = &[
-            (0.5, "neutral   (0.5) — 1500 us"),
-            (0.7, "max right (0.7) — 1700 us"),
-            (0.5, "neutral   (0.5) — 1500 us"),
-            (0.3, "max left  (0.3) — 1300 us"),
-            (0.5, "neutral   (0.5) — 1500 us — SAFE END"),
+            (0.5, "neutral   (0.5) → ~1500 us"),
+            (1.0, "max right (1.0) → ~2000 us"),
+            (0.5, "neutral   (0.5) → ~1500 us"),
+            (0.0, "max left  (0.0) → ~1000 us"),
+            (0.5, "neutral   (0.5) → ~1500 us — SAFE END"),
         ];
 
-        // Give the ODrive 3 seconds to power up before the first command.
         Timer::after_millis(3000).await;
 
         loop {
             for &(pos, label) in steps {
                 log::info!("BLiMS: setting motor → {}", label);
-                b.set_motor_raw(pos);
+                let five_pct = TOP as f32 * 0.05;
+                let duty = (five_pct + pos * five_pct) as u16;
+                pwm_config.compare_b = duty;
+                pwm.set_config(&pwm_config);
                 led.toggle();
                 Timer::after_millis(5000).await;
             }

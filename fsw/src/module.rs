@@ -7,9 +7,9 @@ use embassy_rp::gpio::Output;
 use embassy_rp::i2c::{Config as I2cConfig, I2c, InterruptHandler as I2cInterruptHandler};
 use embassy_rp::peripherals::{
     DMA_CH0, DMA_CH1, DMA_CH2, DMA_CH3, DMA_CH4, DMA_CH5, DMA_CH6, I2C0, PIN_0, PIN_1, PIN_2,
-    PIN_3, PIN_4, PIN_8, PIN_9, PIN_21, PIN_32, PIN_33, PIN_34, PIN_35, PIN_36, PIN_37, PIN_38,
-    PIN_39, PIN_40, PIN_47, PWM_SLICE2, PWM_SLICE9, PWM_SLICE8, PWM_SLICE11, SPI0, UART0, UART1, USB,
-};
+    PIN_3, PIN_4, PIN_8, PIN_9, PIN_21, PIN_32, PIN_33, PIN_12, PIN_13, PIN_36, PIN_37, PIN_38,
+    PIN_39, PIN_40, PIN_47, PWM_SLICE2, PWM_SLICE6, PWM_SLICE8, PWM_SLICE11, SPI0, UART0, UART1, USB,
+};//34, 35, slice 9 vs 12, 13, slice 6
 use embassy_rp::spi::{Config as SpiConfig, Spi};
 use embassy_rp::uart::{Config as UartConfig, InterruptHandler as UartInterruptHandler, Uart};
 use embassy_rp::usb::{Driver, InterruptHandler as UsbInterruptHandler};
@@ -259,9 +259,9 @@ pub fn init_actuators(
 /// GPIO 35 = PWM signal to servo (50 Hz RC PWM)
 /// GPIO 35 = PWM_SLICE9 channel B
 pub fn init_blims(
-    enable_pin: Peri<'static, PIN_34>,
-    pwm_slice:  Peri<'static, PWM_SLICE9>,
-    pwm_pin:    Peri<'static, PIN_35>,
+    enable_pin: Peri<'static, PIN_12>,//34
+    pwm_slice:  Peri<'static, PWM_SLICE6>, //9
+    pwm_pin:    Peri<'static, PIN_13>,//35
 ) -> blims::Blims<'static> {
     use blims::blims_constants::WRAP_CYCLE_COUNT;
 

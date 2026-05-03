@@ -147,7 +147,7 @@ pub fn emit_telemetry(packet: &crate::packet::Packet) {
         let mut w = BufWriter::new(&mut buf);
         let _ = write!(
             w,
-            "$TELEM,{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
+            "$TELEM,{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
             packet.flight_mode,
             packet.pressure,
             packet.temp,
@@ -196,8 +196,6 @@ pub fn emit_telemetry(packet: &crate::packet::Packet) {
             packet.blims_pid_p,
             packet.blims_pid_i,
             packet.blims_bearing,
-            packet.blims_target_lat,
-            packet.blims_target_lon,
             packet.blims_wind_from_deg,
             packet.ms_since_boot_cfc,
         );
