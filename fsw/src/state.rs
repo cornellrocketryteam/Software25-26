@@ -892,6 +892,7 @@ impl FlightState {
                 self.blims_wind_from_deg
             );
             self.blims_armed = true;
+            blims.pulse_enable();
         }
 
         let alt_ft = self.packet.altitude * 3.28084_f32;
