@@ -1,13 +1,17 @@
 """
 car_test_visualizer.py — BLiMS real-time visualizer (pyqtgraph)
 ===============================================================
-Reads the 13-field CSV stream from car_test.rs (via serial_splitter.py or
+Reads the 12-field CSV stream from car_test.rs (via serial_splitter.py or
 directly from the Pico's USB serial port) and displays three live panels:
 
   1. MAP      – GPS trail, current position dot, target marker,
                 heading arrow (blue), bearing-to-target arrow (green)
   2. PI CTRL  – P term (orange) and I term (purple) over a rolling window
   3. ALT/PHASE– Altitude over time, coloured by active BLiMS phase
+
+CSV format (12 fields):
+    lat, lon, target_lat, target_lon, heading, bearing,
+    motor_pos, timestamp_ms, P, I, phase, altitude
 
 Install
 -------
@@ -55,24 +59,28 @@ COL_TIMESTAMP_MS               = 7
 COL_P, COL_I                   = 8, 9
 COL_PHASE                      = 10
 COL_ALTITUDE                   = 11
-COL_LOITER_STEP                = 12
-EXPECTED_FIELDS                = 13
+EXPECTED_FIELDS                = 12   # MVP: no loiter_step field
 
 # ── PHASE METADATA ────────────────────────────────────────────────────────────
 
 PHASE_NAMES = {
-    0: 'HELD', 1: 'TRACK', 2: 'DOWNWIND',
-    3: 'BASE', 4: 'FINAL', 5: 'NEUTRAL', 6: 'LOITER',
+    0: 'HELD',
+    1: 'INITIAL_HOLD',
+    2: 'UPWIND',
+    3: 'DOWNWIND',
+    4: 'NEUTRAL',
 }
 PHASE_COLORS_RGB = {
-    0: (136, 136, 136),   # HELD      – grey
-    1: ( 33, 150, 243),   # TRACK     – blue
-    2: ( 76, 175,  80),   # DOWNWIND  – green
-    3: (255, 152,   0),   # BASE      – orange
-    4: (156,  39, 176),   # FINAL     – purple
-    5: (244,  67,  54),   # NEUTRAL   – red
-    6: (  0, 188, 212),   # LOITER    – cyan
+    0: (136, 136, 136),  # HELD         – grey
+    1: (255, 235,  59),  # INITIAL_HOLD – yellow
+    2: ( 33, 150, 243),  # UPWIND       – blue
+    3: ( 76, 175,  80),  # DOWNWIND     – green
+    4: (244,  67,  54),  # NEUTRAL      – red
 }
+
+# MVP altitude thresholds — must match blims_constants.rs
+ALT_UPWIND_FT  = 1000.0   # Upwind → Downwind crossover
+ALT_NEUTRAL_FT =  200.0   # Downwind → Neutral (hands off)
 
 def phase_color(phase_id):
     return PHASE_COLORS_RGB.get(phase_id, (255, 255, 255))
@@ -135,7 +143,6 @@ class SerialReader(threading.Thread):
                     float(parts[COL_I]),
                     int(parts[COL_PHASE]),
                     float(parts[COL_ALTITUDE]),
-                    int(parts[COL_LOITER_STEP]),
                 ))
             except Exception:
                 continue
@@ -145,7 +152,7 @@ class SerialReader(threading.Thread):
 class BlimsVisualizer(QtWidgets.QMainWindow):
     def __init__(self, serial_port):
         super().__init__()
-        self.setWindowTitle('BLiMS Visualizer')
+        self.setWindowTitle('BLiMS MVP Visualizer')
         self.resize(1050, 900)
 
         # ── Data buffers ─────────────────────────────────────────────────────
@@ -230,7 +237,7 @@ class BlimsVisualizer(QtWidgets.QMainWindow):
 
         self.pos_dot = pg.ScatterPlotItem(
             size=12, pen=pg.mkPen('#cdd6f4', width=1),
-            brush=pg.mkBrush(*PHASE_COLORS_RGB[1])
+            brush=pg.mkBrush(*PHASE_COLORS_RGB[2])   # start colour: UPWIND blue
         )
         p.addItem(self.pos_dot)
 
@@ -266,25 +273,30 @@ class BlimsVisualizer(QtWidgets.QMainWindow):
 
     def _build_pi_panel(self):
         p = self.glw.addPlot(row=1, col=0)
-        self._style(p, 'PI Controller', 'Time (s)', 'Value')
-        p.setYRange(-0.25, 0.25, padding=0.05)
+        self._style(p, 'PI Controller  (inches)', 'Time (s)', 'Brakeline differential (in)')
+        # Motor authority is ±9 in; P/I terms sum to that range
+        p.setYRange(-10, 10, padding=0.05)
         self.pi_plot = p
 
-        self.p_curve = p.plot(pen=pg.mkPen('#FAB387', width=2))   # orange
-        self.i_curve = p.plot(pen=pg.mkPen('#CBA6F7', width=2))   # purple
-        self.m_curve = p.plot(                                      # motor offset
+        self.p_curve = p.plot(pen=pg.mkPen('#FAB387', width=2),
+                              name='P term')
+        self.i_curve = p.plot(pen=pg.mkPen('#CBA6F7', width=2),
+                              name='I term')
+        self.m_curve = p.plot(
             pen=pg.mkPen('#A6E3A1', width=1.5,
-                         style=QtCore.Qt.PenStyle.DashLine)
+                         style=QtCore.Qt.PenStyle.DashLine),
+            name='Motor (P+I)'
         )
+        # Neutral reference line at 0 in
         p.addItem(pg.InfiniteLine(
             pos=0, angle=0,
             pen=pg.mkPen('#585b70', width=1,
                          style=QtCore.Qt.PenStyle.DashLine)
         ))
 
-        for text, color, y in [('— P term',      '#FAB387', 1.0),
-                                ('— I term',      '#CBA6F7', 0.90),
-                                ('-- Motor−0.5',  '#A6E3A1', 0.80)]:
+        for text, color, y in [('— P term',    '#FAB387', 1.0),
+                                ('— I term',    '#CBA6F7', 0.90),
+                                ('-- Motor(in)','#A6E3A1', 0.80)]:
             ti = pg.TextItem(text, color=color, anchor=(1, 0))
             ti.setParentItem(p.getViewBox())
             ti.setPos(1.0, y)
@@ -300,11 +312,10 @@ class BlimsVisualizer(QtWidgets.QMainWindow):
             p.addItem(s)
             self.phase_scatter[pid] = s
 
+        # MVP altitude threshold reference lines
         for alt, label, color in [
-            (1000, 'Downwind', '#2196F3'),
-            ( 600, 'Base',     '#FF9800'),
-            ( 300, 'Final',    '#9C27B0'),
-            ( 100, 'Neutral',  '#F44336'),
+            (ALT_UPWIND_FT,  'Upwind→Downwind', '#2196F3'),
+            (ALT_NEUTRAL_FT, 'Neutral',          '#F44336'),
         ]:
             line = pg.InfiniteLine(
                 pos=alt, angle=0,
@@ -323,7 +334,7 @@ class BlimsVisualizer(QtWidgets.QMainWindow):
             ti = pg.TextItem(f'● {name}', color=color, anchor=(1, 0))
             ti.setParentItem(p.getViewBox())
             ti.setPos(1.0, legend_y)
-            legend_y -= 0.10
+            legend_y -= 0.12
 
     # ─────────────────────────────────────────────────────────────────────────
     # Per-frame update
@@ -341,7 +352,7 @@ class BlimsVisualizer(QtWidgets.QMainWindow):
             except queue.Empty:
                 break
             (lat, lon, tgt_lat, tgt_lon, heading, bearing,
-             motor, ts_ms, p, i, phase, alt, loiter) = row
+             motor, ts_ms, p, i, phase, alt) = row
             self.lats.append(lat)
             self.lons.append(lon)
             self.times.append(ts_ms / 1000.0)
@@ -356,16 +367,16 @@ class BlimsVisualizer(QtWidgets.QMainWindow):
             return
 
         (lat, lon, tgt_lat, tgt_lon, heading, bearing,
-         motor, ts_ms, p, i, phase, alt, loiter) = self.latest
+         motor, ts_ms, p, i, phase, alt) = self.latest
 
-        t0        = self.times[0]
-        rel       = np.array(self.times) - t0
-        lats_a    = np.array(self.lats)
-        lons_a    = np.array(self.lons)
-        p_a       = np.array(self.p_terms)
-        i_a       = np.array(self.i_terms)
-        alt_a     = np.array(self.altitudes)
-        phase_a   = np.array(self.phases)
+        t0      = self.times[0]
+        rel     = np.array(self.times) - t0
+        lats_a  = np.array(self.lats)
+        lons_a  = np.array(self.lons)
+        p_a     = np.array(self.p_terms)
+        i_a     = np.array(self.i_terms)
+        alt_a   = np.array(self.altitudes)
+        phase_a = np.array(self.phases)
 
         err        = wrap180(bearing - heading)
         pname      = PHASE_NAMES.get(phase, '???')
@@ -374,8 +385,8 @@ class BlimsVisualizer(QtWidgets.QMainWindow):
             f'  Lat {lat:.6f}   Lon {lon:.6f}   '
             f'Alt {alt:.0f} ft   '
             f'Head {heading:.1f}°   Bearing {bearing:.1f}°   '
-            f'Err {err:+.1f}°   Motor {motor:.3f}   '
-            f'Phase: {pname}   Loiter: {loiter}'
+            f'Err {err:+.1f}°   Brakeline {motor:+.3f} in   '
+            f'Phase: {pname}'
         )
 
         # ── MAP ───────────────────────────────────────────────────────────────
@@ -403,7 +414,7 @@ class BlimsVisualizer(QtWidgets.QMainWindow):
         # ── PI ────────────────────────────────────────────────────────────────
         self.p_curve.setData(rel, p_a)
         self.i_curve.setData(rel, i_a)
-        self.m_curve.setData(rel, p_a + i_a)
+        self.m_curve.setData(rel, p_a + i_a)   # total motor command in inches
         t_now = rel[-1]
         self.pi_plot.setXRange(t_now - WINDOW_SECONDS, t_now, padding=0)
 
@@ -416,12 +427,7 @@ class BlimsVisualizer(QtWidgets.QMainWindow):
                 scatter.setData([], [])
 
         self.alt_plot.setXRange(t_now - WINDOW_SECONDS, t_now, padding=0)
-        if alt_a.size:
-            self.alt_plot.setYRange(
-                max(0, float(alt_a.min()) - 50),
-                float(alt_a.max()) + 100,
-                padding=0
-            )
+        self.alt_plot.setYRange(0, 1100, padding=0)
 
 # ── ENTRY POINT ───────────────────────────────────────────────────────────────
 
