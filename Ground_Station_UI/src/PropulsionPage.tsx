@@ -57,26 +57,56 @@ type AdcDataMessage = {
 }
 
 type Fsw_Telemetry = {
-    flight_mode: number;
-    pressure: number; //Outside pressure
-    temp: number; //Outside temperature
-    altitude: number;
-    latitude: number;
-    longitude: number;
-    num_satellites: number;
-    timestamp: number;
-    mag_x: number;
-    mag_y: number;
-    mag_z: number;
-    accel_x: number;
-    accel_y: number;
-    accel_z: number;
-    gyro_x: number;
-    gyro_y: number;
-    gyro_z: number;
-    pt3: number; 
-    pt4: number; 
-    rtd: number; 
+    flight_mode: number,
+    pressure: number, //Outside pressure
+    temp: number, //Outside temperature
+    altitude: number,
+    latitude: number,
+    longitude: number,
+    num_satellites: number,
+    timestamp: number,
+    mag_x: number, mag_y: number, mag_z: number,
+    accel_x: number, accel_y: number, accel_z: number,
+    gyro_x: number, gyro_y: number, gyro_z: number,
+    pt3: number,
+    pt4: number,
+    rtd: number,
+    sv_open: boolean,
+    mav_open: boolean,
+    ssa_drogue_deployed: number,
+    ssa_main_deployed: number,
+    cmd_n1: number,
+    cmd_n2: number,
+    cmd_n3: number,
+    cmd_n4: number,
+    cmd_a1: number,
+    cmd_a2: number,
+    cmd_a3: number,
+    airbrake_state: number,
+    predicted_apogee: number,
+    h_acc: number,
+    v_acc: number,
+    vel_n: number,
+    vel_e: number,
+    vel_d: number,
+    g_speed: number,
+    s_acc: number,
+    head_acc: number,
+    fix_type: number,
+    head_mot: number,
+    blims_motor_position: number,
+    blims_phase_id: number,
+    blims_pid_p: number,
+    blims_pid_i: number,
+    blims_bearing: number,
+    blims_loiter_step: number,
+    blims_heading_des: number,
+    blims_heading_error: number,
+    blims_error_integral: number,
+    blims_dist_to_target_m: number,
+    blims_target_lat: number,
+    blims_target_lon: number,
+    blims_wind_from_deg: number
 }
 
 type AdcChannel = {

@@ -36,6 +36,22 @@ export function RecoveryPage() {
     const handleMessage = (_event: MessageEvent) => {
         // Reserved for future telemetry handling on this page
     };
+    
+    const basicValidCheckForCoords = (lat: number, lng: number) => {
+        if (isNaN(lat) || isNaN(lng)) {
+            alert("Please enter valid numeric values for latitude and longitude.");
+            return false;
+        }
+        if (lat < -90 || lat > 90) {
+            alert("Latitude must be between -90 and 90 degrees.");
+            return false;
+        }
+        if (lng < -180 || lng > 180) {
+            alert("Longitude must be between -180 and 180 degrees.");
+            return false;
+        }
+        return true;
+    }
 
     useEffect(() => {
         let heartbeatInterval: ReturnType<typeof setInterval>;
@@ -107,6 +123,7 @@ export function RecoveryPage() {
                         </div>
                         <button
                             onClick={() => {
+                                if(!basicValidCheckForCoords(Number(latitude), Number(longitude))) return;
                                 const lat = Number(latitude);
                                 const lon = Number(longitude);
                                 setConfirmedCoords({ lat: latitude, lng: longitude });
