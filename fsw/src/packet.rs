@@ -278,9 +278,10 @@ impl Packet {
 pub const FAST_RECORD_TAG: u8 = 0xFA;
 pub const FULL_RECORD_TAG: u8 = 0xFB;
 
-/// High-rate record written at 20 Hz. Contains only sensors that update at
-/// ≥20 Hz (IMU, baro, ADC, valves, events, airbrakes). GPS and BLiMS are
-/// excluded — they update at ≤1 Hz and are covered by the full record.
+/// High-rate record written at 20 Hz. Contains sensors that update at ≥20 Hz
+/// (IMU, baro, ADC, valves, events, airbrakes) plus BLiMS control outputs
+/// which change each guidance cycle. GPS config fields update at ≤1 Hz and
+/// are covered by the full record.
 #[derive(Default)]
 pub struct FastRecord {
     pub ms_since_boot_cfc: u32,
@@ -313,11 +314,14 @@ pub struct FastRecord {
     pub cmd_a3: u8,
     pub airbrake_deployment: f32,
     pub predicted_apogee: f32,
+    // BLiMS control outputs (change every guidance cycle)
+    pub blims_brakeline_diff: f32,
+    pub blims_phase_id: i8,
 }
 
 impl FastRecord {
     /// Byte length of the serialised payload (tag byte not included).
-    pub const SIZE: usize = 87;
+    pub const SIZE: usize = 92;
 
     pub fn from_packet(p: &Packet) -> Self {
         Self {
@@ -351,6 +355,8 @@ impl FastRecord {
             cmd_a3: p.cmd_a3,
             airbrake_deployment: p.airbrake_deployment,
             predicted_apogee: p.predicted_apogee,
+            blims_brakeline_diff: p.blims_brakeline_diff,
+            blims_phase_id: p.blims_phase_id,
         }
     }
 
@@ -386,6 +392,8 @@ impl FastRecord {
         d[78] = self.cmd_a3;
         d[79..83].copy_from_slice(&self.airbrake_deployment.to_le_bytes());
         d[83..87].copy_from_slice(&self.predicted_apogee.to_le_bytes());
+        d[87..91].copy_from_slice(&self.blims_brakeline_diff.to_le_bytes());
+        d[91] = self.blims_phase_id as u8;
         d
     }
 }

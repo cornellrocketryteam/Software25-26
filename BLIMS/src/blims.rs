@@ -1,70 +1,34 @@
+//Phase::Upwind   (alt > 1000 ft) — PI-steer to `wind_from` heading.
+///       Observes: does the parafoil respond to a sustained heading hold?
+///       What are the steady-state motor commands needed to fight crosswind?
+///
+///   Phase::Downwind (200 ft < alt ≤ 1000 ft) — PI-steer to `wind_from + 180°`.
+///       Observes: how quickly does the canopy reverse direction?
+///       What turn rate and settling time does the PI controller produce?
+///
+///   Phase::Neutral  (alt ≤ 200 ft) — motor to neutral, hands off.
+///
+///   Phase::Held     — GPS invalid; motor to neutral.
+///
+/// The full landing-pattern state machine (Track / Loiter / Downwind-leg /
+/// Base / Final) is intentionally absent in this MVP branch.  Re-integrate
+/// from `full-blims` once parafoil dynamics are characterised from flight data.
+
+
 use embassy_rp::gpio::Output;
 use embassy_rp::pwm::{Config as PwmConfig, Pwm};
 use embassy_time::{Duration, Instant};
  
 use crate::blims_constants::*;
-use crate::blims_state::{BlimsDataIn, BlimsDataOut, LoiterStep, Phase};
+use crate::blims_state::{BlimsDataIn, BlimsDataOut, Phase};
 
-
-// ============================================================================
-// LoiterTimer
-// ============================================================================
-
-struct LoiterTimer {
-    step: LoiterStep,
-    /// Absolute time when the current step expires
-    deadline: Instant,
+/// Opaque hardware bundle consumed by [`Blims::new`]. - bundles hardware resources into one package
+// single entry point, same scope, these are moved into blims struct, enforces initialization
+pub struct Hardware<'d> {
+    pub pwm:        Pwm<'d>,
+    pub pwm_config: PwmConfig,
+    pub enable_pin: Output<'d>,
 }
-
-impl LoiterTimer {
-    /// Construct and immediately start the first step (TURN_RIGHT)
-    fn new() -> Self {
-        Self {
-            step: LoiterStep::TurnRight,
-            deadline: Instant::now()
-                + Duration::from_millis(LOITER_TURN_DURATION_MS as u64),
-        }
-    }
-
-    fn step_duration(step: LoiterStep) -> Duration {
-        match step {
-            LoiterStep::TurnRight | LoiterStep::TurnLeft => {
-                Duration::from_millis(LOITER_TURN_DURATION_MS as u64)
-            }
-            LoiterStep::PauseRight | LoiterStep::PauseLeft => {
-                Duration::from_millis(LOITER_PAUSE_DURATION_MS as u64)
-            }
-        }
-    }
-
-    /// TURN_RIGHT → PAUSE_RIGHT → TURN_LEFT → PAUSE_LEFT → TURN_RIGHT …
-    fn next_step(step: LoiterStep) -> LoiterStep {
-        match step {
-            LoiterStep::TurnRight  => LoiterStep::PauseRight,
-            LoiterStep::PauseRight => LoiterStep::TurnLeft,
-            LoiterStep::TurnLeft   => LoiterStep::PauseLeft,
-            LoiterStep::PauseLeft  => LoiterStep::TurnRight,
-        }
-    }
-
-    /// Called every execute() tick; advances state when the deadline has passed.
-    fn poll(&mut self) {
-        if Instant::now() >= self.deadline {
-            self.step = Self::next_step(self.step);
-            self.deadline = Instant::now() + Self::step_duration(self.step);
-        }
-    }
-
-    fn motor_position(&self) -> f32 {
-        match self.step {
-            LoiterStep::TurnRight               => LOITER_RIGHT_POS,
-            LoiterStep::TurnLeft                => LOITER_LEFT_POS,
-            LoiterStep::PauseRight |
-            LoiterStep::PauseLeft               => NEUTRAL_POS,
-        }
-    }
-}
-
 
 pub struct Blims<'d> {
     // ── Embassy HAL handles ──────────────────────────────────────────────────
@@ -73,9 +37,16 @@ pub struct Blims<'d> {
     enable_pin: Output<'d>,
 
     // ── Pre-flight navigation config ─────────────────────────────────────────
-    target_lat: f32,
-    target_lon: f32,
+    target_upwind_lat: f32,
+    target_upwind_lon: f32,
+    target_downwind_lat: f32,
+    target_downwind_lon: f32,
+
+    activation_time_ms: Option<u64>, // timestamp of first transition out of Held phase, used for InitialHold delay
+    /// Surface-level wind direction (degrees FROM, 0 = N, 90 = E).
+    /// Used as fallback when no altitude-aware profile is loaded.
     wind_from_deg:     f32,
+    ///altitude-aware wind profile loaded before flight
     wind_profile_size: usize,
     wind_altitudes_m:  [f32; MAX_WIND_LAYERS],
     wind_dirs_deg:     [f32; MAX_WIND_LAYERS],
@@ -92,17 +63,11 @@ pub struct Blims<'d> {
     error_integral: f32,
     pid_p: f32,
     pid_i: f32,
-    heading_des:   f32,
-    heading_error: f32,
 
     // ── Phase / motor state ──────────────────────────────────────────────────
     last_phase:     Phase,
     bearing:        f32,
-    motor_position: f32,
-
-    // ── Loiter state machine ─────────────────────────────────────────────────
-    /// Some(_) only while in Phase::Loiter
-    loiter: Option<LoiterTimer>,
+    brakeline_diff_in: f32,   // was: motor_position: f32
 
     // ── Timing (ms since boot; mirrors blims::flight::currTime/prevTime) ─────
     curr_time_ms: u64,
@@ -120,40 +85,45 @@ impl<'d> Blims<'d> {
     /// `top = WRAP_CYCLE_COUNT` and the correct clock divider (see main.rs).
     /// The enable pin is driven high immediately to activate the motor driver,
     /// then the motor is parked at neutral.
-    pub fn new(
-        pwm:        Pwm<'d>,
-        pwm_config: PwmConfig,
-        enable_pin: Output<'d>,
-    ) -> Self {
+    pub fn new(hw: Hardware<'d>) -> Self {
         let mut b = Self {
-            pwm,
-            pwm_config,
-            enable_pin,
-            target_lat: 0.0,
-            target_lon: 0.0,
+            pwm:        hw.pwm,
+            pwm_config: hw.pwm_config,
+            enable_pin: hw.enable_pin,
+
+            target_upwind_lat:   0.0,
+            target_upwind_lon:   0.0,
+            target_downwind_lat: 0.0,
+            target_downwind_lon: 0.0,
+            activation_time_ms:  None,  
             wind_from_deg:     0.0,
             wind_profile_size: 0,
             wind_altitudes_m:  [0.0; MAX_WIND_LAYERS],
             wind_dirs_deg:     [0.0; MAX_WIND_LAYERS],
+
             gps_lat:   0.0,
             gps_lon:   0.0,
             head_mot:  0,
             fix_type:  0,
             gps_state: false,
+
             error_integral: 0.0,
             pid_p: 0.0,
             pid_i: 0.0,
-            heading_des:   0.0,
-            heading_error: 0.0,
+
             last_phase:     Phase::Held,
             bearing:        0.0,
-            motor_position: NEUTRAL_POS,
-            loiter:          None,
+            brakeline_diff_in: NEUTRAL_POS, //now 0.0
+
             curr_time_ms: 0,
             prev_time_ms: 0,
         };
-        b.enable_pin.set_high();
-        b.set_motor_position(NEUTRAL_POS);
+        //hold enable high continuously so motor driver stays armed
+        b.enable_pin.set_low();
+        //embassy_time::block_for(Duration::from_millis(500));
+        //b.enable_pin.set_high();
+        //neutral until first execute() call
+        b.set_brakeline_diff(NEUTRAL_POS);
         b
     }
 
@@ -161,18 +131,17 @@ impl<'d> Blims<'d> {
     // Pre-flight setters
     // -------------------------------------------------------------------------
 
-    pub fn set_target(&mut self, lat: f32, lon: f32) {
-        self.target_lat = lat;
-        self.target_lon = lon;
+    pub fn set_upwind_target(&mut self, lat: f32, lon: f32) {
+        self.target_upwind_lat = lat;
+        self.target_upwind_lon = lon;
     }
 
-    /// Drive the motor directly to a position in [0.0, 1.0].
-    /// 0.3 = max left, 0.5 = neutral, 0.7 = max right.
-    /// Bypasses guidance logic — for hardware testing only.
-    pub fn set_motor_raw(&mut self, position: f32) {
-        self.set_motor_position(position);
+    pub fn set_downwind_target(&mut self, lat: f32, lon: f32) {
+        self.target_downwind_lat = lat;
+        self.target_downwind_lon = lon;
     }
 
+    //when no altitude-layered profile is available - single surface-level wind-from direction
     pub fn set_wind_from_deg(&mut self, deg: f32) {
         self.wind_from_deg = Self::wrap360(deg);
     }
@@ -199,12 +168,14 @@ impl<'d> Blims<'d> {
         self.curr_time_ms = Instant::now().as_millis();
         let dt_ms = self.curr_time_ms.saturating_sub(self.prev_time_ms);
        
+        // clamp dt: ignore first call (prev = 0) and any gap > 200 ms like after a reset, to avoid integral-windup spikes on the first live cycle
         let dt = if self.prev_time_ms == 0 || dt_ms > 200 {
             0.05_f32
         } else {
             dt_ms as f32 / 1000.0
         };
-    
+
+        //intake sensor data
         self.gps_lat   = data_in.lat as f32 * 1e-7;
         self.gps_lon   = data_in.lon as f32 * 1e-7;
         self.head_mot  = data_in.head_mot;
@@ -218,80 +189,94 @@ impl<'d> Blims<'d> {
         // ── Phase-change housekeeping ─────────────────────────────────────────
         if current_phase != self.last_phase {
             // Always zero integral on phase change to prevent windup carryover
+            // Reset integral on every phase transition.
+            //
+            // Critical for the Upwind → Downwind reversal: the setpoint flips
+            // 180°, so any accumulated integral from the previous phase would
+            // immediately drive the motor in the wrong direction.  A clean
+            // slate is always safer than carrying over a potentially stale term.
             self.error_integral = 0.0;
-
-            // Leaving Loiter → drop the timer
-            if self.last_phase == Phase::Loiter {
-                self.loiter = None;
-            }
-            // Entering Loiter → create a fresh timer (starts TURN_RIGHT immediately)
-            if current_phase == Phase::Loiter {
-                self.loiter = Some(LoiterTimer::new());
-            }
-
             self.last_phase = current_phase;
         }
 
-        self.bearing = self.calculate_bearing_to_target();
+        self.bearing = match current_phase {
+            Phase::Upwind   => self.calculate_bearing_to(
+                                self.target_upwind_lat, self.target_upwind_lon),
+            Phase::Downwind => self.calculate_bearing_to(
+                                self.target_downwind_lat, self.target_downwind_lon),
+    _                       => self.bearing, // hold last value
+};
 
         match current_phase {
-            Phase::Held | Phase::Neutral => {
+            Phase::Held | Phase::InitialHold => {
                 // No active control – park motor at neutral
                 self.pid_p = 0.0;
                 self.pid_i = 0.0;
-                self.set_motor_position(NEUTRAL_POS);
+                self.set_brakeline_diff(NEUTRAL_POS);
             }
 
-            Phase::Loiter => {
-                // Timed alternating turns – managed by LoiterTimer
-                self.execute_loiter();
-            }
-
-            Phase::Track | Phase::Downwind | Phase::Base | Phase::Final => {
+            Phase::Upwind | Phase::Downwind => {
+                // PI heading control.
+                //
+                // desired heading is resolved from wind direction (see
+                // get_desired_heading); current heading comes from GPS
+                // heading-of-motion (degrees × 1e5 → degrees).
                 let desired = self.get_desired_heading(
-                    current_phase, self.bearing, altitude_ft,
+                    current_phase, altitude_ft,
                 );
                 // headMot is degrees × 1e5 → convert to degrees
                 let current_heading = self.head_mot as f32 * 1e-5;
-                self.heading_des = desired;
-                self.heading_error = Self::compute_heading_error(desired, current_heading);
                 self.execute_pi_control(desired, current_heading, dt);
+            }
+
+            Phase::Neutral => {
+                self.pid_p = 0.0;
+                self.pid_i = 0.0;
+                self.set_brakeline_diff(NEUTRAL_POS);
             }
         }
 
-        // ── Build output struct ───────────────────────────────────────────────
-        let loiter_step_id = self
-            .loiter
-            .as_ref()
-            .map(|lt| lt.step as i8)
-            .unwrap_or(0);
-
         BlimsDataOut {
-            motor_position:   self.motor_position,
-            pid_p:            self.pid_p,
-            pid_i:            self.pid_i,
-            bearing:          self.bearing,
-            phase_id:         current_phase as i8,
-            loiter_step:      loiter_step_id,
-            heading_des:      self.heading_des,
-            heading_error:    self.heading_error,
-            error_integral:   self.error_integral,
-            dist_to_target_m: self.calculate_distance_to_target(),
+            brakeline_diff_in: self.brakeline_diff_in,
+            pid_p:          self.pid_p,
+            pid_i:          self.pid_i,
+            bearing:        self.bearing,
+            phase_id:       current_phase as i8,
         }
     }
 
     // =========================================================================
     // Motor
     // =========================================================================
-    fn set_motor_position(&mut self, mut position: f32) {
+
+    /// Pulse enable low for 500 ms then high — resets/activates the ODrive.
+    /// Called automatically in `new()`; call again to re-arm after a delay.
+    pub fn pulse_enable(&mut self) {
+        self.enable_pin.set_low();
+        embassy_time::block_for(embassy_time::Duration::from_millis(500));
+        self.enable_pin.set_high();
+    }
+
+    pub fn set_brakeline_diff(&mut self, mut position: f32) {
         position = position.clamp(MOTOR_MIN, MOTOR_MAX);
-        self.motor_position = position;
+        self.brakeline_diff_in = position;
+        // Map inches [MOTOR_MIN, MOTOR_MAX] = [-9, +9] → normalised [0.0, 1.0].
+        //
+        //   pwm = (position − MOTOR_MIN) / (MOTOR_MAX − MOTOR_MIN)
+        //       = (position + 9.0) / 18.0
+        //
+        // Then map [0, 1] → [5 %, 10 %] duty cycle (1–2 ms standard servo range):
+        //
+        //   duty = 5%·WRAP + pwm · 5%·WRAP
+        //
+        // Verify:  position = -9 → pwm = 0.0 → duty = 5%·WRAP  (1 ms, full left)
+        //          position =  0 → pwm = 0.5 → duty = 7.5%·WRAP (1.5 ms, neutral)
+        //          position = +9 → pwm = 1.0 → duty = 10%·WRAP  (2 ms, full right)
 
+        let pwm_normalized = (position - MOTOR_MIN) / (MOTOR_MAX - MOTOR_MIN);
         let five_pct = WRAP_CYCLE_COUNT as f32 * 0.05;
-        let duty = (five_pct + position * five_pct) as u16;
+        let duty = (five_pct + pwm_normalized * five_pct) as u16;
 
-        // Set both channels — FSW uses output_b (compare_b), examples use output_a (compare_a).
-        self.pwm_config.compare_a = duty;
         self.pwm_config.compare_b = duty;
         self.pwm.set_config(&self.pwm_config);
     }
@@ -307,9 +292,12 @@ impl<'d> Blims<'d> {
     ) {
         let error = Self::compute_heading_error(desired_heading, current_heading);
 
-        // Anti-windup: clamp integral to ±INTEGRAL_MAX
+        // Clamp the accumulated error integral so that the I term can contribute
+        // at most INTEGRAL_MAX_INCHES of brakeline differential.
+        // max_integral [deg·s] = INTEGRAL_MAX_INCHES [in] / KI [in/(deg·s)]
+        let max_integral = INTEGRAL_MAX_INCHES / KI;
         self.error_integral =
-            (self.error_integral + error * dt).clamp(-INTEGRAL_MAX, INTEGRAL_MAX);
+            (self.error_integral + error * dt).clamp(-max_integral, max_integral);
 
         let p_term = KP * error;
         let i_term = KI * self.error_integral;
@@ -317,51 +305,44 @@ impl<'d> Blims<'d> {
         self.pid_p = p_term;
         self.pid_i = i_term;
 
-        self.set_motor_position(NEUTRAL_POS + p_term + i_term);
-    }
-
-    // =========================================================================
-    // Loiter
-    // =========================================================================
-
-    fn execute_loiter(&mut self) {
-        if let Some(ref mut lt) = self.loiter {
-            lt.poll(); // advance step if deadline has passed
-            let pos = lt.motor_position();
-            self.set_motor_position(pos);
-        }
+        self.set_brakeline_diff(NEUTRAL_POS + p_term + i_term);
     }
 
     // =========================================================================
     // Phase determination
     // =========================================================================
+    /// Decision tree:
+    /// 1. GPS invalid → Held
+    /// 2. alt ≤ ALT_NEUTRAL_FT → Neutral
+    /// 3. alt > ALT_UPWIND_FT  → Upwind
+    /// 4. otherwise            → Downwind
 
-    fn determine_phase(&self, altitude_ft: f32, gps_valid: bool) -> Phase {
+    fn determine_phase(&mut self, altitude_ft: f32, gps_valid: bool) -> Phase {
         // GPS must be valid for any active control
         if !gps_valid {
             return Phase::Held;
         }
+        let activation_ms = match self.activation_time_ms {
+            Some(t) => t,
+            None => {
+                self.activation_time_ms = Some(self.curr_time_ms);
+                self.curr_time_ms
+            }
+        };
+        if self.curr_time_ms - activation_ms < INITIAL_HOLD_THRESHOLD as u64 {
+            return Phase::InitialHold;
+        }
         // Below min altitude – hands off touchdown
-        if altitude_ft < ALT_NEUTRAL_FT {
+        if altitude_ft <= ALT_NEUTRAL_FT {
             return Phase::Neutral;
         }
-        // High altitude: either loiter near target or track toward 
-        if altitude_ft > ALT_DOWNWIND_FT {
-            let dist_ft = self.calculate_distance_to_target() * FT_PER_M;
-            return if dist_ft < SET_RADIUS_FT {
-                Phase::Loiter
-            } else {
-                Phase::Track
-            };
-        }
         // Landing pattern bands
-        if altitude_ft > ALT_BASE_FT {
-            Phase::Downwind
-        } else if altitude_ft > ALT_FINAL_FT {
-            Phase::Base
+        if altitude_ft > ALT_UPWIND_FT {
+            Phase::Upwind
         } else {
-            Phase::Final
-        }
+            Phase::Downwind
+        } //try for noise reduction - for extraneous values, look for averages, trends - ask amira
+        //communicate with Amira about FSW integration about what data is received where and how 
     }
 
     // =========================================================================
@@ -371,38 +352,31 @@ impl<'d> Blims<'d> {
     fn get_desired_heading(
         &self,
         phase: Phase,
-        bearing_to_target: f32,
         altitude_ft: f32,
     ) -> f32 {
         let altitude_m = altitude_ft / FT_PER_M;
         let wind_from = self.get_wind_at_altitude(altitude_m);
         // Direction the wind blows TO (opposite of "from")
-        let wind_to = Self::wrap360(wind_from + 180.0);
 
         match phase {
-            Phase::Track =>
-                // Fly straight toward target
-                bearing_to_target,
+            Phase::Upwind =>
+                // fly into wind, "wind_from = 270°" means wind blows from
+                // the west, so the canopy should point west (heading = 270°).
+
+                //wind_from,
+                self.calculate_bearing_to(self.target_upwind_lat, self.target_upwind_lon),
 
             Phase::Downwind =>
-                // Fly with the wind (downwind leg, away from target)
-                wind_to,
+                // Head WITH the wind.  Opposite of wind_from by 180°.
+                // A fixed setpoint (not bearing_to_target) is deliberately used
+                // so the commanded heading doesn't shift every cycle as the
+                // canopy drifts.  This makes the PI response cleaner to analyse.
 
-            Phase::Base => {
-                // Fly perpendicular to wind; choose the leg requiring the shorter turn
-                let crosswind_left  = Self::wrap360(wind_from - 90.0);
-                let crosswind_right = Self::wrap360(wind_from + 90.0);
-                let current_heading  = self.head_mot as f32 * 1e-5;
-                let error_left  = Self::wrap180(crosswind_left  - current_heading).abs();
-                let error_right = Self::wrap180(crosswind_right - current_heading).abs();
-                if error_left < error_right { crosswind_left } else { crosswind_right }
-            }
+                //Self::wrap360(wind_from + 180.0),
 
-            Phase::Final =>
-                // Fly into the wind (minimises ground speed at touchdown)
-                wind_from,
+                self.calculate_bearing_to(self.target_downwind_lat, self.target_downwind_lon),
 
-            // Held / Neutral / Loiter do not use heading control
+            // Held / Neutral do not use heading control
             _ => 0.0,
         }
     }
@@ -414,7 +388,7 @@ impl<'d> Blims<'d> {
 
     /// Normalise angle to [0, 360)
     #[inline]
-    fn wrap360(mut a: f32) -> f32 {
+    pub fn wrap360(mut a: f32) -> f32 {
         a %= 360.0;
         if a < 0.0 { a += 360.0; }
         a
@@ -422,43 +396,40 @@ impl<'d> Blims<'d> {
 
     /// Normalise angle to (−180, 180]
     #[inline]
-    fn wrap180(mut a: f32) -> f32 {
+    pub fn wrap180(mut a: f32) -> f32 {
         a %= 360.0;
         if      a >  180.0 { a -= 360.0; }
         else if a < -180.0 { a += 360.0; }
         a
     }
 
+    /// Heading error in (−180, 180]: positive → turn right, negative → turn left.
+    #[inline]
+    pub fn compute_heading_error(desired: f32, actual: f32) -> f32 {
+        Self::wrap180(desired - actual)
+    }
+
     /// Bearing from current GPS position to target, degrees [0, 360), 0 = North CW.
     /// Flat-earth approximation; accurate to <0.1° under 2 km at mid-latitudes.
-    fn calculate_bearing_to_target(&self) -> f32 {
-        let d_lat = self.target_lat - self.gps_lat;
-        let d_lon = self.target_lon - self.gps_lon;
-        // Correct longitude delta for latitude convergence
+    fn calculate_bearing_to(&self, target_lat: f32, target_lon: f32) -> f32 {
+        let d_lat = target_lat - self.gps_lat;
+        let d_lon = target_lon - self.gps_lon;
         let lat_rad = self.gps_lat * DEG_TO_RAD;
         let d_lon_corrected = d_lon * libm::cosf(lat_rad);
-        // atan2(east, north) → bearing from north
         let bearing_rad = libm::atan2f(d_lon_corrected, d_lat);
         Self::wrap360(bearing_rad * RAD_TO_DEG)
     }
 
     /// Distance from current GPS position to target in metres.
-    fn calculate_distance_to_target(&self) -> f32 {
-        let d_lat = self.target_lat - self.gps_lat;
-        let d_lon = self.target_lon - self.gps_lon;
+    fn calculate_distance_to_target(&self, target_lat: f32, target_lon: f32) -> f32 {
+        let d_lat = target_lat - self.gps_lat;
+        let d_lon = target_lon - self.gps_lon;
         // 111 320 m per degree of latitude at equator
         let lat_rad  = self.gps_lat * DEG_TO_RAD;
         let d_north  = d_lat * 111_320.0;
         let d_east   = d_lon * 111_320.0 * libm::cosf(lat_rad);
         libm::sqrtf(d_north * d_north + d_east * d_east)
     }
-
-    /// Heading error in (−180, 180]: positive → turn right, negative → turn left
-    #[inline]
-    fn compute_heading_error(desired: f32, actual: f32) -> f32 {
-        Self::wrap180(desired - actual)
-    }
-
 
     /// Interpolate wind direction (degrees FROM) at the given altitude (metres).
     /// Falls back to the scalar `wind_from_deg` if no profile has been loaded.

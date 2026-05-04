@@ -37,7 +37,25 @@ pub enum Error {
     Spi,
 }
 
-/// 64-byte snapshot record: 10 × u32 of flight state + magic + seq + crc.
+/// 64-byte snapshot record: flight state + BLiMS targets + magic + seq + crc.
+/// Layout (bytes):
+///   0..2   magic
+///   2..6   seq
+///   6..10  flight_mode
+///  10..14  cycle_count
+///  14..18  pressure
+///  18..22  temp
+///  22..26  altitude
+///  26..30  mav_open
+///  30..34  sv_open
+///  34..38  launch_stage
+///  38..42  launch_elapsed_ms
+///  42..46  blims_upwind_lat
+///  46..50  blims_upwind_lon
+///  50..54  blims_downwind_lat
+///  54..58  blims_downwind_lon
+///  58..62  crc (covers bytes 0..58)
+///  62..64  unused
 #[derive(Copy, Clone, Default, Debug)]
 pub struct Snapshot {
     pub seq: u32,
@@ -50,6 +68,10 @@ pub struct Snapshot {
     pub sv_open: u32,
     pub launch_stage: u32,
     pub launch_elapsed_ms: u32,
+    pub blims_upwind_lat: f32,
+    pub blims_upwind_lon: f32,
+    pub blims_downwind_lat: f32,
+    pub blims_downwind_lon: f32,
 }
 
 impl Snapshot {
@@ -66,9 +88,12 @@ impl Snapshot {
         b[30..34].copy_from_slice(&self.sv_open.to_le_bytes());
         b[34..38].copy_from_slice(&self.launch_stage.to_le_bytes());
         b[38..42].copy_from_slice(&self.launch_elapsed_ms.to_le_bytes());
-        b[42..46].copy_from_slice(&0u32.to_le_bytes()); // reserved
-        let crc = Self::crc(&b[0..46]);
-        b[46..50].copy_from_slice(&crc.to_le_bytes());
+        b[42..46].copy_from_slice(&self.blims_upwind_lat.to_le_bytes());
+        b[46..50].copy_from_slice(&self.blims_upwind_lon.to_le_bytes());
+        b[50..54].copy_from_slice(&self.blims_downwind_lat.to_le_bytes());
+        b[54..58].copy_from_slice(&self.blims_downwind_lon.to_le_bytes());
+        let crc = Self::crc(&b[0..58]);
+        b[58..62].copy_from_slice(&crc.to_le_bytes());
         b
     }
 
@@ -78,8 +103,8 @@ impl Snapshot {
         }
         let u32at = |i: usize| u32::from_le_bytes([b[i], b[i+1], b[i+2], b[i+3]]);
         let f32at = |i: usize| f32::from_le_bytes([b[i], b[i+1], b[i+2], b[i+3]]);
-        let stored_crc = u32::from_le_bytes([b[46], b[47], b[48], b[49]]);
-        if stored_crc != Self::crc(&b[0..46]) {
+        let stored_crc = u32::from_le_bytes([b[58], b[59], b[60], b[61]]);
+        if stored_crc != Self::crc(&b[0..58]) {
             return None;
         }
         Some(Self {
@@ -93,6 +118,10 @@ impl Snapshot {
             sv_open: u32at(30),
             launch_stage: u32at(34),
             launch_elapsed_ms: u32at(38),
+            blims_upwind_lat: f32at(42),
+            blims_upwind_lon: f32at(46),
+            blims_downwind_lat: f32at(50),
+            blims_downwind_lon: f32at(54),
         })
     }
 

@@ -8,7 +8,11 @@ name = "blims"
 path = "src/lib.rs"
 
 [[example]]
-name = "blims_car_test"
+name = "motor_test"
+path = "examples/motor_test.rs"
+
+[[example]]
+name = "car_test"
 path = "examples/blims_car_test/car_test.rs"
 
 [dependencies]
