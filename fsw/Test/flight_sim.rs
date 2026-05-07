@@ -464,17 +464,6 @@ pub async fn simulate_extra_features(flight_loop: &mut FlightLoop) {
 
     Timer::after_millis(100).await;
 
-    // 3. Test Payload comms logging
-    log::info!("[EXTRA FEATURE SIM] Testing Payload Comms Logging");
-    flight_loop.flight_state.payload_comms_ok = false;
-    flight_loop.flight_state.recovery_comms_ok = false;
-    log::info!("[EXTRA FEATURE SIM] Expecting Comms Failure Logs on next cycle:");
-    flight_loop.simulate_cycle().await;
-
-    // Restore
-    flight_loop.flight_state.payload_comms_ok = true;
-    flight_loop.flight_state.recovery_comms_ok = true;
-
     Timer::after_millis(100).await;
 
     log::info!("  EXTRA FEATURES SIMULATION FULLY COMPLETE ");
@@ -520,126 +509,79 @@ pub async fn simulate_flash_storage(flight_loop: &mut FlightLoop) {
 // Debug:   key + umbilical auto-asserted; launch fires after 5 standby cycles.
 pub async fn simulate_real_flight(flight_loop: &mut FlightLoop) {
     log::info!("\n--- STARTING REAL FLIGHT SIMULATION ---");
-    log::info!("Altitude from TEST_ALTS_LST ({} pts), accel from TEST_ACCS_LST ({} pts).",
+    log::info!("Altitude from TEST_ALTS_LST ({} pts, ft->m), accel from TEST_ACCS_LST ({} pts).",
         constants::TEST_ALTS_LST.len(), constants::TEST_ACCS_LST.len());
-    log::info!("Sitting in Standby 5s, then auto-launching and feeding data.");
+    log::info!("Waiting in Standby — send <L> over umbilical to launch.");
 
-    const STANDBY_DWELL_MS: u64 = 5_000;
     const DT_S: f64 = constants::MAIN_LOOP_DELAY_MS as f64 / 1000.0;
     const FT_TO_M: f64 = 1.0 / 3.28084;
     const G_TO_MS2: f32 = 9.81;
 
-    let sim_start = Instant::now();
     let mut alt_index: usize = 0;
     let mut prev_alt: f64 = 0.0;
-    let mut launch_sent = false;
+    let mut in_flight = false;
+    let mut standby_log_cycle: u32 = 0;
 
     loop {
         let current_mode = flight_loop.flight_state.flight_mode;
-        let elapsed_ms = sim_start.elapsed().as_millis();
 
-        // ── Hardware overrides ────────────────────────────────────────────────
-        // cfc_arm_active gates Startup→Standby and keeps Standby from dropping back.
         flight_loop.sim_cfc_arm_override = Some(true);
         flight_loop.sim_key_armed_override = Some(true);
-        if matches!(current_mode, FlightMode::Startup | FlightMode::Standby) {
-            flight_loop.flight_state.umbilical_connected = true;
-            crate::umbilical::inject_heartbeat();
-        } else {
-            flight_loop.flight_state.umbilical_connected = false;
-        }
 
-        // ── Altitude / velocity / acceleration override ───────────────────────
-        if elapsed_ms < STANDBY_DWELL_MS {
-            // Sit at 0 m, 1 g on Y-axis (rocket upright on pad, won't trigger 4g threshold).
-            flight_loop.sim_altitude_override = Some(0.0);
-            flight_loop.sim_vel_d_override = Some(0.0);
-            flight_loop.sim_accel_y_override = Some(G_TO_MS2); // 1g — below launch threshold
-            flight_loop.sim_accel_z_override = None;
-
-            let secs_left = (STANDBY_DWELL_MS - elapsed_ms) / 1000 + 1;
-            if elapsed_ms % 1000 < constants::MAIN_LOOP_DELAY_MS as u64 {
-                log::info!("[SIM] Standby — launching in {}s", secs_left);
-            }
-        } else {
-            // After dwell: log once, then feed data every cycle.
-            if !launch_sent {
-                log::info!("[SIM] 5s elapsed — starting data feed (accel_y will trigger launch detection).");
-                launch_sent = true;
-            }
-
-            // Feed altitude and acceleration data until the arrays are exhausted.
-            if alt_index < constants::TEST_ALTS_LST.len() {
-                let alt_m: f64 = constants::TEST_ALTS_LST[alt_index] * FT_TO_M;
-                // vel_d is NED-down: climbing = negative.
-                let vel_up_ms: f64 = (alt_m - prev_alt) / DT_S;
-                flight_loop.sim_altitude_override = Some(alt_m as f32);
-                flight_loop.sim_vel_d_override = Some(-vel_up_ms);
-
-                // Proportionally map the acceleration array onto the altitude array.
-                let acc_index = (alt_index as f64
-                    * constants::TEST_ACCS_LST.len() as f64
-                    / constants::TEST_ALTS_LST.len() as f64) as usize;
-                let acc_index = acc_index.min(constants::TEST_ACCS_LST.len() - 1);
-                let accel_ms2 = constants::TEST_ACCS_LST[acc_index] as f32 * G_TO_MS2;
-                // Launch detection averages accel_y; accel_z is used by apogee detection.
-                flight_loop.sim_accel_y_override = Some(accel_ms2);
-                flight_loop.sim_accel_z_override = Some(accel_ms2);
-
-                if alt_index % 50 == 0 {
-                    log::info!(
-                        "[SIM] alt: {:.1}m  vel_up: {:.1}m/s  accel: {:.2}m/s2  idx: {}  mode: {}",
-                        alt_m, vel_up_ms, accel_ms2, alt_index,
-                        flight_loop.flight_state.flight_mode_name()
-                    );
-                }
-                prev_alt = alt_m;
-                alt_index += 1;
-            } else {
-                log::info!("[SIM] End of TEST_ALTS_LST — simulation complete.");
-                break;
-            }
-        }
-
-        // ── Hardware overrides (run every cycle, debug and release) ───────────
-        // Gate key_armed and umbilical by mode + dwell so each mode fully dwells
-        // before its transition fires. Without gating, Startup→Standby fires on
-        // cycle 1 because key_armed+umbilical+VALID altimeter are all true immediately.
         match current_mode {
-            FlightMode::Startup if in_dwell => {
-                // Stay in Startup: explicitly unset key so Startup→Standby can't fire.
-                flight_loop.sim_key_armed_override = Some(false);
-                flight_loop.flight_state.umbilical_connected = false;
-            }
-            FlightMode::Startup => {
-                // Startup dwell expired — assert key+umbilical to trigger Startup→Standby.
-                flight_loop.sim_key_armed_override = Some(true);
+            FlightMode::Startup | FlightMode::Standby => {
+                // On pad: umbilical connected, 1g, altitude 0.
+                // Startup → Standby fires automatically (key + cfc + umbilical asserted).
+                // Standby → Ascent requires the user to send <L> over USB.
                 flight_loop.flight_state.umbilical_connected = true;
                 crate::umbilical::inject_heartbeat();
-            }
-            FlightMode::Standby => {
-                // Keep key+umbilical the entire Standby phase (dwell and post-dwell)
-                // so we stay in Standby and eventually trigger launch.
-                flight_loop.sim_key_armed_override = Some(true);
-                flight_loop.flight_state.umbilical_connected = true;
-                crate::umbilical::inject_heartbeat();
-                // Launch only fires after the Standby dwell completes.
-                if !in_dwell {
-                    sim_standby_cycles += 1;
-                    if sim_standby_cycles == 3 {
-                        log::info!("[SIM] Auto-injecting Launch Command...");
-                        flight_loop.set_launch_command(true);
+                flight_loop.sim_altitude_override = Some(0.0);
+                flight_loop.sim_vel_d_override = Some(0.0);
+                flight_loop.sim_accel_y_override = Some(G_TO_MS2); // 1g — below 4g launch threshold
+                flight_loop.sim_accel_z_override = Some(G_TO_MS2);
+
+                if current_mode == FlightMode::Standby {
+                    standby_log_cycle += 1;
+                    if standby_log_cycle % 20 == 1 {
+                        log::info!("[SIM] Standby — send <L> over umbilical to launch.");
                     }
                 }
             }
             _ => {
-                // Flight modes: key armed, umbilical disconnected (rocket is in the air).
-                flight_loop.sim_key_armed_override = Some(true);
+                // In flight: umbilical disconnected, feed pre-recorded data.
+                if !in_flight {
+                    in_flight = true;
+                    log::info!("[SIM] Launch detected — feeding {} altitude points.", constants::TEST_ALTS_LST.len());
+                }
                 flight_loop.flight_state.umbilical_connected = false;
+
+                if alt_index < constants::TEST_ALTS_LST.len() {
+                    let alt_m = constants::TEST_ALTS_LST[alt_index] as f64 * FT_TO_M;
+                    let vel_up_ms = (alt_m - prev_alt) / DT_S;
+                    flight_loop.sim_altitude_override = Some(alt_m as f32);
+                    flight_loop.sim_vel_d_override = Some(-vel_up_ms);
+
+                    // Direct 1:1 index — both arrays are the same length.
+                    let accel_ms2 = constants::TEST_ACCS_LST[alt_index] as f32 * G_TO_MS2;
+                    flight_loop.sim_accel_y_override = Some(accel_ms2);
+                    flight_loop.sim_accel_z_override = Some(accel_ms2);
+
+                    if alt_index % 50 == 0 {
+                        log::info!(
+                            "[SIM] alt: {:.1}m  vel_up: {:.1}m/s  accel: {:.2}m/s2  idx: {}  mode: {}",
+                            alt_m, vel_up_ms, accel_ms2, alt_index,
+                            flight_loop.flight_state.flight_mode_name()
+                        );
+                    }
+                    prev_alt = alt_m;
+                    alt_index += 1;
+                } else {
+                    log::info!("[SIM] End of TEST_ALTS_LST — simulation complete.");
+                    break;
+                }
             }
         }
 
-        // ── Execute and sleep ─────────────────────────────────────────────────
         flight_loop.execute().await;
         Timer::after_millis(constants::MAIN_LOOP_DELAY_MS).await;
     }

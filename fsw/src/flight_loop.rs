@@ -436,7 +436,6 @@ impl FlightLoop {
                     self.set_launch_command(true);
                 }
                 UmbilicalCommand::OpenMav => {
-                    // TODO: CHANGE THIS TO MAV DELAY LATER FOR WET DRESS
                     log::warn!("UMBILICAL CMD: Open MAV");
                     self.flight_state.open_mav(0).await; // 0 = no auto-close timer (manual close only)
                     self.mav_open = true;
@@ -685,7 +684,7 @@ impl FlightLoop {
                     return;
                 }
                 // L3: arming is driven solely by GPIO 41 (CFC_ARM). High = armed.
-                if self.flight_state.cfc_arm_active {
+                if self.key_armed && self.flight_state.cfc_arm_active && self.flight_state.umbilical_connected {
                     if self.flight_state.altimeter_state == crate::state::SensorState::VALID {
                         // Record arming altitude (TODO: implement into storage)
                         self.alt_armed = true;
@@ -695,11 +694,6 @@ impl FlightLoop {
                             self.flight_state.arming_altitude
                         );
 
-                        // L3: arm payload on Standby entry — send N1 (camera deploy).
-                        let _ = self.flight_state.payload_uart.write(b"N1\n").await;
-                        self.flight_state.packet.cmd_n1 = 1;
-                        log::info!("PAYLOAD: Sent N1 (arm) on Standby entry");
-
                         self.flight_state.flight_mode = FlightMode::Standby;
                         self.flight_state.write_packet_to_fram().await;
                         log::info!("Transitioning to Standby (CFC_ARM high)");
@@ -707,11 +701,6 @@ impl FlightLoop {
                 }
             }
             FlightMode::Standby => {
-                /* Maybe go back to startup? Or some buzzer or way to signal the altimeter is bad?
-                Add an indicator if the altimeter is bad for either standby and/or startup so we can try to fix it, if no fix
-                then go to fault mode
-                */
-
                 if self.flight_state.altimeter_state != crate::state::SensorState::VALID {
                     // altimeter is not working
                     self.alt_armed = false;
@@ -759,22 +748,11 @@ impl FlightLoop {
                     return;
                 }
 
-                // L3 launch detect: 10-sample moving avg of Y-axis accel > 4 g.
-                let ay = self.flight_state.packet.accel_y;
-                self.accel_sum -= self.accel_buffer[self.accel_index];
-                self.accel_buffer[self.accel_index] = ay;
-                self.accel_sum += ay;
-                self.accel_index = (self.accel_index + 1) % 10;
-                let avg_ay_ms2 = self.accel_sum / 10.0;
-                let threshold_ms2 =
-                    constants::LAUNCH_ACCEL_Y_THRESHOLD_G * constants::G_TO_MS2;
-
-                if avg_ay_ms2 > threshold_ms2 {
-                    log::warn!(
-                        "LAUNCH DETECTED: avg_ay={:.2} m/s² > {:.2} m/s²",
-                        avg_ay_ms2, threshold_ms2
-                    );
-                    self.launch_sequence_stage = LaunchStage::MavOpen;
+                // Check altimeter for launch with umbilical
+                if self.umbilical_launch && self.flight_state.umbilical_connected {
+                    // START LAUNCH SEQUENCE
+                    log::warn!("LAUNCH INITIATED: Starting actuator sequence.");
+                    self.launch_sequence_stage = LaunchStage::PreVent;
                     self.launch_stage_start_time = Some(Instant::now());
 
                     self.flight_state.reference_pressure = self.flight_state.read_barometer();
@@ -783,21 +761,21 @@ impl FlightLoop {
                         self.flight_state.reference_pressure
                     );
 
+                    // Stage 1: SV Open (2s vent)
+                    self.flight_state.open_sv(0).await;
+                    self.sv_open = true;
+
                     self.alt_armed = true;
                     self.flight_state.flight_mode = FlightMode::Ascent;
                     self.flight_state.write_packet_to_fram().await;
                     log::info!("Transitioning to Ascent");
+                } else if !self.key_armed || !self.flight_state.cfc_arm_active{
+                    self.flight_state.flight_mode = FlightMode::Startup;
+                    self.flight_state.write_packet_to_fram().await;
+                    log::info!("Key not armed; Transitioning to Startup");
                 }
             }
             FlightMode::Ascent => {
-                // if self.flight_state.umbilical_connected {
-                //     log::error!(
-                //         "CRITICAL: Umbilical still connected during Ascent! Transitioning to Fault"
-                //     );
-                //     self.flight_state.flight_mode = FlightMode::Fault;
-                //     return;
-                // }
-
                 if self.flight_state.altimeter_state != crate::state::SensorState::VALID {
                     // altimeter is not working
                     self.alt_armed = false;
@@ -840,8 +818,7 @@ impl FlightLoop {
                     // Remove old value from sum
                     self.alt_sum -= alt_half_sec_ago;
                     // Read new value
-                    // TODO: change to read_altitude() 
-                    let current_alt = self.flight_state.packet.altitude;
+                    let current_alt = self.flight_state.read_altimeter();
                     self.alt_buffer[self.alt_index] = current_alt;
                     // Add new value to sum
                     self.alt_sum += current_alt;
@@ -942,7 +919,7 @@ impl FlightLoop {
                 if let Some(entry_time) = self.drogue_entry_time {
                     if entry_time.elapsed().as_millis() >= constants::MAIN_DEPLOY_DELAY_MS {
                         // L3: deploy main below 610 m AGL. Altimeter is in meters.
-                        let alt_m = self.flight_state.packet.altitude;
+                        let alt_m = self.flight_state.read_altimeter();
                         if alt_m < constants::MAIN_DEPLOY_ALTITUDE {
                             // Deploy Main
                             self.flight_state.trigger_main().await;
@@ -999,8 +976,6 @@ impl FlightLoop {
                 if let Some(entry_time) = self.main_entry_time {
                     if entry_time.elapsed().as_millis() >= constants::MAIN_LOG_TIMEOUT_MS {
                         if self.log_armed {
-                            // TODO: Main log shutdown
-                            // log.shutdown();
                             self.log_armed = false;
                             log::info!("Main log shutdown after timeout");
                         }
@@ -1173,16 +1148,6 @@ impl FlightLoop {
         // Sync local fields from state (in case modified directly)
         self.key_armed = self.flight_state.key_armed;
         self.umbilical_state = self.flight_state.umbilical_connected;
-
-        // Log Simulated Sensor Data
-        //if !(self.flight_state.flight_mode == FlightMode::Ascent) || !(self.flight_state.flight_mode == FlightMode::Coast) {
-        //log::info!(
-        //    "[SIM] Alt: {:.2}, Pres: {:.2}, State: {:?}",
-        //    self.flight_state.packet.altitude,
-        //    self.flight_state.packet.pressure,
-        //    self.flight_state.altimeter_state,
-        //);
-        //}
 
         // Process any commands sent over USB during simulation
         self.check_umbilical_commands().await;

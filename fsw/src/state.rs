@@ -109,10 +109,6 @@ pub struct FlightState {
     // telemetry
     radio: Rfd900x<'static>,
 
-    // comms
-    pub payload_comms_ok: bool,
-    pub recovery_comms_ok: bool,
-
     // QSPI Flash
     flash: OnboardFlash<'static>,
 
@@ -338,8 +334,6 @@ impl FlightState {
             arming_altitude: 0.0,
             radio: radio,
             reference_pressure: 0.0,
-            payload_comms_ok: true,
-            recovery_comms_ok: true,
             ssa,
             buzzer,
             mav,
