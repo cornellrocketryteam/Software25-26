@@ -8,4 +8,10 @@ final: prev: {
         "ac_cv_func_realloc_0_nonnull=yes"
       ];
   });
+
+  wpa_supplicant = prev.wpa_supplicant.override {
+    dbusSupport = false;
+    withReadline = false;
+    withPcsclite = false;
+  };
 }

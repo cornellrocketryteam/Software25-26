@@ -29,6 +29,5 @@ rustPlatform.buildRustPackage (finalAttrs: {
   meta = {
     description = "Fill Station Binary and Utilities";
     mainProgram = "fill-station";
-    # platforms = lib.platforms.linux;
   };
 })

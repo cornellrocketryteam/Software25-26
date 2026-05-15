@@ -7,11 +7,11 @@
         images {
                 kernel {
                         description = "kernel";
-                        data = /incbin/("./kernel.lzma");
+                        data = /incbin/("./kernel.zst");
                         type = "kernel";
                         arch = "arm64";
                         os = "linux";
-                        compression = "lzma";
+                        compression = "zstd";
                         load = <@loadaddr@>;
                         entry = <@loadaddr@>;
                         hash {
@@ -51,11 +51,6 @@
                         kernel = "kernel";
                         fdt = "fdt-0";
                         ramdisk = "initrd";
-                        signature {
-                                algo = "crc32";
-                                key-name-hint = "dev";
-                                sign-images = "fdt-0", "kernel", "ramdisk";
-                        };
                 };
         };
 };

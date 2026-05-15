@@ -1,5 +1,5 @@
-{ linuxKernel, linux_latest }:
-linuxKernel.manualConfig {
-  inherit (linux_latest) src version modDirVersion;
+{ linuxManualConfig, linux_latest }:
+linuxManualConfig {
+  inherit (linux_latest) src version;
   configfile = ./kernel.config;
 }

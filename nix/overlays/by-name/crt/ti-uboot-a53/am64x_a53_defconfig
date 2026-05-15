@@ -756,7 +756,7 @@ CONFIG_SYS_EEPROM_PAGE_WRITE_DELAY_MS=0
 #
 # Compression commands
 #
-CONFIG_CMD_LZMADEC=y
+# CONFIG_CMD_LZMADEC is not set
 # CONFIG_CMD_UNLZ4 is not set
 # CONFIG_CMD_UNZIP is not set
 # CONFIG_CMD_ZIP is not set

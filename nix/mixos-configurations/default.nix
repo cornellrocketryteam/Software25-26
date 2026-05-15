@@ -9,12 +9,18 @@ mapAttrs (
       (
         { pkgs, ... }:
         {
-          nixpkgs.nixpkgs = inputs.nixpkgs;
-          nixpkgs.overlays = [
-            inputs.self.overlays.default
-            inputs.mixos.overlays.default
-            inputs.fenix.overlays.default
-          ];
+          nixpkgs.pkgs = import inputs.nixpkgs {
+            localSystem = "aarch64-linux";
+            crossSystem = {
+              config = "aarch64-unknown-linux-musl";
+              gcc = { cpu = "cortex-a53"; };
+            };
+            overlays = [
+              inputs.self.overlays.default
+              inputs.mixos.overlays.default
+              inputs.fenix.overlays.default
+            ];
+          };
           etc."hostname".source = mkDefault (pkgs.writeText "hostname" name);
         }
       )
