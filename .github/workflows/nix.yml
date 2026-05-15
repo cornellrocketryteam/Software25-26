@@ -3,7 +3,6 @@ on:
   push:
     branches:
       - main
-      - leaktest_ready
 jobs:
   # Build the MixOS configuration for FillStation and push it to FlakeHub Cache
   build-publish:
@@ -15,6 +14,5 @@ jobs:
       - uses: actions/checkout@v6
       - uses: DeterminateSystems/determinate-nix-action@v3
       - uses: DeterminateSystems/flakehub-cache-action@v2
-      - run: nix build .#mixosConfigurations.fill-station.config.boot.kernel
+      - run: nix build .#mixosConfigurations.fill-station.config.boot.kernelPackage.kernel
       - run: nix build .#mixosConfigurations.fill-station.config.system.build.initrd
-      - run: nix build .#mixosConfigurations.fill-station.config.system.build.sdImage
