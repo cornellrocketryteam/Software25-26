@@ -343,6 +343,54 @@ async fn execute_command(
     actuator_state: &Arc<ActuatorState>,
 ) -> CommandResponse {
     match command {
+        Command::Launch => {
+            let hw_bg = hardware.clone();
+            smol::spawn(async move {
+                info!("Launch sequence started (background)...");
+
+                #[cfg(any(target_os = "linux", target_os = "android"))]
+                {
+                    // 1. Lock and Turn ON
+                    {
+                        let hw = hw_bg.lock().await;
+                        if let Err(e) = hw.ig1.set_actuated(true).await {
+                             error!("Failed to actuate igniter 1: {}", e);
+                        }
+                        if let Err(e) = hw.ig2.set_actuated(true).await {
+                             error!("Failed to actuate igniter 2: {}", e);
+                        }
+                    }
+
+                    // 2. Wait 3 seconds (without lock)
+                    Timer::after(Duration::from_secs(3)).await;
+
+                    // 3. Lock and Turn OFF
+                    {
+                        let hw = hw_bg.lock().await;
+                        if let Err(e) = hw.ig1.set_actuated(false).await {
+                             error!("Failed to turn off igniter 1: {}", e);
+                        }
+                        if let Err(e) = hw.ig2.set_actuated(false).await {
+                             error!("Failed to turn off igniter 2: {}", e);
+                        }
+                    }
+                }
+                #[cfg(not(any(target_os = "linux", target_os = "android")))]
+                {
+                    let _ = hw_bg;
+                    warn!("Launch command not supported on this platform");
+                    Timer::after(Duration::from_secs(3)).await;
+                }
+                
+                info!("Launch sequence completed");
+            }).detach();
+
+            info!("Sending FSW Launch command via umbilical");
+            match umb_cmd_tx.try_send("<L>".into()) {
+                Ok(_) => CommandResponse::Success,
+                Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
+            }
+        }
         Command::Ignite => {
             let hw_bg = hardware.clone();
             smol::spawn(async move {
