@@ -381,9 +381,9 @@ with col_right:
             ch = adc1[0]
             scaled = ch.get("scaled")
             rows.append({"Sensor": "PT1 (0-1500 PSI)", "Raw": ch["raw"], "Voltage": f"{ch['voltage']:.3f}", "Scaled": f"{scaled:.2f}" if scaled is not None else "N/A"})
-        # PT2: ADC1 Ch1
-        if len(adc1) > 1:
-            ch = adc1[1]
+        # PT2: ADC1 Ch2
+        if len(adc1) > 2:
+            ch = adc1[2]
             scaled = ch.get("scaled")
             rows.append({"Sensor": "PT2 (0-1000 PSI)", "Raw": ch["raw"], "Voltage": f"{ch['voltage']:.3f}", "Scaled": f"{scaled:.2f}" if scaled is not None else "N/A"})
         # Load Cell: ADC2 Ch1

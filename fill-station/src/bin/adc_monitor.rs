@@ -39,7 +39,7 @@ fn main() -> Result<()> {
     println!("  • Channels: 4 single-ended inputs per ADC (8 total)");
     println!("  • Mode: Continuous single-shot conversion");
     println!("  • Scaling: ADC1 Ch0 scaled = raw*0.9365126677+3.719970194");
-    println!("  • Scaling: ADC1 Ch1 scaled = raw*0.6285508522+1.783227975\n");
+    println!("  • Scaling: ADC1 Ch2 scaled = raw*0.6285508522+1.783227975\n");
 
     println!("Press Ctrl+C to stop\n");
 

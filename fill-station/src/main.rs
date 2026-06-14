@@ -57,7 +57,7 @@ const ADC_RETRY_DELAY_MS: u64 = 10;
 const PT1500_SCALE: f32 = 0.909754;
 const PT1500_OFFSET: f32 = 5.08926;
 
-/// PT2 scaling (ADC1 Ch1) — 0-1000 PSI range
+/// PT2 scaling (ADC1 Ch2) — 0-1000 PSI range
 /// Formula: scaled = raw * SCALE + OFFSET
 const PT1000_SCALE: f32 = 0.6125;
 const PT1000_OFFSET: f32 = 5.0;
@@ -1037,10 +1037,10 @@ async fn try_read_all_adcs(
         let raw = hw.adc1.read_raw(channel, ADC_GAIN, ADC_DATA_RATE)?;
         let voltage = (raw as f32) * ADC_GAIN.lsb_size();
         
-        // PT1 (Ch0): PT1500 scaling, PT2 (Ch1): PT2000 scaling, others: no scaling
+        // PT1 (Ch0): PT1500 scaling, PT2 (Ch2): PT1000 scaling, others: no scaling
         let scaled = match i {
             0 => Some(raw as f32 * PT1500_SCALE + PT1500_OFFSET),
-            1 => Some(raw as f32 * PT1000_SCALE + PT1000_OFFSET),
+            2 => Some(raw as f32 * PT1000_SCALE + PT1000_OFFSET),
             _ => None,
         };
         

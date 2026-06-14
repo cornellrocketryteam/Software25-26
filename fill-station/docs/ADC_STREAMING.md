@@ -39,7 +39,7 @@ const ADC_RETRY_DELAY_MS: u64 = 10;
 const PT1500_SCALE: f32 = 0.909754;
 const PT1500_OFFSET: f32 = 5.08926;
 
-// PT2 scaling (ADC1 Ch1) — 0-1000 PSI
+// PT2 scaling (ADC1 Ch2) — 0-1000 PSI
 const PT1000_SCALE: f32 = 0.6125;
 const PT1000_OFFSET: f32 = 5.0;
 
@@ -120,7 +120,7 @@ When streaming is enabled, the server continuously sends:
 - `valid`: `true` if readings are fresh, `false` if ADC read failed
 - `raw`: Raw 12-bit ADC value (-2048 to 2047)
 - `voltage`: Calculated voltage based on gain setting
-- `scaled`: Scaled sensor value — PT1 (ADC1 Ch0), PT2 (ADC1 Ch1), Load Cell (ADC2 Ch1). `null` for all other channels
+- `scaled`: Scaled sensor value — PT1 (ADC1 Ch0), PT2 (ADC1 Ch2), Load Cell (ADC2 Ch1). `null` for all other channels
 
 ## Testing
 

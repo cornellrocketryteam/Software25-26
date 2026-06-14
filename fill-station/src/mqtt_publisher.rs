@@ -168,7 +168,7 @@ pub async fn start_mqtt_publisher(
             if adc.valid {
                 (
                     adc.adc1[0].scaled.unwrap_or(0.0) as f64, // PT1500
-                    adc.adc1[1].scaled.unwrap_or(0.0) as f64, // PT1000
+                    adc.adc1[2].scaled.unwrap_or(0.0) as f64, // PT1000
                     adc.adc2[1].scaled.unwrap_or(0.0) as f64, // Load cell
                 )
             } else {

@@ -242,7 +242,7 @@ const ADC_RETRY_DELAY_MS: u64 = 10;           // Retry delay
 const PT1500_SCALE: f32 = 0.909754;      // PT1 Scale (ADC1 Ch0)
 const PT1500_OFFSET: f32 = 5.08926;      // PT1 Offset
 
-const PT1000_SCALE: f32 = 0.6125;        // PT2 Scale (ADC1 Ch1)
+const PT1000_SCALE: f32 = 0.6125;        // PT2 Scale (ADC1 Ch2)
 const PT1000_OFFSET: f32 = 5.0;          // PT2 Offset
 
 const LOADCELL_SCALE: f32 = 0.264;       // Load Cell Scale (ADC2 Ch1)

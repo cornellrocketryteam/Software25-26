@@ -143,7 +143,7 @@ Sent periodically (at 100 Hz) after a `start_adc_stream` command.
 - `valid`: `true` if readings are fresh, `false` if ADC read failed.
 - `raw`: Raw 12-bit ADC value (-2048 to 2047).
 - `voltage`: Calculated voltage based on gain setting.
-- `scaled`: Scaled sensor value — PT1 (ADC1 Ch0), PT2 (ADC1 Ch1), Load Cell (ADC2 Ch1). `null` for all other channels.
+- `scaled`: Scaled sensor value — PT1 (ADC1 Ch0), PT2 (ADC1 Ch2), Load Cell (ADC2 Ch1). `null` for all other channels.
 
 ---
 

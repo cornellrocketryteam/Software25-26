@@ -26,7 +26,7 @@ The CSV file contains the following columns, exactly matching the order below. I
 
 **Analog to Digital Converters (ADCs):** (Columns repeat for ADC1 and ADC2, Channels 0 through 3)
 - `ADC<NUM>_<CH>_Raw`: 12-bit raw integer reading.
-- `ADC<NUM>_<CH>_Scaled`: Calibrated sensor value — PT1 (ADC1 Ch0), PT2 (ADC1 Ch1), Load Cell (ADC2 Ch1). `N/A` for all other channels.
+- `ADC<NUM>_<CH>_Scaled`: Calibrated sensor value — PT1 (ADC1 Ch0), PT2 (ADC1 Ch2), Load Cell (ADC2 Ch1). `N/A` for all other channels.
 
 **Umbilical Telemetry (FSW):**
 - `FSW_Connected`: True if the ground station has an active CDC-ACM serial umbilical connection to the flight software.
