@@ -81,7 +81,7 @@ pub enum UmbilicalCommand {
     WipeFramReboot,
     KeyArm,
     KeyDisarm,
-    SetBlimsTarget { lat: f32, lon: f32 },
+    SetBlimsTarget { upwind_lat: f32, upwind_lon: f32, downwind_lat: f32, downwind_lon: f32 },
     TriggerDrogue, // Remove this functionality for real code
     TriggerMain,   // Remove this functionality for real code
     //DrogueMode,    // Remove this functionality for real code
@@ -370,31 +370,40 @@ async fn usb_receiver_task(mut receiver: Receiver<'static, UsbDriver>) -> ! {
                 continue;
             }
 
-            // Variable-length: BLiMS target set, format `<T,<lat>,<lon>>`.
+            // Variable-length: BLiMS target set, format `<T,<upwind_lat>,<upwind_lon>,<downwind_lat>,<downwind_lon>>`.
             if data.len() >= 4 && &data[..3] == b"<T," && data[data.len() - 1] == b'>' {
                 let body = &data[3..data.len() - 1];
                 let parsed = core::str::from_utf8(body).ok().and_then(|s| {
                     let mut parts = s.split(',');
-                    let lat = parts.next()?.parse::<f32>().ok()?;
-                    let lon = parts.next()?.parse::<f32>().ok()?;
+                    let upwind_lat   = parts.next()?.parse::<f32>().ok()?;
+                    let upwind_lon   = parts.next()?.parse::<f32>().ok()?;
+                    let downwind_lat = parts.next()?.parse::<f32>().ok()?;
+                    let downwind_lon = parts.next()?.parse::<f32>().ok()?;
                     if parts.next().is_some() {
                         return None;
                     }
-                    Some((lat, lon))
+                    Some((upwind_lat, upwind_lon, downwind_lat, downwind_lon))
                 });
                 match parsed {
-                    Some((lat, lon))
-                        if (-90.0..=90.0).contains(&lat)
-                            && (-180.0..=180.0).contains(&lon) =>
+                    Some((upwind_lat, upwind_lon, downwind_lat, downwind_lon))
+                        if (-90.0..=90.0).contains(&upwind_lat)
+                            && (-180.0..=180.0).contains(&upwind_lon)
+                            && (-90.0..=90.0).contains(&downwind_lat)
+                            && (-180.0..=180.0).contains(&downwind_lon) =>
                     {
                         COMMANDS
-                            .try_send(UmbilicalCommand::SetBlimsTarget { lat, lon })
+                            .try_send(UmbilicalCommand::SetBlimsTarget {
+                                upwind_lat,
+                                upwind_lon,
+                                downwind_lat,
+                                downwind_lon,
+                            })
                             .ok();
                     }
-                    Some((lat, lon)) => {
+                    Some((upwind_lat, upwind_lon, downwind_lat, downwind_lon)) => {
                         log::warn!(
-                            "Umbilical SetBlimsTarget rejected: out of range lat={} lon={}",
-                            lat, lon
+                            "Umbilical SetBlimsTarget rejected: out of range upwind=({},{}) downwind=({},{})",
+                            upwind_lat, upwind_lon, downwind_lat, downwind_lon
                         );
                     }
                     None => {

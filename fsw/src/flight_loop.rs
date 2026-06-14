@@ -518,9 +518,13 @@ impl FlightLoop {
                     log::warn!("UMBILICAL CMD: Key Disarm");
                     self.key_armed = false;
                 }
-                UmbilicalCommand::SetBlimsTarget { lat, lon } => {
-                    log::warn!("UMBILICAL CMD: Set BLiMS target lat={} lon={}", lat, lon);
-                    self.set_blims_downwind_target(lat, lon);
+                UmbilicalCommand::SetBlimsTarget { upwind_lat, upwind_lon, downwind_lat, downwind_lon } => {
+                    log::warn!(
+                        "UMBILICAL CMD: Set BLiMS targets upwind=({},{}) downwind=({},{})",
+                        upwind_lat, upwind_lon, downwind_lat, downwind_lon
+                    );
+                    self.set_blims_upwind_target(upwind_lat, upwind_lon);
+                    self.set_blims_downwind_target(downwind_lat, downwind_lon);
                 }
                 UmbilicalCommand::TriggerDrogue => {
                     log::warn!("UMBILICAL CMD: Trigger Drogue");
