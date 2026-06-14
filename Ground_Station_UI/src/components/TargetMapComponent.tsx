@@ -64,12 +64,12 @@ type TargetMapProps = {
 
 /**
  * Renders confirmed recovery target coordinates on an interactive map.
- * Self-contained and prop-driven — drop it into any page (or remove it) freely.
+ * Self-contained and prop-driven — it is simple to drop it into any page (or remove it) freely.
  */
 export function TargetMap({ coords, heightClass = "h-96" }: TargetMapProps) {
     const targets: ParsedTarget[] = [
-        { label: "1", lat: coords?.lat_1, lng: coords?.lng_1, color: "#5A87FF" },
-        { label: "2", lat: coords?.lat_2, lng: coords?.lng_2, color: "#FF6B5A" },
+        { label: "U", lat: coords?.lat_1, lng: coords?.lng_1, color: "#5A87FF" },
+        { label: "D", lat: coords?.lat_2, lng: coords?.lng_2, color: "#FF6B5A" },
     ]
         .map(({ label, lat, lng, color }) => ({
             label,
@@ -82,18 +82,14 @@ export function TargetMap({ coords, heightClass = "h-96" }: TargetMapProps) {
 
     if (targets.length === 0) {
         return (
-            <div
-                className={`${heightClass} flex items-center justify-center rounded-2xl border-[3px] border-black bg-white font-inter text-lg text-gray-500`}
-            >
+            <div className={`${heightClass} flex items-center justify-center rounded-2xl border-[3px] border-black bg-white font-inter text-lg text-gray-500`}>
                 Confirm coordinates to view targets on the map.
             </div>
         );
     }
 
     return (
-        <div
-            className={`${heightClass} overflow-hidden rounded-2xl border-[3px] border-black`}
-        >
+        <div className={`${heightClass} overflow-hidden rounded-2xl border-[3px] border-black`}>
             <MapContainer
                 center={targets[0].position}
                 zoom={15}

@@ -134,7 +134,8 @@ export function RecoveryPage() {
                                 type="number"
                                 value={latitudeTar1}
                                 onChange={(e) => setLatitudeTar1(e.target.value)}
-                                placeholder="e.g. 42.444004375268165"
+                                onWheel={(e) => e.currentTarget.blur()}
+                                placeholder="e.g. 29.2490"
                                 className="border-[3px] border-black rounded-xl px-4 py-2 font-inter text-lg bg-white focus:outline-none"
                             />
                         </div>
@@ -144,7 +145,8 @@ export function RecoveryPage() {
                                 type="number"
                                 value={longitudeTar1}
                                 onChange={(e) => setLongitudeTar1(e.target.value)}
-                                placeholder="e.g. -76.48230055838474"
+                                onWheel={(e) => e.currentTarget.blur()}
+                                placeholder="e.g. -103.2500"
                                 className="border-[3px] border-black rounded-xl px-4 py-2 font-inter text-lg bg-white focus:outline-none"
                             />
                         </div>
@@ -155,7 +157,8 @@ export function RecoveryPage() {
                                 type="number"
                                 value={latitudeTar2}
                                 onChange={(e) => setLatitudeTar2(e.target.value)}
-                                placeholder="e.g. 42.444004375268165"
+                                onWheel={(e) => e.currentTarget.blur()}
+                                placeholder="e.g. 31.9300"
                                 className="border-[3px] border-black rounded-xl px-4 py-2 font-inter text-lg bg-white focus:outline-none"
                             />
                         </div>
@@ -165,7 +168,8 @@ export function RecoveryPage() {
                                 type="number"
                                 value={longitudeTar2}
                                 onChange={(e) => setLongitudeTar2(e.target.value)}
-                                placeholder="e.g. -76.48230055838474"
+                                onWheel={(e) => e.currentTarget.blur()}
+                                placeholder="e.g. -104.8700"
                                 className="border-[3px] border-black rounded-xl px-4 py-2 font-inter text-lg bg-white focus:outline-none"
                             />
                         </div>
