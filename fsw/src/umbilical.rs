@@ -11,7 +11,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 /// Number of comma-separated fields the FSW emits after the `$TELEM,` prefix.
 /// Host-side parsers must match this exactly.
-pub const TELEM_FIELD_COUNT: usize = 57;
+pub const TELEM_FIELD_COUNT: usize = 54;
 
 /// Whether any heartbeat has ever been received. Separates the "never seen"
 /// state from the wrapping `LAST_HEARTBEAT_MS` value (RP2040 lacks AtomicU64,
@@ -147,7 +147,7 @@ pub fn emit_telemetry(packet: &crate::packet::Packet) {
         let mut w = BufWriter::new(&mut buf);
         let _ = write!(
             w,
-            "$TELEM,{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
+            "$TELEM,{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
             packet.flight_mode,
             packet.pressure,
             packet.temp,
@@ -196,6 +196,10 @@ pub fn emit_telemetry(packet: &crate::packet::Packet) {
             packet.blims_pid_p,
             packet.blims_pid_i,
             packet.blims_bearing,
+            packet.blims_upwind_lat,
+            packet.blims_upwind_lon,
+            packet.blims_downwind_lat,
+            packet.blims_downwind_lon,
             packet.blims_wind_from_deg,
             packet.ms_since_boot_cfc,
         );

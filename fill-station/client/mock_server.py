@@ -59,18 +59,15 @@ state = {
         "head_acc": 0,
         "fix_type": 0,
         "head_mot": 0,
-        "blims_motor_position": 0.0,
+        "blims_brakeline_diff": 0.0,
         "blims_phase_id": 0,
         "blims_pid_p": 0.0,
         "blims_pid_i": 0.0,
         "blims_bearing": 0.0,
-        "blims_loiter_step": 0,
-        "blims_heading_des": 0.0,
-        "blims_heading_error": 0.0,
-        "blims_error_integral": 0.0,
-        "blims_dist_to_target_m": 0.0,
-        "blims_target_lat": 0.0,
-        "blims_target_lon": 0.0,
+        "blims_upwind_lat": 0.0,
+        "blims_upwind_lon": 0.0,
+        "blims_downwind_lat": 0.0,
+        "blims_downwind_lon": 0.0,
         "blims_wind_from_deg": 0.0,
     }
 }
@@ -191,8 +188,8 @@ async def handler(websocket):
                     isinstance(lat, (int, float)) and isinstance(lon, (int, float))
                     and -90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0
                 ):
-                    state["fsw"]["blims_target_lat"] = float(lat)
-                    state["fsw"]["blims_target_lon"] = float(lon)
+                    state["fsw"]["blims_upwind_lat"] = float(lat)
+                    state["fsw"]["blims_upwind_lon"] = float(lon)
                 else:
                     response = {"type": "error"}
 

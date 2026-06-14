@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Number of comma-separated fields in a `$TELEM,` line, matching the FSW
 /// emitter in `fsw/src/umbilical.rs`. Must be kept in sync on both sides.
-pub const TELEM_FIELD_COUNT: usize = 57;
+pub const TELEM_FIELD_COUNT: usize = 54;
 
 /// FSW telemetry packet parsed from CSV text lines.
 /// The FSW emits lines like: `$TELEM,0,101325.0,25.0,0.0,...,0,0\n`
@@ -57,19 +57,16 @@ pub struct FswTelemetry {
     pub fix_type: u8,
     pub head_mot: i32,
     // BLiMS outputs
-    pub blims_motor_position: f32,
+    pub blims_brakeline_diff: f32,
     pub blims_phase_id: i8,
     pub blims_pid_p: f32,
     pub blims_pid_i: f32,
     pub blims_bearing: f32,
-    pub blims_loiter_step: i8,
-    pub blims_heading_des: f32,
-    pub blims_heading_error: f32,
-    pub blims_error_integral: f32,
-    pub blims_dist_to_target_m: f32,
     // BLiMS config
-    pub blims_target_lat: f32,
-    pub blims_target_lon: f32,
+    pub blims_upwind_lat: f32,
+    pub blims_upwind_lon: f32,
+    pub blims_downwind_lat: f32,
+    pub blims_downwind_lon: f32,
     pub blims_wind_from_deg: f32,
     // CFC boot time
     pub ms_since_boot_cfc: u32,
@@ -126,20 +123,17 @@ impl FswTelemetry {
             head_acc:       fields[40].trim().parse().ok()?,
             fix_type:       fields[41].trim().parse().ok()?,
             head_mot:       fields[42].trim().parse().ok()?,
-            blims_motor_position:   fields[43].trim().parse().ok()?,
+            blims_brakeline_diff:   fields[43].trim().parse().ok()?,
             blims_phase_id:         fields[44].trim().parse().ok()?,
             blims_pid_p:            fields[45].trim().parse().ok()?,
             blims_pid_i:            fields[46].trim().parse().ok()?,
             blims_bearing:          fields[47].trim().parse().ok()?,
-            blims_loiter_step:      fields[48].trim().parse().ok()?,
-            blims_heading_des:      fields[49].trim().parse().ok()?,
-            blims_heading_error:    fields[50].trim().parse().ok()?,
-            blims_error_integral:   fields[51].trim().parse().ok()?,
-            blims_dist_to_target_m: fields[52].trim().parse().ok()?,
-            blims_target_lat:       fields[53].trim().parse().ok()?,
-            blims_target_lon:       fields[54].trim().parse().ok()?,
-            blims_wind_from_deg:    fields[55].trim().parse().ok()?,
-            ms_since_boot_cfc:      fields[56].trim().parse().ok()?,
+            blims_upwind_lat:       fields[48].trim().parse().ok()?,
+            blims_upwind_lon:       fields[49].trim().parse().ok()?,
+            blims_downwind_lat:     fields[50].trim().parse().ok()?,
+            blims_downwind_lon:     fields[51].trim().parse().ok()?,
+            blims_wind_from_deg:    fields[52].trim().parse().ok()?,
+            ms_since_boot_cfc:      fields[53].trim().parse().ok()?,
         })
     }
 

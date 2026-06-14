@@ -45,12 +45,11 @@ TELEM_FIELDS = [
     "h_acc", "v_acc",
     "vel_n", "vel_e", "vel_d", "g_speed",
     "s_acc", "head_acc", "fix_type", "head_mot",
-    "blims_motor_position", "blims_phase_id",
+    "blims_brakeline_diff", "blims_phase_id",
     "blims_pid_p", "blims_pid_i", "blims_bearing",
-    "blims_loiter_step", "blims_heading_des",
-    "blims_heading_error", "blims_error_integral",
-    "blims_dist_to_target_m",
-    "blims_target_lat", "blims_target_lon", "blims_wind_from_deg",
+    "blims_upwind_lat", "blims_upwind_lon",
+    "blims_downwind_lat", "blims_downwind_lon",
+    "blims_wind_from_deg",
     "ms_since_boot_cfc",
 ]
 
@@ -246,7 +245,7 @@ def draw(stdscr, state, port_name):
             f"accel=({telem['accel_x']:>6.2f},{telem['accel_y']:>6.2f},{telem['accel_z']:>6.2f})  gyro=({telem['gyro_x']:>6.1f},{telem['gyro_y']:>6.1f},{telem['gyro_z']:>6.1f})",
             f"pt3={telem['pt3']:>7.1f}  pt4={telem['pt4']:>7.1f}  rtd={telem['rtd']:>7.1f}   SV={sv:<6}  MAV={mav:<6}",
             f"airbrake={telem['airbrake_deployment']:.2f}  predicted_apogee={telem['predicted_apogee']:.1f} m   drogue={telem['ssa_drogue_deployed']} main={telem['ssa_main_deployed']}",
-            f"blims_target=({telem['blims_target_lat']:.6f}, {telem['blims_target_lon']:.6f})",
+            f"blims_target_upwind=({telem['blims_upwind_lat']:.6f}, {telem['blims_upwind_lon']:.6f})",
         ]
         for line in lines:
             safe_addstr(stdscr, row, 2, line)

@@ -509,38 +509,35 @@ if client.fsw_connected and client.fsw_telemetry:
             st.caption("Outputs")
             out_rows = [
                 {"Field": "Phase ID", "Value": f"{t.get('blims_phase_id', 0)}"},
-                {"Field": "Motor Position", "Value": f"{t.get('blims_motor_position', 0):.3f}"},
+                {"Field": "Brakeline Diff", "Value": f"{t.get('blims_brakeline_diff', 0):.3f}"},
                 {"Field": "Bearing", "Value": f"{t.get('blims_bearing', 0):.2f}"},
-                {"Field": "Heading Desired", "Value": f"{t.get('blims_heading_des', 0):.2f}"},
-                {"Field": "Heading Error", "Value": f"{t.get('blims_heading_error', 0):.2f}"},
-                {"Field": "Error Integral", "Value": f"{t.get('blims_error_integral', 0):.3f}"},
                 {"Field": "PID P", "Value": f"{t.get('blims_pid_p', 0):.3f}"},
                 {"Field": "PID I", "Value": f"{t.get('blims_pid_i', 0):.3f}"},
-                {"Field": "Loiter Step", "Value": f"{t.get('blims_loiter_step', 0)}"},
-                {"Field": "Dist to Target", "Value": f"{t.get('blims_dist_to_target_m', 0):.2f} m"},
             ]
             st.dataframe(pd.DataFrame(out_rows), hide_index=True, use_container_width=True)
         with b2:
             st.caption("Config")
             cfg_rows = [
-                {"Field": "Target Lat", "Value": f"{t.get('blims_target_lat', 0):.6f}"},
-                {"Field": "Target Lon", "Value": f"{t.get('blims_target_lon', 0):.6f}"},
+                {"Field": "Upwind Lat", "Value": f"{t.get('blims_upwind_lat', 0):.6f}"},
+                {"Field": "Upwind Lon", "Value": f"{t.get('blims_upwind_lon', 0):.6f}"},
+                {"Field": "Downwind Lat", "Value": f"{t.get('blims_downwind_lat', 0):.6f}"},
+                {"Field": "Downwind Lon", "Value": f"{t.get('blims_downwind_lon', 0):.6f}"},
                 {"Field": "Wind From", "Value": f"{t.get('blims_wind_from_deg', 0):.1f} deg"},
             ]
             st.dataframe(pd.DataFrame(cfg_rows), hide_index=True, use_container_width=True)
 
             st.caption("Set BLiMS Target")
             tgt_lat = st.number_input(
-                "Target Latitude (deg)",
+                "Target Upwind Latitude (deg)",
                 min_value=-90.0, max_value=90.0,
-                value=float(t.get("blims_target_lat", 0.0)),
-                format="%.7f", key="blims_target_lat_input",
+                value=float(t.get("blims_upwind_lat", 0.0)),
+                format="%.7f", key="blims_upwind_lat_input",
             )
             tgt_lon = st.number_input(
-                "Target Longitude (deg)",
+                "Target Upwind Longitude (deg)",
                 min_value=-180.0, max_value=180.0,
-                value=float(t.get("blims_target_lon", 0.0)),
-                format="%.7f", key="blims_target_lon_input",
+                value=float(t.get("blims_upwind_lon", 0.0)),
+                format="%.7f", key="blims_upwind_lon_input",
             )
             if st.button("Set BLiMS Target", use_container_width=True):
                 client.send_command({
