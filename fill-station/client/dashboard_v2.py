@@ -172,11 +172,10 @@ class FillStationClient:
         threading.Thread(target=sequence, daemon=True).start()
 
     def run_launch(self):
-        """Fire igniters and send FSW launch simultaneously."""
+        """Send unified Launch command to fire igniters and trigger FSW launch."""
         def sequence():
-            self.launch_status = "LAUNCH: Firing igniters + FSW Launch..."
-            self.send_command({"command": "ignite"})
-            self.send_command({"command": "fsw_launch"})
+            self.launch_status = "LAUNCH: Sending unified Launch command..."
+            self.send_command({"command": "launch"})
             time.sleep(3)
             self.launch_status = None
         threading.Thread(target=sequence, daemon=True).start()

@@ -27,6 +27,8 @@ impl Default for ActuatorState {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "command", rename_all = "snake_case")]
 pub enum Command {
+    /// Fire igniters and send launch command to FSW simultaneously
+    Launch,
     Ignite,
     /// Query continuity for a specific igniter (1 or 2)
     GetIgniterContinuity { id: u8 },

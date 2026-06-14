@@ -59,6 +59,22 @@ Query the continuity of a specific igniter.
 *   `id`: 1 for Igniter 1, 2 for Igniter 2.
 *   `continuity`: `true` if circuit is closed (continuity present), `false` otherwise.
 
+### `launch`
+Initiates a **non-blocking** launch sequence. Fires both igniters concurrently for 3 seconds in a background task AND simultaneously sends the `<L>` launch command string over the umbilical to the FSW.
+
+**Format:**
+```json
+{"command": "launch"}
+```
+
+**Response:**
+```json
+{"type": "success"}
+```
+*   Returns `{"type": "success"}` **immediately** upon starting the sequence.
+
+---
+
 ### `ignite`
 Initiates a **non-blocking** ignition sequence. Fires both igniters concurrently for 3 seconds in a background task. 
 

@@ -214,6 +214,7 @@ main() spawns tasks:
 
 | Command | Description | Documentation |
 |---------|-------------|---------------|
+| `launch` | Fire igniters AND send FSW launch command simultaneously | Built-in |
 | `ignite` | Fire both igniters concurrently (3s) | Built-in |
 | `start_adc_stream` | Begin ADC data stream | [ADC_STREAMING.md](ADC_STREAMING.md#start-adc-streaming) |
 | `stop_adc_stream` | End ADC data stream | [ADC_STREAMING.md](ADC_STREAMING.md#stop-adc-streaming) |
