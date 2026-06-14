@@ -12,10 +12,9 @@ use crate::umbilical::{self, UmbilicalCommand};
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum LaunchStage {
     None,
-    PreVent,      // SV Open for 2s
-    SvToMavWait,  // 1s gap between SV close and MAV open
-    MavOpen,      // MAV Open for MAV_OPEN_DURATION_MS
-    Done,         // Sequence finished; SV reopens later on entry to Drogue/Main/Fault
+    PreVent,  // SV Open for 2s
+    MavOpen,  // MAV Open for MAV_OPEN_DURATION_MS
+    Done,     // Sequence finished; SV reopens later on entry to Drogue/Main/Fault
 }
 
 // GPIO 32 for TX UART, GPIO 33 for RX UART
@@ -137,11 +136,10 @@ impl FlightLoop {
                 let elapsed_ms = flight_state.snap_launch_elapsed_ms as u64;
                 let stage_limit_ms: u64 = match stage {
                     1 => constants::LAUNCH_SV_PREVENT_MS,
-                    2 => constants::LAUNCH_SV_TO_MAV_WAIT_MS,
-                    3 => constants::MAV_OPEN_DURATION_MS,
+                    2 => constants::MAV_OPEN_DURATION_MS,
                     _ => 0,
                 };
-                if stage == 0 || stage >= 4 || elapsed_ms >= stage_limit_ms {
+                if stage == 0 || stage >= 3 || elapsed_ms >= stage_limit_ms {
                     // Sequence complete — Done stage will be handled by check_transitions
                     // on the first loop iteration to push mode to Coast.
                     (LaunchStage::Done, None)
@@ -152,7 +150,6 @@ impl FlightLoop {
                         .unwrap_or(Instant::from_ticks(0));
                     let recovered_stage = match stage {
                         1 => LaunchStage::PreVent,
-                        2 => LaunchStage::SvToMavWait,
                         _ => LaunchStage::MavOpen,
                     };
                     log::info!(
@@ -1050,24 +1047,11 @@ impl FlightLoop {
                     if sequence_now.duration_since(start).as_millis()
                         >= constants::LAUNCH_SV_PREVENT_MS
                     {
-                        log::info!("Pre-launch vent complete (2s). Closing SV.");
+                        log::info!("Pre-launch vent complete (2s). Closing SV, opening MAV immediately.");
                         self.flight_state.close_sv().await;
                         self.sv_open = false;
 
-                        self.launch_sequence_stage = LaunchStage::SvToMavWait;
-                        self.launch_stage_start_time = Some(sequence_now);
-                    }
-                }
-            }
-            LaunchStage::SvToMavWait => {
-                if let Some(start) = self.launch_stage_start_time {
-                    if sequence_now.duration_since(start).as_millis()
-                        >= constants::LAUNCH_SV_TO_MAV_WAIT_MS
-                    {
-                        log::info!("1s gap complete. Opening MAV.");
-                        self.flight_state
-                            .open_mav(constants::MAV_OPEN_DURATION_MS)
-                            .await;
+                        self.flight_state.open_mav(constants::MAV_OPEN_DURATION_MS).await;
                         self.mav_open = true;
 
                         self.launch_sequence_stage = LaunchStage::MavOpen;
@@ -1080,9 +1064,13 @@ impl FlightLoop {
                     if sequence_now.duration_since(start).as_millis()
                         >= constants::MAV_OPEN_DURATION_MS
                     {
-                        log::info!("MAV cycle complete. Closing MAV.");
+                        log::info!("MAV cycle complete. Closing MAV, opening SV for rest of flight.");
                         self.flight_state.close_mav().await;
                         self.mav_open = false;
+
+                        // SV stays open for the remainder of the flight.
+                        self.flight_state.open_sv(0).await;
+                        self.sv_open = true;
 
                         // TRANSITION TO COAST if currently in Ascent
                         if self.flight_state.flight_mode == FlightMode::Ascent {

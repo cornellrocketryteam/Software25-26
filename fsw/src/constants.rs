@@ -143,7 +143,6 @@ pub const UMBILICAL_TIMEOUT_MS: u64 = 15_000; // 15 seconds
 pub const HEARTBEAT_TIMEOUT_MS: u64 = 5_000; // 5 s â€” 3 s was too tight for USB CDC jitter
 pub const MAV_OPEN_DURATION_MS: u64 =  7880; // 7.88 for LV 
 pub const LAUNCH_SV_PREVENT_MS: u64 = 2_000;  // 2 s SV open before closing
-pub const LAUNCH_SV_TO_MAV_WAIT_MS: u64 = 1_000; // 1 s wait between SV close and MAV open
 pub const SSA_THRESHOLD_MS: u64 = 1000; // Duration to fire ematch
 
 // ADS1015 ADC Configuration
