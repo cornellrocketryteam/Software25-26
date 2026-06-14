@@ -36,21 +36,50 @@ export default function VentButtonComponent() {
         setVentSeconds(ventSeconds); // Reset the dropdown to the last confirmed value
         setShowConfirmation(false);
     };
+
+    // Fine-tune the vent duration by 0.1s. Clamp to the [0, 10]s range the dropdown
+    // offers, and round to 1 decimal to avoid floating-point drift (e.g. 0.1 + 0.2).
+    const adjustVentSeconds = (delta: number) => {
+        const next = Math.min(10, Math.max(0, ventSeconds + delta));
+        setVentSeconds(Math.round(next * 10) / 10);
+    };
     return (
         <>
         <div className="bg-[#D9D9D9] border-[6px] border-black rounded-3xl p-12">
             <h2 className="font-inter font-bold text-[42px] text-center mb-8">VENT BUTTON</h2>
                 <div className="bg-white border-[6px] border-black rounded-2xl px-6 py-4 mb-8">
                     <label className="font-inter text-xl mb-2 block">Number of seconds to open SV2:</label>
-                    <select 
-                        value={ventSeconds} 
-                        onChange={(e) => setVentSeconds(Number(e.target.value))}
-                        className="w-full p-2 border-2 border-gray-300 rounded text-xl font-inter"
-                    >
-                        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => (
-                        <option key={num} value={num}>{num} second{num > 0 ? 's' : ''}</option>
-                        ))}
-                    </select>
+                    <div className="flex flex-row items-stretch gap-2">
+                        <button
+                            type="button"
+                            onClick={() => adjustVentSeconds(-0.1)}
+                            disabled={ventSeconds <= 0}
+                            className="px-4 border-2 border-gray-300 rounded text-2xl font-inter font-bold hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                            −
+                        </button>
+                        <select
+                            value={ventSeconds}
+                            onChange={(e) => setVentSeconds(Number(e.target.value))}
+                            className="flex-1 p-2 border-2 border-gray-300 rounded text-xl font-inter"
+                        >
+                            {/* When fine-tuned to a fractional value, show it as a selectable option so the dropdown stays in sync */}
+                            {!Number.isInteger(ventSeconds) && (
+                                <option value={ventSeconds}>{ventSeconds} seconds</option>
+                            )}
+                            {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => (
+                            <option key={num} value={num}>{num} second{num > 0 ? 's' : ''}</option>
+                            ))}
+                        </select>
+                        <button
+                            type="button"
+                            onClick={() => adjustVentSeconds(0.1)}
+                            disabled={ventSeconds >= 10}
+                            className="px-4 border-2 border-gray-300 rounded text-2xl font-inter font-bold hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                            +
+                        </button>
+                    </div>
                 </div>
                 <div className="flex flex-row gap-4 justify-center">
                     <button 
