@@ -129,8 +129,10 @@ export default function InitialFillComponent() {
                 <button
                     onClick={handleInitiate}
                     // Disable the button while a fill is already in progress
-                    // to prevent double-initiating the loop.
-                    disabled={fillUIActive}
+                    // to prevent double-initiating the loop. 
+                    // Also disable if we are already at or above the target pressure to prevent unnecessary fill attempts.
+
+                    disabled={fillUIActive || (telemetryDataRef.current.at(-1)?.telemetry.pt3 ?? 0) >= 900}
                     className="bg-[#5A87FF] border-[6px] border-black rounded-3xl px-24 py-8 font-inter font-bold text-[69px] text-white disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     {fillUIActive ? (ventUIActive ? "Venting..." : "Filling...") : "Initiate"}

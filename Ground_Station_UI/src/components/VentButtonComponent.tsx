@@ -4,8 +4,16 @@ import ConfirmationOverlay from "./ConfirmationOverlayComponent";
 
 export default function VentButtonComponent() {
 
-    const { ventTimeoutRef, manualVentRef, fillUIActive, ventUIActive, setVentUIActive, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, handleButtonClickRef, isVentingRef } = usePropulsion();
+    const { ventTimeoutRef, manualVentRef, fillUIActive, ventUIActive, setVentUIActive, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, handleButtonClickRef, isVentingRef, telemetryDataRef } = usePropulsion();
     const [showConfirmation, setShowConfirmation] = useState(false);
+
+    // Latest tank pressure. This component re-renders on every telemetry message
+    // (valve state updates), so reading the ref here stays current with the UI.
+    const currentPsi = telemetryDataRef.current.at(-1)?.telemetry.pt3 ?? 0;
+
+    // We can vent during a fill (the fill loop coordinates it), or as a standalone
+    // pressure bleed-off when not filling — but only if there is pressure to release.
+    const canVent = fillUIActive || currentPsi > 0;
     const toggleVentAction = () => {
         if (ventSeconds === 0) {
             alert("Please select a vent time greater than 0 seconds.");
@@ -64,10 +72,28 @@ export default function VentButtonComponent() {
                                 isVentingRef.current = false;
                                 setVentUIActive(false);
                             } else { //Start Manual Venting Process
-                                if(!isVentingRef.current) manualVentRef.current = true; //Do not stack with automated vent if it's already running
+                                if (isVentingRef.current) return; //Do not stack with a vent that's already running
+                                if (fillUIActive) {
+                                    //During a fill, hand off to the fill loop so it coordinates the vent (BV reopen, no stacking)
+                                    manualVentRef.current = true;
+                                } else {
+                                    //Not filling: drive a standalone vent to bleed off pressure. Open SV2 now, close it after the set duration.
+                                    isVentingRef.current = true;
+                                    setVentUIActive(true);
+                                    handleButtonClickRef.current("Solenoid Valve 2", 'OPEN');
+                                    console.log("🔴 Manual Vent START (no fill):", new Date().toISOString(), "PSI:", currentPsi, `Duration: ${confirmedVentSeconds}s`);
+
+                                    ventTimeoutRef.current = setTimeout(() => {
+                                        console.log("🟢 Manual Vent END (no fill):", new Date().toISOString());
+                                        handleButtonClickRef.current("Solenoid Valve 2", 'CLOSE');
+                                        ventTimeoutRef.current = null;
+                                        isVentingRef.current = false;
+                                        setVentUIActive(false);
+                                    }, confirmedVentSeconds * 1000);
+                                }
                             }
                         }}
-                        disabled={confirmedVentSeconds === 0 || !fillUIActive}
+                        disabled={confirmedVentSeconds === 0 || !canVent}
                         className="bg-[#E05A2B] border-[4px] border-black rounded-2xl px-10 py-3 font-inter font-bold text-[32px] text-white hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed"
                         >
                             {!ventUIActive ? "VENT" : "ABORT"}
@@ -78,7 +104,6 @@ export default function VentButtonComponent() {
                                 Vent duration: {confirmedVentSeconds} second{confirmedVentSeconds !== 1 ? 's' : ''}
                             </div>
                         )}
-
                     </div>
                     
                 </div>
