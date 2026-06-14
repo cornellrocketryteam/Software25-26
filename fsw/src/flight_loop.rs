@@ -1,7 +1,6 @@
 use core::f32;
 use embassy_time::{Duration, Instant, Timer};
 
-use crate::airbrake_task::{AirbrakeInput, AirbrakePhase, AIRBRAKE_INPUT};
 use crate::constants;
 use crate::state::SensorState;
 use crate::state::{FlightMode, FlightState};
@@ -273,29 +272,7 @@ impl FlightLoop {
         // Convert raw altitude to relative (ground level) altitude
         self.flight_state.packet.altitude -= self.flight_state.arming_altitude;
 
-        // 2b. Forward latest sensor data to the airbrake controller on Core 1.
-        // Signal::signal() is non-blocking and always delivers the most recent
-        // value, so the flight loop is never delayed by airbrake computation.
-        let airbrake_phase = match self.flight_state.flight_mode {
-            FlightMode::Startup | FlightMode::Standby => Some(AirbrakePhase::Pad),
-            FlightMode::Ascent  => Some(AirbrakePhase::Boost),
-            FlightMode::Coast   => Some(AirbrakePhase::Coast),
-            _ => None, // DrogueDeployed / MainDeployed / Fault — airbrakes inactive
-        };
-        if let Some(phase) = airbrake_phase {
-            AIRBRAKE_INPUT.signal(AirbrakeInput {
-                time:     self.flight_state.packet.ms_since_boot_cfc as f32 / 1000.0,
-                altitude: self.flight_state.packet.altitude,
-                gyro_x:   self.flight_state.packet.gyro_x,
-                gyro_y:   self.flight_state.packet.gyro_y,
-                accel_x:  self.flight_state.packet.accel_x,
-                accel_y:  self.flight_state.packet.accel_y,
-                accel_z:  self.flight_state.packet.accel_z,
-                phase,
-            });
-        }
-
-        // 2c. Overpressure latch: if PT3 exceeds the threshold, open SV and
+        // 2b. Overpressure latch: if PT3 exceeds the threshold, open SV and
         // force Fault. Checked every cycle regardless of flight mode so tank
         // overpressure before launch is handled the same as during flight.
         self.check_overpressure().await;
@@ -564,15 +541,10 @@ impl FlightLoop {
                 }
                 */
                 UmbilicalCommand::DeployAirbrakes => {
-                    log::warn!("UMBILICAL CMD: Deploy Airbrakes");
-                    self.flight_state.airbrake_system.enable();
-                    self.flight_state.airbrake_system.set_deployment(1.0);
-                    self.flight_state.packet.airbrake_deployment = 1.0;
+                    log::warn!("UMBILICAL CMD: Deploy Airbrakes (disabled — no controller)");
                 }
                 UmbilicalCommand::RetractAirbrakes => {
-                    log::warn!("UMBILICAL CMD: Retract Airbrakes");
-                    self.flight_state.airbrake_system.set_deployment(0.0);
-                    self.flight_state.packet.airbrake_deployment = 0.0;
+                    log::warn!("UMBILICAL CMD: Retract Airbrakes (disabled — no controller)");
                 }
                 UmbilicalCommand::TriggerBLiMS => {
                     log::warn!("UMBILICAL CMD: Trigger BLiMS nudge");
@@ -687,7 +659,7 @@ impl FlightLoop {
                     log::error!("Altimeter invalid at Startup; transitioning to Fault");
                     return;
                 }
-                // LV: arming is driven solely by GPIO 41 (CFC_ARM) and Key arm command
+                // LV: arming is driven solely by GPIO 41 (CFC_ARM) and Key arm command 
                 if self.key_armed && self.flight_state.cfc_arm_active && self.flight_state.umbilical_connected {
                     if self.flight_state.altimeter_state == crate::state::SensorState::VALID {
                         // Record arming altitude (TODO: implement into storage)
@@ -713,7 +685,6 @@ impl FlightLoop {
                     log::error!("Altimeter invalid at Standby; transitioning to Fault");
                     return;
                 }
-
                 if self.flight_state.umbilical_connected {
                     log::info!("Umbilical connected");
                     self.umbilical_disconnect_time = None;
@@ -743,7 +714,6 @@ impl FlightLoop {
                     }
                 }
                 self.umbilical_prev = self.flight_state.umbilical_connected;
-
                 // LV: if GPIO 41 (CFC_ARM) goes low while in Standby, drop back to Startup
                 if !self.flight_state.cfc_arm_active {
                     self.flight_state.flight_mode = FlightMode::Startup;
@@ -751,7 +721,6 @@ impl FlightLoop {
                     log::info!("CFC_ARM low in Standby; transitioning back to Startup");
                     return;
                 }
-
                 // Check altimeter for launch with umbilical
                 if self.umbilical_launch && self.flight_state.umbilical_connected {
                     // START LAUNCH SEQUENCE
@@ -788,7 +757,6 @@ impl FlightLoop {
                     log::error!("Altimeter invalid at Ascent; transitioning to Fault");
                     return;
                 }
-                self.flight_state.airbrake_system.enable();
 
                 // Look at scenario where not above armed altitude and MAV is closed
                 if self.flight_state.altimeter_state == SensorState::VALID
@@ -833,14 +801,6 @@ impl FlightLoop {
                     }
                     let avg_alt = self.alt_sum / 10.0;
 
-                    // Read latest airbrake deployment from Core 1
-                    // and drive the ODrive RC PWM servo
-                    let deployment = crate::airbrake_task::get_deployment();
-                    self.flight_state.airbrake_system.set_deployment(0.63);
-                    self.flight_state.packet.predicted_apogee = crate::airbrake_task::get_predicted_apogee();
-                    self.flight_state.packet.airbrake_deployment = 0.63;
-                    log::info!("Airbrake deployment: {:.1}%", 0.63 * 100.0);
-
                     // N2: vertical speed < 50 ft/s for 5 consecutive loops, only above arming altitude
                     // Slope over 0.5 s (10 loops) smooths altimeter noise vs. frame-to-frame diff
                     let vert_speed_ft_s = (current_alt - alt_half_sec_ago) * 2.0 * 3.28084;
@@ -871,14 +831,6 @@ impl FlightLoop {
                         && self.filtered_alt[1] > self.filtered_alt[0]
                     {
                         self.camera_deployed = true;
-                        // Airbrakes retract at apogee
-                        // Coast signals so it will hold at 0.0 deployment
-
-                        self.flight_state.airbrake_system.retract();
-                        //self.flight_state.airbrake_system.disable();
-                        self.airbrakes_init = false;
-                        self.flight_state.packet.airbrake_deployment = 0.0;
-                        log::info!("Airbrakes retracted");
                         log::info!("Cameras deployed");
                         log::info!("Apogee reached at {:.2} m", self.filtered_alt[1]);
                         // Deploy Drogue
@@ -948,7 +900,6 @@ impl FlightLoop {
                     log::error!("Altimeter invalid at MainDeployed; transitioning to Fault");
                     return;
                 }
-                self.flight_state.airbrake_system.disable();
 
                 // N3: altitude < 76.2m (250ft) for 1s
                 if self.flight_state.packet.altitude < 76.2 && !self.n3_sent {
