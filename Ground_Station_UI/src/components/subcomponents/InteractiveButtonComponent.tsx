@@ -49,7 +49,7 @@ export default function InteractiveButtonComponent() {
                     if(buttonName === "Solenoid Valve 1" || buttonName === "Solenoid Valve 2" || buttonName === "Ball Valve" || buttonName === "MAV"){
                       toggleAction('OPEN');
                     } else if (buttonName === "Quick Disconnect"){
-                      toggleAction('EXTEND');
+                      toggleAction('RETRACT');
                     }
                   }}
                   className={`${
@@ -63,7 +63,7 @@ export default function InteractiveButtonComponent() {
                     if(buttonName === "Solenoid Valve 1" || buttonName === "Solenoid Valve 2" || buttonName === "Ball Valve" || buttonName === "MAV"){
                       toggleAction('CLOSE');
                     } else if (buttonName === "Quick Disconnect"){
-                      toggleAction('RETRACT');
+                      toggleAction('EXTEND');
                     }
                   }}
                   className={`${

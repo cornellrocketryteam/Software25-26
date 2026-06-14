@@ -4,7 +4,7 @@ import ConfirmationOverlay from "./ConfirmationOverlayComponent";
 
 export default function VentButtonComponent() {
 
-    const { manualVentRef, fillUIActive, ventUIActive, setVentUIActive, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, handleButtonClickRef, isVentingRef } = usePropulsion();
+    const { ventTimeoutRef, manualVentRef, fillUIActive, ventUIActive, setVentUIActive, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, handleButtonClickRef, isVentingRef } = usePropulsion();
     const [showConfirmation, setShowConfirmation] = useState(false);
     const toggleVentAction = () => {
         if (ventSeconds === 0) {
@@ -26,7 +26,7 @@ export default function VentButtonComponent() {
     
       //We will not be doin it chat
     const handleVentCancel = () => {
-        setVentSeconds(0);
+        setVentSeconds(ventSeconds); // Reset the dropdown to the last confirmed value
         setShowConfirmation(false);
     };
     return (
@@ -54,13 +54,18 @@ export default function VentButtonComponent() {
                     <div className="relative group inline-block">
                         <button
                         onClick={() => {
-                            if (ventUIActive) {
+                            if (ventUIActive) { //We Abort Here
                                 // ABORT: close SV2 immediately and clear the venting lock
+                                if (ventTimeoutRef.current) {
+                                    clearTimeout(ventTimeoutRef.current); // cancel the scheduled completion
+                                    ventTimeoutRef.current = null;
+                                }
                                 handleButtonClickRef.current("Solenoid Valve 2", 'CLOSE');
+                                manualVentRef.current = false; //Set false just in case :)
                                 isVentingRef.current = false;
                                 setVentUIActive(false);
-                            } else {
-                                manualVentRef.current = true;
+                            } else { //Start Manual Venting Process
+                                if(!isVentingRef.current) manualVentRef.current = true; //Do not stack with automated vent if it's already running
                             }
                         }}
                         disabled={confirmedVentSeconds === 0 || !fillUIActive}

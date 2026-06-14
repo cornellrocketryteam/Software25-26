@@ -3,32 +3,26 @@ import ConfirmationOverlay from './components/ConfirmationOverlayComponent';
 import { useEffect, useState } from "react";
 import { useAppContext } from "./App";
 
-type BasicAction = "OPEN_PAYLOAD" | "RETRACT_PAYLOAD";
+type BasicAction = "OPEN_PAYLOAD";
 
 export function RecoveryPage() {
     const [showConfirmation, setShowConfirmation] = useState(false);
-    const [pendingAction, setPendingAction] = useState<BasicAction | null>(null);
-    const [payloadDeployed, setPayloadDeployed] = useState(false);
+    const [pendingAction, setPendingAction] = useState< BasicAction | null>(null);
     const [latitude, setLatitude] = useState("");
     const [longitude, setLongitude] = useState("");
     const [confirmedCoords, setConfirmedCoords] = useState<{lat: string, lng: string} | null>(null);
     const { wsRef, wsReady, currFlightMode } = useAppContext();
 
     const toggleAction = (action: BasicAction) => {
-        if (payloadDeployed && action === "OPEN_PAYLOAD" || !payloadDeployed && action === "RETRACT_PAYLOAD") {
-            return;
-        }
         setPendingAction(action);
         setShowConfirmation(true);
     };
 
     const handleConfirm = () => {
-        if (pendingAction === "OPEN_PAYLOAD") {
-            setPayloadDeployed(true);
-            wsRef.current?.send(JSON.stringify({ "command": "fsw_payload_n1" }));
-        } else if (pendingAction === "RETRACT_PAYLOAD") {
-            setPayloadDeployed(false);
-            // Send retract command here when available
+        if (pendingAction !== null) {
+            if(pendingAction === "OPEN_PAYLOAD"){
+                wsRef.current?.send(JSON.stringify({"command": "fsw_payload_n1"})); //Send command to extend payload, IMMEDIATELY, no checks needed.
+            }
         }
         setShowConfirmation(false);
         setPendingAction(null);
@@ -42,9 +36,24 @@ export function RecoveryPage() {
     const handleMessage = (_event: MessageEvent) => {
         // Reserved for future telemetry handling on this page
     };
+    
+    const basicValidCheckForCoords = (lat: number, lng: number) => {
+        if (isNaN(lat) || isNaN(lng)) {
+            alert("Please enter valid numeric values for latitude and longitude.");
+            return false;
+        }
+        if (lat < -90 || lat > 90) {
+            alert("Latitude must be between -90 and 90 degrees.");
+            return false;
+        }
+        if (lng < -180 || lng > 180) {
+            alert("Longitude must be between -180 and 180 degrees.");
+            return false;
+        }
+        return true;
+    }
 
     useEffect(() => {
-        // Bug 9 fix: declare outside onOpen so cleanup can clear it
         let heartbeatInterval: ReturnType<typeof setInterval>;
 
         if (!wsReady) return;
@@ -114,10 +123,10 @@ export function RecoveryPage() {
                         </div>
                         <button
                             onClick={() => {
+                                if(!basicValidCheckForCoords(Number(latitude), Number(longitude))) return;
                                 const lat = Number(latitude);
                                 const lon = Number(longitude);
                                 setConfirmedCoords({ lat: latitude, lng: longitude });
-                                // Bug 4 fix: actually send the command with correct field names (lat/lon per server)
                                 wsRef.current?.send(JSON.stringify({ "command": "fsw_set_blims_target", lat, lon }));
                             }}
                             disabled={!latitude || !longitude}
@@ -134,17 +143,9 @@ export function RecoveryPage() {
                     <div className="flex gap-4">
                         <button
                             onClick={() => toggleAction("OPEN_PAYLOAD")}
-                            disabled={payloadDeployed}
                             className="bg-[#5A87FF] border-[3px] border-black rounded-2xl px-12 py-3 font-inter font-bold text-white text-xl hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             Open
-                        </button>
-                        <button
-                            onClick={() => toggleAction("RETRACT_PAYLOAD")}
-                            disabled={!payloadDeployed}
-                            className="bg-[#4A4A4A] border-[3px] border-black rounded-2xl px-12 py-3 font-inter font-bold text-white text-xl hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            Retract
                         </button>
                     </div>
                 </div>
