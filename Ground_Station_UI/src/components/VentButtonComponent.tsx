@@ -17,14 +17,13 @@ export default function VentButtonComponent() {
             alert("Vent time is already set to the selected value.");
         }
     }
-    //If we say yes, then we will actually be doin it :)
+    
     const handleVentConfirm = () => {
         setConfirmedVentSeconds(ventSeconds); 
         console.log(`Vent process set to last for ${ventSeconds} seconds.`); //<- inaccurate log due to state update timing, consider using ventSeconds directly in the log if needed
         setShowConfirmation(false);
       };
     
-      //We will not be doin it chat
     const handleVentCancel = () => {
         setVentSeconds(ventSeconds); // Reset the dropdown to the last confirmed value
         setShowConfirmation(false);
@@ -55,7 +54,7 @@ export default function VentButtonComponent() {
                         <button
                         onClick={() => {
                             if (ventUIActive) { //We Abort Here
-                                // ABORT: close SV2 immediately and clear the venting lock
+                                //ABORT: close SV2 immediately and clear the venting lock
                                 if (ventTimeoutRef.current) {
                                     clearTimeout(ventTimeoutRef.current); // cancel the scheduled completion
                                     ventTimeoutRef.current = null;

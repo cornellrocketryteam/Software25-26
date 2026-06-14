@@ -207,7 +207,6 @@ export function PropulsionPage() {
 
 
     //Stored Valve Data For UI Representation:
-    
     const [valveData, setValveData] = useState({ //TODO: Think of what to do with venting field in valve Data
         SV1: { "actuated": false, "continuity": false },
         SV2: { "actuated": false, "venting": false, "continuity": false },
@@ -369,7 +368,7 @@ export function PropulsionPage() {
                     umbilicalDataRef.current.shift(); //Remove the oldest entry when we exceed the limit
                 }
 
-                // For testing purposes so we can simulate fill without any actual pressure readings
+                // For testing purposes so we can simulate fill without any actual pressure readings 
                 // const lastPressure = umbilicalDataRef.current.at(-1)?.telemetry.pt3 ?? 0;
 
                 // if (isFillingRef.current && !isVentingRef.current) {
