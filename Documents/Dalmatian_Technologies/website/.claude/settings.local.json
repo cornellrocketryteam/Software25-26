@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git fetch *)",
+      "Bash(git -C \"/c/Users/sonak/Documents/Dalmatian_Technologies/website/dalamatian-technologies-website\" log --oneline)",
+      "Bash(git -C \"/c/Users/sonak/Documents/Dalmatian_Technologies/website/dalamatian-technologies-website\" log --all --oneline)",
+      "Bash(git *)",
+      "Bash(npm install *)"
+    ]
+  }
+}
