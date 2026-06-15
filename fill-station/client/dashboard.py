@@ -395,7 +395,7 @@ with col_right:
         # Mapping Schema
         # PT1000_SCALE: 0.6125, PT1000_OFFSET: 5.0
         # PT1500_SCALE: 0.909754, PT1500_OFFSET: 5.08926
-        # PT2000_SCALE: 1.22124, PT2000_OFFSET: 5.37052
+
         # LOADCELL_SCALE: 1.69661, LOADCELL_OFFSET: 75.37882
         
         PT1000_SCALE = 0.6125

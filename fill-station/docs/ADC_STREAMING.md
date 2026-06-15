@@ -52,7 +52,7 @@ const LOADCELL_OFFSET: f32 = -14.9;
 Just modify `ADC_SAMPLE_RATE_HZ`. Example: `const ADC_SAMPLE_RATE_HZ: u64 = 200;` for 200 Hz.
 
 ### To Update Pressure Sensor Calibration:
-Modify the `PT1500_*`, `PT2000_*`, and `LOADCELL_*` constants with your new calibration values.
+Modify the `PT1500_*`, `PT1000_*`, and `LOADCELL_*` constants with your new calibration values.
 
 ## WebSocket Protocol
 
