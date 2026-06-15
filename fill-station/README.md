@@ -115,7 +115,6 @@ See [`docs/ADC_STREAMING.md`](docs/ADC_STREAMING.md) for detailed protocol speci
 
 ### GPIO Pins
 - **Igniter 1**: GPIO Chip 0, Pin 38 (signal), Pin 39 (continuity)
-- **Igniter 1**: GPIO Chip 0, Pin 38 (signal), Pin 39 (continuity)
 - **Igniter 2**: GPIO Chip 0, Pin 40 (signal), GPIO Chip 1, Pin 42 (continuity)
 - **SV1**: Control (Chip 0, 42), Sense (Chip 1, 51) - NC
 - **Ball Valve**:

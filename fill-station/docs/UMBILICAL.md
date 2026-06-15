@@ -90,6 +90,8 @@ When streaming FSW telemetry (`start_fsw_stream`), clients receive JSON updates.
 ### FSW Actuation Commands
 Commands sent over the WebSocket that get parsed and sent across the serial connection to FSW:
 - `fsw_launch`: Trigger Launch sequence (`<L>`).
+- `fsw_trigger_drogue`: Trigger drogue deploy on FSW (test only) (`<D>`).
+- `fsw_trigger_main`: Trigger main deploy on FSW (test only) (`<d>`).
 - `fsw_open_mav`: Open the MAV on the vehicle (`<M>`).
 - `fsw_close_mav`: Close the MAV on the vehicle (`<m>`).
 - `fsw_open_sv`: Open the vehicle Solenoid Valve (`<S>`).
@@ -109,6 +111,9 @@ Commands sent over the WebSocket that get parsed and sent across the serial conn
 - `fsw_payload_n2`: Trigger payload event N2 (`<2>`).
 - `fsw_payload_n3`: Trigger payload event N3 (`<3>`).
 - `fsw_payload_n4`: Trigger payload event N4 (`<4>`).
+- `fsw_payload_a1`: Trigger payload event A1 (`<A1>`).
+- `fsw_payload_a2`: Trigger payload event A2 (`<A2>`).
+- `fsw_payload_a3`: Trigger payload event A3 (`<A3>`).
 
 > **Removed:** `fsw_reset_card` (`<D>`) and `fsw_fault_mode` (the old name for what is now `fsw_wipe_fram_reboot`) are no longer recognized.
 

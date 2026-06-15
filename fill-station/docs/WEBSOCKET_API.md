@@ -283,6 +283,24 @@ Set the Ball Valve ON_OFF line state manually.
 
 ---
 
+### `get_ball_valve_state`
+Query the last-commanded open/close state of the ball valve.
+
+**Format:**
+```json
+{"command": "get_ball_valve_state"}
+```
+
+**Response:**
+```json
+{
+  "type": "ball_valve_state",
+  "open": true
+}
+```
+
+---
+
 ## QD Stepper Commands
 
 ### `qd_move`
@@ -330,6 +348,25 @@ Execute the QD extend preset (CCW, preconfigured number of steps). Non-blocking.
 {"type": "success"}
 ```
 
+---
+
+### `get_qd_state`
+Query the last-commanded QD position state.
+
+**Format:**
+```json
+{"command": "get_qd_state"}
+```
+
+**Response:**
+```json
+{
+  "type": "qd_state",
+  "state": 1
+}
+```
+* `state`: `-1` (retracted), `0` (unknown), `1` (extended).
+
 See [QD_STEPPER.md](QD_STEPPER.md) for hardware details, calibration, and configuration.
 
 ---
@@ -373,6 +410,8 @@ Stop streaming FSW telemetry data.
 The following commands send simple 1-byte command characters over the serial connection to the Flight Software. They all follow the same format and response structure.
 
 *   `fsw_launch` — Trigger launch sequence (`<L>`)
+*   `fsw_trigger_drogue` — Trigger drogue deploy on FSW (test only) (`<D>`)
+*   `fsw_trigger_main` — Trigger main deploy on FSW (test only) (`<d>`)
 *   `fsw_open_mav` — Open MAV on vehicle (`<M>`)
 *   `fsw_close_mav` — Close MAV on vehicle (`<m>`)
 *   `fsw_open_sv` — Open SV on vehicle (`<S>`)
@@ -391,6 +430,9 @@ The following commands send simple 1-byte command characters over the serial con
 *   `fsw_payload_n2` — Payload event N2 (`<2>`)
 *   `fsw_payload_n3` — Payload event N3 (`<3>`)
 *   `fsw_payload_n4` — Payload event N4 (`<4>`)
+*   `fsw_payload_a1` — Payload event A1 (`<A1>`)
+*   `fsw_payload_a2` — Payload event A2 (`<A2>`)
+*   `fsw_payload_a3` — Payload event A3 (`<A3>`)
 
 > **Removed:** `fsw_reset_card` (`<D>`) and `fsw_fault_mode` (renamed to `fsw_wipe_fram_reboot`) are no longer accepted.
 
