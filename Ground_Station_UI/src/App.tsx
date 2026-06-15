@@ -10,6 +10,8 @@ type AppContextType = {
   setCurrFlightMode: (flightMode: FlightMode) => void;
   uri: string;
   wsReady: boolean;
+  hasLaunched: boolean;
+  setHasLaunched: (launched: boolean) => void;
 }
 export type FlightMode = "....."| 'STANDBY' | 'STARTUP';
 
@@ -31,6 +33,11 @@ function App() {
   const uri = "ws://localhost:9000"; //This is for testing on the mock server
   const [wsReady, setWsReady] = useState(false);
   const [currFlightMode, setCurrFlightMode] = useState<FlightMode>('.....');
+
+  // Track whether we've launched. Backed by sessionStorage so the locked-out launch
+  // state survives a page refresh, but auto-clears when the tab closes (a new session
+  // starts unlocked, rather than latching forever as localStorage would).
+  const [hasLaunched, setHasLaunched] = useState(() => sessionStorage.getItem('hasLaunched') === 'true');
 
   const handleMessage = (event: MessageEvent) => {
     //Parse JSON data here
@@ -87,7 +94,7 @@ function App() {
         };
     }, []);
   return (
-    <AppContext.Provider value={{ setCurrFlightMode, currFlightMode, wsRef, uri: uri, wsReady}}>
+    <AppContext.Provider value={{hasLaunched, setHasLaunched, setCurrFlightMode, currFlightMode, wsRef, uri: uri, wsReady}}>
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<LandingPage />} />

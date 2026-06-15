@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { usePropulsion } from "../../PropulsionPage";
 
-export default function InitialFillComponent() {
+export default function FillButtonComponent() {
     const {
         manualVentRef,
         fillUIActive,
@@ -20,7 +20,7 @@ export default function InitialFillComponent() {
         setButtonInteractionState
     } = usePropulsion();
 
-    console.log("Rendering InitialFillComponent with fillState: ", fillState);
+    console.log("Rendering FillButtonComponent with fillState: ", fillState);
 
     //Checks to see if we already hit the vent threshold
     const hasAutoVentedRef = useRef(false);
@@ -53,12 +53,17 @@ export default function InitialFillComponent() {
         if (valveDataRef.current.SV1.actuated) handleButtonClickRef.current("Solenoid Valve 1", 'CLOSE');
         if (valveDataRef.current.SV2.actuated) handleButtonClickRef.current("Solenoid Valve 2", 'CLOSE');
 
+        // Track every timer this fill starts so teardown can cancel them. Without this,
+        // a vent/BV-open timer left pending when the fill stops (STOP FILL, SAFE PROCEDURE,
+        // unmount) fires afterward and re-opens the Ball Valve — re-pressurizing the tank.
+        const pendingTimeouts: ReturnType<typeof setTimeout>[] = [];
+
         // Delay BV open to give SV close commands + server response time to settle
-        setTimeout(() => {
+        pendingTimeouts.push(setTimeout(() => {
             if (!valveDataRef.current.SV1.actuated && !valveDataRef.current.SV2.actuated) {
                 handleButtonClickRef.current("Ball Valve", 'OPEN');
             }
-        }, 600);
+        }, 600));
 
         const fillLoop = setInterval(() => {
             const psi = telemetryDataRef.current.at(-1)?.telemetry.pt3 ?? 0;
@@ -83,17 +88,17 @@ export default function InitialFillComponent() {
                 hasAutoVentedRef.current = true; // Prevent re-triggering
                 isVentingRef.current = true;
                 setVentUIActive(true);
-                //handleButtonClickRef.current("Ball Valve", 'CLOSE');
+                //handleButtonClickRef.current("Ball Valve", 'CLOSE'); // <- Do not necessarily need to send over the command to close ball valve
                 handleButtonClickRef.current("Solenoid Valve 2", 'OPEN');
                 console.log("🔴 Auto Vent START:", new Date().toISOString(), "PSI:", psi);
 
-                setTimeout(() => {
+                pendingTimeouts.push(setTimeout(() => {
                     console.log("🟢 Auto Vent END:", new Date().toISOString());
                     handleButtonClickRef.current("Solenoid Valve 2", 'CLOSE');
                     handleButtonClickRef.current("Ball Valve", 'OPEN');
                     isVentingRef.current = false;
                     setVentUIActive(false);
-                }, 1000);
+                }, 1000));
                 return;
             }
 
@@ -102,7 +107,7 @@ export default function InitialFillComponent() {
                 manualVentRef.current = false;
                 isVentingRef.current = true;
                 setVentUIActive(true);
-                //handleButtonClickRef.current("Ball Valve", 'CLOSE');
+                //handleButtonClickRef.current("Ball Valve", 'CLOSE'); // <- Do not necessarily need to send over the command to close ball valve
                 handleButtonClickRef.current("Solenoid Valve 2", 'OPEN');
                 console.log("🔴 Manual Vent START:", new Date().toISOString(), "PSI:", psi, `Duration: ${confirmedVentSecondsRef.current}s`);
 
@@ -113,10 +118,14 @@ export default function InitialFillComponent() {
                     isVentingRef.current = false;
                     setVentUIActive(false);
                 }, confirmedVentSecondsRef.current * 1000);
+                pendingTimeouts.push(ventTimeoutRef.current);
             }
         }, 200);
 
-        return () => { clearInterval(fillLoop); };
+        return () => {
+            clearInterval(fillLoop);
+            pendingTimeouts.forEach(clearTimeout); // cancel any vent/BV-open timer still pending at teardown
+        };
 
     }, [fillUIActive]);
 
@@ -131,7 +140,6 @@ export default function InitialFillComponent() {
                     // Disable the button while a fill is already in progress
                     // to prevent double-initiating the loop. 
                     // Also disable if we are already at or above the target pressure to prevent unnecessary fill attempts.
-
                     disabled={fillUIActive || (telemetryDataRef.current.at(-1)?.telemetry.pt3 ?? 0) >= 900}
                     className="bg-[#5A87FF] border-[6px] border-black rounded-3xl px-24 py-8 font-inter font-bold text-[69px] text-white disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -152,7 +160,6 @@ export default function InitialFillComponent() {
                             // Re-enable button interaction so operator can close SV2
                             setButtonInteractionState('ENABLED');
                             canInteractRef.current = 'ENABLED';
-                            //setFillState('SAFE_PROCEDURE');
                         }}
                         className="bg-[#2D4556] border-[6px] border-black rounded-3xl px-8 py-2 font-inter font-bold text-[36px] text-white hover:opacity-90 flex-1"
                     >

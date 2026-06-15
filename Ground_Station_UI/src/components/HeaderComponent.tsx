@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { usePropulsion } from "../PropulsionPage";
 import type { interactionType } from "../PropulsionPage";
+import { useAppContext } from "../App";
 
 interface HeaderProps {
     pageTitle: string;          // required, always needed
@@ -22,7 +23,7 @@ export default function Header({
         setButtonInteractionState
     }: HeaderProps) {
     const navigate = useNavigate();
-    const { hasLaunched } = usePropulsion(); // Importing propulsion context to access shared state and functions 
+    const { hasLaunched } = useAppContext(); // Importing propulsion context to access shared state and functions 
 
     const isPropulsionPage = pageTitle === "Propulsion Page";
     const isRecoveryPage = pageTitle === "Recovery & Payload Page";

@@ -1,7 +1,7 @@
 import Header from "./components/HeaderComponent";
 import ButtonComponent from "./components/ButtonComponent";
 import VentButtonComponent from "./components/VentButtonComponent";
-import FillButtonComponent from "./components/FillButtonComponent";
+import FillButtonComponent from "./components/FillComponent";
 import HeaterPanelComponent from "./components/HeaterPanelComponent";
 import { useEffect, useRef, useState } from "react";
 import { createContext, useContext } from "react";
@@ -137,7 +137,7 @@ export const usePropulsion = () => {
 };
 
 export function PropulsionPage() {
-    const { wsRef, wsReady, currFlightMode} = useAppContext(); //The App's websocket refrence
+    const { wsRef, wsReady, currFlightMode, hasLaunched, setHasLaunched} = useAppContext(); //The App's websocket refrence
 
     const [fillState, setFillState] = useState<FillState>('INITIAL');
     const [ventSeconds, setVentSeconds] = useState(0);
@@ -149,8 +149,6 @@ export function PropulsionPage() {
     // Track whether we've launched. Backed by sessionStorage so the locked-out launch
     // state survives a page refresh, but auto-clears when the tab closes (a new session
     // starts unlocked, rather than latching forever as localStorage would).
-    const [hasLaunched, setHasLaunched] = useState(() => sessionStorage.getItem('hasLaunched') === 'true');
-
     useEffect(() => {
         sessionStorage.setItem('hasLaunched', String(hasLaunched));
     }, [hasLaunched]);
@@ -164,19 +162,6 @@ export function PropulsionPage() {
     const canInteractRef = useRef<interactionType>(buttonInteractionState); // Ref to track whether buttons can be interacted with, to prevent spamming commands while waiting for server responses
     const ventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // Stores the active vent timeout ID so it can be cancelled on abort
     const confirmedVentSecondsRef = useRef(confirmedVentSeconds); // Ref to track the confirmed vent seconds for the same reason as above
-
-    /**
-     * Below are examples of way to access elements in our refrence arrays
-     * 
-     * Access latest ADC or FSW data:
-     * adcDataRef.current.at(-1)
-     * umbilicalDataRef.current.at(-1)
-     * 
-     * Access the earliest ADC or FSW data:
-     * adcDat.current.at(0)
-     * umbilicalDataRef.current.at(0)
-     * 
-     */
 
     //Hearbeat command: send every 15 seconds to stay connected to server
     const heartbeatCommand = { "command": "heartbeat" };
@@ -248,8 +233,8 @@ export function PropulsionPage() {
     };
 
     /**
-    The paramaeter `updater` takes in a function whose parameter is the previous state of the valve data and whose return value is the new state of the valve data, 
-    which allows us to update our state based on the previous state in a safe way that avoids any issues with stale closures or asynchronous updates.
+    * The paramaeter `updater` takes in a function whose parameter is the previous state of the valve data and whose return value is the new state of the valve data, 
+    * which allows us to update our state based on the previous state in a safe way that avoids any issues with stale closures or asynchronous updates.
     */
     const updateValveData = (updater: (prev: typeof valveData) => typeof valveData) => {
         setValveData(prev => {
@@ -379,15 +364,15 @@ export function PropulsionPage() {
                 }
 
                 // For testing purposes so we can simulate fill without any actual pressure readings 
-                // const lastPressure = umbilicalDataRef.current.at(-1)?.telemetry.pt3 ?? 0;
+                const lastPressure = umbilicalDataRef.current.at(-1)?.telemetry.pt3 ?? 0;
 
-                // if (isFillingRef.current && !isVentingRef.current) {
-                //     data.telemetry.pt3 = lastPressure + (Math.random() * 4 + 1); // Random increase between 1-5 during fill
-                // } else if (isVentingRef.current || (valveDataRef.current.SV2.venting && valveDataRef.current.BV.actuated)) {
-                //     data.telemetry.pt3 = Math.max(0, lastPressure - (Math.random() * 15 + 10)); // Random decrease between 10-25 during vent
-                // } else {
-                //     data.telemetry.pt3 = lastPressure; // Hold when idle
-                // }
+                if (isFillingRef.current && !isVentingRef.current) {
+                    data.telemetry.pt3 = lastPressure + (Math.random() * 4 + 1); // Random increase between 1-5 during fill
+                } else if (isVentingRef.current || (valveDataRef.current.SV2.venting && valveDataRef.current.BV.actuated)) {
+                    data.telemetry.pt3 = Math.max(0, lastPressure - (Math.random() * 15 + 10)); // Random decrease between 10-25 during vent
+                } else {
+                    data.telemetry.pt3 = lastPressure; // Hold when idle
+                }
                 
                 console.log("Pressure:", new Date().toISOString(), "PSI:", data.telemetry.pt3 ?? "N/A", "SV2 Open (possible vent):", data.telemetry.sv_open ?? "N/A"); //Log pressure and venting status for testing
 
