@@ -266,7 +266,28 @@ impl FlightLoop {
             self.flight_state.cfc_arm_active = cfc_arm;
         }
 
-        // Convert raw altitude to relative (ground level) altitude
+        // If arming_altitude was lost (power cycle into Standby or later mode),
+        // latch it now from the raw MSL reading before the AGL conversion runs,
+        // so this very cycle also shows correct AGL altitude.
+        if self.flight_state.arming_altitude == 0.0
+            && matches!(
+                self.flight_state.flight_mode,
+                FlightMode::Standby
+                    | FlightMode::Ascent
+                    | FlightMode::Coast
+                    | FlightMode::DrogueDeployed
+                    | FlightMode::MainDeployed
+            )
+            && self.flight_state.altimeter_state == SensorState::VALID
+        {
+            self.flight_state.arming_altitude = self.flight_state.packet.altitude;
+            log::info!(
+                "Arming altitude latched from MSL reading: {} m",
+                self.flight_state.arming_altitude
+            );
+        }
+
+        // Convert raw altitude to AGL (above ground level)
         self.flight_state.packet.altitude -= self.flight_state.arming_altitude;
 
         // 2b. Overpressure latch: if PT3 exceeds the threshold, open SV and
@@ -626,6 +647,7 @@ impl FlightLoop {
                         self.flight_state.reference_pressure
                     );
                 }
+                //self.flight_state.umbilical_connected = true;
                 if self.flight_state.umbilical_connected {
                     log::info!("Umbilical connected");
                     self.umbilical_disconnect_time = None;
@@ -661,7 +683,7 @@ impl FlightLoop {
                     return;
                 }
                 // LV: arming is driven solely by GPIO 41 (CFC_ARM) and Key arm command 
-                if self.key_armed && self.flight_state.cfc_arm_active && self.flight_state.umbilical_connected {
+                if self.flight_state.cfc_arm_active && self.flight_state.umbilical_connected {
                     if self.flight_state.altimeter_state == crate::state::SensorState::VALID {
                         // Record arming altitude (TODO: implement into storage)
                         self.alt_armed = true;
@@ -686,6 +708,7 @@ impl FlightLoop {
                     log::error!("Altimeter invalid at Standby; transitioning to Fault");
                     return;
                 }
+                //self.flight_state.umbilical_connected = true;
                 if self.flight_state.umbilical_connected {
                     log::info!("Umbilical connected");
                     self.umbilical_disconnect_time = None;
@@ -743,7 +766,7 @@ impl FlightLoop {
                     self.flight_state.flight_mode = FlightMode::Ascent;
                     self.flight_state.write_packet_to_fram().await;
                     log::info!("Transitioning to Ascent");
-                } else if !self.key_armed || !self.flight_state.cfc_arm_active{
+                } else if !self.flight_state.cfc_arm_active{
                     self.flight_state.flight_mode = FlightMode::Startup;
                     self.flight_state.write_packet_to_fram().await;
                     log::info!("Key not armed; Transitioning to Startup");
@@ -762,7 +785,7 @@ impl FlightLoop {
                 // Look at scenario where not above armed altitude and MAV is closed
                 if self.flight_state.altimeter_state == SensorState::VALID
                     && !self.alt_armed
-                    && self.flight_state.read_altimeter() >= self.flight_state.arming_altitude
+                    && self.flight_state.read_altimeter() >= 0.0
                 {
                     self.alt_armed = true;
 
@@ -929,18 +952,8 @@ impl FlightLoop {
                     }
                 }
 
-                if let Some(entry_time) = self.main_entry_time {
-                    if entry_time.elapsed().as_millis() >= constants::MAIN_LOG_TIMEOUT_MS {
-                        if self.log_armed {
-                            self.log_armed = false;
-                            log::info!("Main log shutdown after timeout");
-                        }
-                    }
-                }
-
                 // BLiMS: upwind target >1000 ft, downwind target <1000 ft, neutral <200 ft
                 self.flight_state.run_blims();
-
             }
             FlightMode::Fault => {
                 if !self.fault_signal_sent {

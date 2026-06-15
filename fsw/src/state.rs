@@ -427,7 +427,6 @@ impl FlightState {
         self.key_armed = self.arming_switch.is_high();
         self.umbilical_connected = crate::umbilical::is_connected();
         self.cfc_arm_active = self.cfc_arm.is_high();
-
         let read_to = Duration::from_millis(constants::SENSOR_READ_TIMEOUT_MS);
 
         // Read altimeter and update packet
@@ -886,7 +885,6 @@ impl FlightState {
                 self.blims_wind_from_deg
             );
             self.blims_armed = true;
-            blims.pulse_enable();
         }
 
         let alt_ft = self.packet.altitude * 3.28084_f32;
