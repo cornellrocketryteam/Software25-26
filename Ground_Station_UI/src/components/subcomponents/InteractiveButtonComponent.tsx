@@ -1,17 +1,73 @@
 import { useState } from 'react';
 import ConfirmationOverlay from '../ConfirmationOverlayComponent';
 import { usePropulsion } from '../../PropulsionPage';
+import { useAppContext } from '../../App';
 import { useButton } from '../ButtonComponent';
 import type { ActuationTypeIdentifier } from '../../PropulsionPage';
+
+// The single, designated launch button. Routed here by buttonName so there is
+// exactly one launch control, and it is gated behind a two-step confirmation.
+const LAUNCH_BUTTON_NAME = 'Launch Button';
 
 export default function InteractiveButtonComponent() {
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [pendingAction, setPendingAction] = useState<ActuationTypeIdentifier | null>(null);
-  const { handleButtonClickRef } = usePropulsion();
+  // Launch confirmation progress: 0 = idle, 1 = first prompt, 2 = final prompt.
+  const [launchStep, setLaunchStep] = useState(0);
+  // Launch is a one-time action: once fired, the button locks out.
+  const { handleButtonClickRef, setButtonInteractionState, hasLaunched, setHasLaunched } = usePropulsion();
+  const { wsRef } = useAppContext();
   const { buttonName, showState, currentState, label, stateLabel, actuationLock } = useButton();
   const [openLabel, closeLabel] = label;
   const openState: ActuationTypeIdentifier[] = ['OPEN', 'EXTEND']; // Define which actions correspond to "open" state
   const closedState: ActuationTypeIdentifier[] = ['CLOSE', 'RETRACT']; // Define which actions correspond to "close" state
+
+  const sendLaunchCommand = () => {
+    // TODO: confirm the exact launch command the flight software expects.
+    wsRef.current?.send(JSON.stringify({command: 'fsw_launch'}));
+    console.log('LAUNCH command sent:', new Date().toISOString());
+  };
+
+  // Designated launch button: a single control with a two-step confirmation
+  // (first confirm, then reprompt with "are you sure" for the final confirmation) before the command is sent.
+  if (buttonName === LAUNCH_BUTTON_NAME) {
+    return (
+      <>
+        <div className="bg-white border-[6px] border-black rounded-3xl p-4 flex flex-col items-center justify-center w-full overflow-hidden">
+          <p className="font-inter text-2xl mb-2">{buttonName}</p>
+          <button
+            onClick={() => setLaunchStep(1)}
+            disabled={hasLaunched}
+            className={`${
+              hasLaunched ? 'bg-[#9CA3AF] cursor-not-allowed' : 'bg-[#D63A1F] hover:opacity-90'
+            } border-[6px] border-black rounded-2xl w-full py-4 font-inter font-bold text-3xl text-white`}
+          >
+            {hasLaunched ? 'LAUNCHED' : 'LAUNCH'}
+          </button>
+        </div>
+
+        {launchStep === 1 && (
+          <ConfirmationOverlay
+            message="Confirm Launch?"
+            onConfirm={() => setLaunchStep(2)}
+            onCancel={() => setLaunchStep(0)}
+          />
+        )}
+        {launchStep === 2 && (
+          <ConfirmationOverlay
+            message="FINAL CONFIRMATION: Are You Sure?"
+            onConfirm={() => {
+              sendLaunchCommand();
+              setButtonInteractionState("DISABLED");
+              setHasLaunched(true);
+              setLaunchStep(0);
+            }}
+            onCancel={() => setLaunchStep(0)}
+          />
+        )}
+      </>
+    );
+  }
 
   const toggleAction = (action: ActuationTypeIdentifier) => {
 

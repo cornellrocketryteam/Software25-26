@@ -9,7 +9,7 @@ interface ButtonComponentProps {
     buttonName: string;
     transitioning?: boolean
     showState?: boolean;
-    currentState: boolean;
+    currentState?: boolean;
 }
 
 interface ButtonContextType {

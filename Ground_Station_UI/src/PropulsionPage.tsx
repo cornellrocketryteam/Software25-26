@@ -23,6 +23,8 @@ type ValveData = {
 }
 
 type PropulsionContextType = {
+    hasLaunched: boolean;
+    setHasLaunched: (active: boolean) => void;
     ventUIActive: boolean;
     setVentUIActive: (active: boolean) => void;
     fillUIActive: boolean;
@@ -144,6 +146,14 @@ export function PropulsionPage() {
     const [fillUIActive, setFillUIActive] = useState(false); // State to control whether the fill UI is active and visible
     const [buttonInteractionState, setButtonInteractionState] = useState<interactionType>("DISABLED"); // State to control whether buttons can be interacted with, to prevent spamming commands while waiting for server responses
 
+    // Track whether we've launched. Backed by sessionStorage so the locked-out launch
+    // state survives a page refresh, but auto-clears when the tab closes (a new session
+    // starts unlocked, rather than latching forever as localStorage would).
+    const [hasLaunched, setHasLaunched] = useState(() => sessionStorage.getItem('hasLaunched') === 'true');
+
+    useEffect(() => {
+        sessionStorage.setItem('hasLaunched', String(hasLaunched));
+    }, [hasLaunched]);
 
     const pendingActionRef = useRef<ValveKey | null>(null); // Use useRef to store the pending action for confirmation
     const adcDataRef = useRef<AdcDataMessage[]>([]); // Use useRef to store the latest ADC data received from the server
@@ -497,7 +507,7 @@ export function PropulsionPage() {
     }, [wsReady]); // Re-run effect if WebSocket connection status changes
 
     return (
-        <PropulsionContext.Provider value={{ ventTimeoutRef, confirmedVentSecondsRef, canInteractRef, buttonInteractionState, setButtonInteractionState, valveDataRef, fillUIActive, setFillUIActive, ventUIActive, setVentUIActive, isVentingRef, isFillingRef, manualVentRef, handleButtonClickRef, fillState, setFillState, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, valveData, adcDataRef: adcDataRef, telemetryDataRef: umbilicalDataRef }}>
+        <PropulsionContext.Provider value={{ hasLaunched, setHasLaunched, ventTimeoutRef, confirmedVentSecondsRef, canInteractRef, buttonInteractionState, setButtonInteractionState, valveDataRef, fillUIActive, setFillUIActive, ventUIActive, setVentUIActive, isVentingRef, isFillingRef, manualVentRef, handleButtonClickRef, fillState, setFillState, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, valveData, adcDataRef: adcDataRef, telemetryDataRef: umbilicalDataRef }}>
             <div className={`min-h-screen bg-white ${ventUIActive ? 'cursor-wait' : ''}`}>
                 {/* Header */}
                 <Header
@@ -530,6 +540,7 @@ export function PropulsionPage() {
                                 <ButtonComponent buttonName="Ball Valve" currentState={valveData.BV.actuated} actuationLock='UNLOCKED' />
                                 <ButtonComponent buttonName="MAV" currentState={valveData.MAV.actuated} actuationLock='LOCKED' />
                                 <ButtonComponent buttonName="Quick Disconnect" currentState={valveData.QD.retracted} actuationLock='UNLOCKED' />
+                                <ButtonComponent buttonName="Launch Button" actuationLock='UNLOCKED' ></ButtonComponent>
                             </div>
 
                         </div>

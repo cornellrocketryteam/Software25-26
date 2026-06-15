@@ -27,8 +27,8 @@ function App() {
   const wsRef = useRef<WebSocket | null>(null);
 
   //const uri = "ws://192.168.8.167:9000"; //This is the travel router IP, so when testing at build house, we would us this IP
-  const uri = "ws://192.168.1.106:9000"; //This is the actual router IP we would use for launch, so make sure any pushed code has this line commented out
-  //const uri = "ws://localhost:9000"; //This is for testing on the mock server
+  //const uri = "ws://192.168.1.106:9000"; //This is the actual router IP we would use for launch, so make sure any pushed code has this line commented out
+  const uri = "ws://localhost:9000"; //This is for testing on the mock server
   const [wsReady, setWsReady] = useState(false);
   const [currFlightMode, setCurrFlightMode] = useState<FlightMode>('.....');
 
