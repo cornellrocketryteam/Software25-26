@@ -33,7 +33,7 @@
 
 | Failsafe | Threshold | Trigger | Action | File |
 |---|---|---|---|---|
-| Heartbeat timeout | 3000 ms | No `<H>` received from ground | Mark umbilical as disconnected | `umbilical.rs:33–40`, `constants.rs:124` |
+| Heartbeat timeout | 5000 ms | No `<H>` received from ground | Mark umbilical as disconnected | `umbilical.rs:33–40`, `constants.rs:143` |
 | Umbilical disconnect safety | 15 s after disconnect | Umbilical reads disconnected | Open SV — one-shot, resets on reconnect | `flight_loop.rs:521–534`, `constants.rs:119` |
 
 ### State Machine Guards
@@ -48,9 +48,9 @@
 
 | Failsafe | Threshold | Trigger | Action | File |
 |---|---|---|---|---|
-| MAV auto-close | 12 s | After MAV opens | Force-closes MAV regardless of command state | `actuator.rs:220–239`, `constants.rs:125` |
+| MAV auto-close | 7.88 s | After MAV opens | Force-closes MAV regardless of command state | `actuator.rs:220–239`, `constants.rs:144` |
 | SSA auto-off | Fixed pulse duration | After ematch fires | Forces pin LOW — prevents continuous current through ematch | `actuator.rs:14–65` |
-| Launch sequence gate | State machine | Launch command | Enforces: SV open 2 s → close → 1 s gap → MAV open 12 s → close | `flight_loop.rs`, `constants.rs:125–127` |
+| Launch sequence gate | State machine | Launch command | Enforces: SV open 2 s → close → 1 s gap → MAV open 7.88 s → close | `flight_loop.rs`, `constants.rs:125–127` |
 
 ### Flash Operations
 
@@ -143,9 +143,9 @@
 | FSW | Hardware watchdog | 120 ms |
 | FSW | Sensor init | 500 ms |
 | FSW | Sensor read | 30 ms |
-| FSW | Heartbeat freshness | 3000 ms |
+| FSW | Heartbeat freshness | 5000 ms |
 | FSW | Umbilical safety vent | 15 s |
-| FSW | MAV auto-close | 12 s |
+| FSW | MAV auto-close | 7.88 s |
 | FSW | Flash timeout | 200 ms |
 | FSW | Flash wipe timeout | 300 s |
 | Fill-Station | Telemetry freshness | 3000 ms |

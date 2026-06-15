@@ -824,12 +824,13 @@ async fn execute_command(
                 Err(e) => { error!("Failed to send FSW command: {}", e); CommandResponse::Error }
             }
         }
-        Command::FswSetBlimsTarget { lat, lon } => {
-            if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) {
-                error!("FSW SetBlimsTarget rejected: out of range lat={} lon={}", lat, lon);
+        Command::FswSetBlimsTarget { upwind_lat, upwind_lon, downwind_lat, downwind_lon } => {
+            if !(-90.0..=90.0).contains(&upwind_lat) || !(-180.0..=180.0).contains(&upwind_lon) ||
+               !(-90.0..=90.0).contains(&downwind_lat) || !(-180.0..=180.0).contains(&downwind_lon) {
+                error!("FSW SetBlimsTarget rejected: out of range uw_lat={} uw_lon={} dw_lat={} dw_lon={}", upwind_lat, upwind_lon, downwind_lat, downwind_lon);
                 CommandResponse::Error
             } else {
-                let msg = format!("<T,{:.7},{:.7}>", lat, lon);
+                let msg = format!("<T,{:.7},{:.7},{:.7},{:.7}>", upwind_lat, upwind_lon, downwind_lat, downwind_lon);
                 info!("Sending FSW SetBlimsTarget: {}", msg);
                 match umb_cmd_tx.try_send(msg) {
                     Ok(_) => CommandResponse::Success,

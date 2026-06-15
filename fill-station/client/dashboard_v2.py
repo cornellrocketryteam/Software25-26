@@ -526,23 +526,37 @@ if client.fsw_connected and client.fsw_telemetry:
             st.dataframe(pd.DataFrame(cfg_rows), hide_index=True, use_container_width=True)
 
             st.caption("Set BLiMS Target")
-            tgt_lat = st.number_input(
+            tgt_up_lat = st.number_input(
                 "Target Upwind Latitude (deg)",
                 min_value=-90.0, max_value=90.0,
                 value=float(t.get("blims_upwind_lat", 0.0)),
                 format="%.7f", key="blims_upwind_lat_input",
             )
-            tgt_lon = st.number_input(
+            tgt_up_lon = st.number_input(
                 "Target Upwind Longitude (deg)",
                 min_value=-180.0, max_value=180.0,
                 value=float(t.get("blims_upwind_lon", 0.0)),
                 format="%.7f", key="blims_upwind_lon_input",
             )
+            tgt_dn_lat = st.number_input(
+                "Target Downwind Latitude (deg)",
+                min_value=-90.0, max_value=90.0,
+                value=float(t.get("blims_downwind_lat", 0.0)),
+                format="%.7f", key="blims_downwind_lat_input",
+            )
+            tgt_dn_lon = st.number_input(
+                "Target Downwind Longitude (deg)",
+                min_value=-180.0, max_value=180.0,
+                value=float(t.get("blims_downwind_lon", 0.0)),
+                format="%.7f", key="blims_downwind_lon_input",
+            )
             if st.button("Set BLiMS Target", use_container_width=True):
                 client.send_command({
                     "command": "fsw_set_blims_target",
-                    "lat": float(tgt_lat),
-                    "lon": float(tgt_lon),
+                    "upwind_lat": float(tgt_up_lat),
+                    "upwind_lon": float(tgt_up_lon),
+                    "downwind_lat": float(tgt_dn_lat),
+                    "downwind_lon": float(tgt_dn_lon),
                 })
 
 # --- All FSW Umbilical Commands ---

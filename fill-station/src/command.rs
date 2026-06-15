@@ -126,8 +126,7 @@ pub enum Command {
     FswKeyArm,
     /// Disarm the FSW key (force Standby → Startup)
     FswKeyDisarm,
-    /// Set the BLiMS landing-zone target (latitude/longitude in decimal degrees)
-    FswSetBlimsTarget { lat: f32, lon: f32 },
+    FswSetBlimsTarget { upwind_lat: f32, upwind_lon: f32, downwind_lat: f32, downwind_lon: f32 },
 }
 
 /// Response sent back to WebSocket clients after command execution

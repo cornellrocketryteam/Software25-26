@@ -26,7 +26,7 @@ The FSW runs a 7-phase state machine defined in `state.rs` (`FlightMode` enum) w
 
 | Sensor | Driver File | Bus | Address | Data Provided |
 |--------|-------------|-----|---------|---------------|
-| **BMP390** (altimeter) | `driver/bmp390.rs` | SPI | 0x77 | Pressure (Pa), temperature (°C), altitude (m) |
+| **BMP390** (altimeter) | `driver/bmp390.rs` | SPI0 | CS: GPIO 7 | Pressure (Pa), temperature (°C), altitude (m) |
 | **LSM6DSOX** (IMU) | `driver/lsm6dsox.rs` | I2C0 | 0x6A | Accel XYZ (m/s²), gyro XYZ (°/s) |
 | **ADS1015** (ADC) | `driver/ads1015.rs` | I2C0 | 0x48 | PT3, PT4, RTD (scaled) |
 | **u-blox MAX-M10S** (GPS) | `driver/ublox_max_m10s.rs` | I2C0 | 0x42 | Latitude, longitude, satellite count, timestamp |
@@ -47,7 +47,7 @@ All I2C sensors share a single bus (GPIO 0 SDA / GPIO 1 SCL, 400 kHz) through `e
 
 | System | Driver File | Interface | Details |
 |--------|-------------|-----------|---------|
-| **RFD900x Radio** | `driver/rfd900x.rs` | UART1 (GPIO 4 TX / GPIO 5 RX, 115200 baud) | Transmit-only. 4-byte sync (`0x3E5D5967`) + 199-byte packet at 1 Hz |
+| **RFD900x Radio** | `driver/rfd900x.rs` | UART1 (GPIO 8 TX / GPIO 9 RX, 115200 baud) | Transmit-only. 4-byte sync (`0x3E5D5967`) + 199-byte packet at 1 Hz |
 | **USB Logger** | Built-in (embassy-usb-logger) | USB CDC-ACM | Debug log output, 1024-byte buffer |
 | **Umbilical** | `umbilical.rs` | USB CDC-ACM | Command parser (H=heartbeat, L=launch, M/m=MAV, S/s=SV, V=safe, F=resetFRAM, f=dumpFRAM, R=reboot, G/W/I=flash dump/wipe/info, X=wipeFRAM+reboot, KA/KD=key arm/disarm, D/d=Trigger Drogue/Main, `<T,lat,lon>`=set BLiMS target, 1–4=payload N events, A1-A3=payload A events). Drained by `flight_loop.rs::check_umbilical_commands` each cycle. |
 
@@ -67,7 +67,7 @@ Bytes 0x38–0x43: gyro_x (f32), gyro_y (f32), gyro_z (f32)
 
 ### Data Storage
 
-**MB85RS2 FRAM** (`driver/main_fram.rs`) — 256 KiB via SPI (GPIO 17 CS, 1 MHz):
+**W25Q128JV Flash** (`driver/onboard_flash.rs`) — 16 MiB via SPI0 (GPIO 6 CS, 8 MHz):
 
 | Address | Content | Purpose |
 |---------|---------|---------|
@@ -87,17 +87,18 @@ SD card logging is defined but defaults to disabled (`sd_logging_enabled = false
 | GPIO 1 | I2C0 SCL | Output |
 | GPIO 36 | SSA Drogue | Output |
 | GPIO 39 | SSA Main | Output |
-| GPIO 4 | UART1 TX (radio) | Output |
-| GPIO 5 | UART1 RX (radio) | Input |
+| GPIO 8 | UART1 TX (radio) | Output |
+| GPIO 9 | UART1 RX (radio) | Input |
 | GPIO 21 | Buzzer | Output |
 | GPIO 40 | MAV PWM | Output |
 | GPIO 47 | Solenoid Valve | Output |
 | GPIO 10 | Arming Switch | Input (pull-down) |
-| GPIO 24 | Umbilical Sense | Input (pull-down) |
-| GPIO 16 | SPI0 MISO (FRAM) | Input |
-| GPIO 17 | SPI0 CS (FRAM) | Output |
-| GPIO 18 | SPI0 CLK (FRAM) | Output |
-| GPIO 19 | SPI0 MOSI (FRAM) | Output |
+| GPIO 41 | CFC Arm | Input (pull-down) |
+| GPIO 4 | SPI0 MISO | Input |
+| GPIO 6 | SPI0 CS (Flash) | Output |
+| GPIO 7 | SPI0 CS (Altimeter) | Output |
+| GPIO 2 | SPI0 CLK | Output |
+| GPIO 3 | SPI0 MOSI | Output |
 | GPIO 25 | Status LED | Output |
 
 ---
@@ -125,7 +126,7 @@ driver/
   ├── lis3mdl.rs         — magnetometer
   ├── ublox_max_m10s.rs  — GPS
   ├── rfd900x.rs         — radio
-  └── main_fram.rs       — non-volatile storage
+  └── onboard_flash.rs   — non-volatile storage
 
 actuator.rs              — SSA, Buzzer, MAV, SV drivers
 packet.rs                — 68-byte telemetry struct

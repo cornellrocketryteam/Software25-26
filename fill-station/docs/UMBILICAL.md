@@ -16,7 +16,7 @@ WebSocket Client
 fill-station (Umbilical background task)
    |   ^
    |   |
-serial commands & `$TELEM,<22 fields>\n` CSV telemetry lines
+serial commands & `$TELEM,<54 fields>\n` CSV telemetry lines
    |   |
    V   |
 Flight Software (FSW)
@@ -24,7 +24,7 @@ Flight Software (FSW)
 
 ## Features
 
-- **Telemetry Parsing**: The FSW emits one telemetry record per line as `$TELEM,<56 comma-separated fields>\n`. The umbilical task line-buffers the serial stream, parses each `$TELEM,` line via `FswTelemetry::from_csv` (strict 56-field match — see `TELEM_FIELD_COUNT`), and broadcasts the result over WebSocket. Non-`$TELEM` lines are forwarded to debug logs.
+- **Telemetry Parsing**: The FSW emits one telemetry record per line as `$TELEM,<54 comma-separated fields>\n`. The umbilical task line-buffers the serial stream, parses each `$TELEM,` line via `FswTelemetry::from_csv` (strict 54-field match — see `TELEM_FIELD_COUNT`), and broadcasts the result over WebSocket. Non-`$TELEM` lines are forwarded to debug logs.
 - **Sync on (re)connect**: The first two newline-terminated chunks after opening the serial port are discarded so a partial line picked up mid-stream cannot produce a garbage frame.
 - **Line buffer cap**: If `\n` never arrives (FSW hung mid-line), the line buffer is cleared with a warning at 8 KB.
 - **Dump suppression**: While the FSW is mid-flash-dump it sets an internal `DUMP_IN_PROGRESS` flag and stops emitting `$TELEM` lines. Telemetry pauses for the duration of the dump and resumes automatically afterward.
@@ -32,7 +32,7 @@ Flight Software (FSW)
 
 ### FSW Telemetry Data Structure
 
-`FswTelemetry` is parsed from the 56 CSV fields of each `$TELEM,` line in `src/components/umbilical.rs`. The fields, in order, are:
+`FswTelemetry` is parsed from the 54 CSV fields of each `$TELEM,` line in `src/components/umbilical.rs`. The fields, in order, are:
 
 | Field | Type | Unit | Description |
 |-------|------|------|-------------|
@@ -43,7 +43,7 @@ Flight Software (FSW)
 | `latitude` | `f32` | deg | GPS Latitude |
 | `longitude`| `f32` | deg | GPS Longitude |
 | `num_satellites` | `u32` | count | GPS Satellites locked |
-| `timestamp`| `f32` | s | Uptime |
+| `gps_time`| `f32` | s | Seconds since midnight UTC |
 | `mag_x/y/z`| `f32` | uT | Magnetometer readings |
 | `accel_x/y/z`| `f32` | m/s^2 | Accelerometer readings |
 | `gyro_x/y/z` | `f32` | deg/s | Gyroscope readings |
@@ -58,7 +58,7 @@ Flight Software (FSW)
 | `cmd_n3` | `u8` | flag | Payload event N3 triggered |
 | `cmd_n4` | `u8` | flag | Payload event N4 triggered |
 | `cmd_a1/a2/a3` | `u8` | flag | Actuator/command events A1, A2, A3 triggered |
-| `airbrake_state` | `u8` | enum | Airbrake system state |
+| `airbrake_deployment` | `f32` | — | Airbrake system state |
 | `predicted_apogee` | `f32` | m | Airbrake controller predicted apogee |
 | `h_acc/v_acc` | `u32` | mm | GPS horizontal/vertical accuracy estimate |
 | `vel_n/e/d` | `f64` | m/s | GPS North/East/Down velocity |
@@ -67,17 +67,14 @@ Flight Software (FSW)
 | `head_acc` | `u32` | deg*1e5 | GPS heading accuracy estimate |
 | `fix_type` | `u8` | enum | GPS fix type |
 | `head_mot` | `i32` | deg*1e5 | GPS heading of motion |
-| `blims_motor_position` | `f32` | deg | BLiMS parafoil motor position |
+| `blims_brakeline_diff` | `f32` | — | BLiMS brakeline difference |
 | `blims_phase_id` | `i8` | enum | BLiMS control phase |
 | `blims_pid_p/i` | `f32` | — | BLiMS PID values |
 | `blims_bearing` | `f32` | deg | BLiMS bearing |
-| `blims_loiter_step` | `i8` | — | BLiMS loiter step |
-| `blims_heading_des` | `f32` | deg | BLiMS desired heading |
-| `blims_heading_error` | `f32` | deg | BLiMS heading error |
-| `blims_error_integral` | `f32` | — | BLiMS error integral |
-| `blims_dist_to_target_m` | `f32` | m | BLiMS distance to target |
-| `blims_target_lat/lon` | `f32` | deg | BLiMS configured target coordinate |
+| `blims_upwind_lat/lon` | `f32` | deg | BLiMS upwind configured target coordinate |
+| `blims_downwind_lat/lon` | `f32` | deg | BLiMS downwind configured target coordinate |
 | `blims_wind_from_deg` | `f32` | deg | BLiMS estimated wind direction |
+| `ms_since_boot_cfc` | `u32` | ms | CFC uptime |
 
 ## WebSocket API Extentions
 
@@ -102,7 +99,7 @@ Commands sent over the WebSocket that get parsed and sent across the serial conn
 - `fsw_wipe_fram_reboot`: Wipe FRAM and immediately reboot (`<X>`).
 - `fsw_key_arm`: Arm the launch key (`<K>`); required to allow Startup → Standby.
 - `fsw_key_disarm`: Disarm the launch key (`<k>`); reverts Standby → Startup.
-- `fsw_set_blims_target`: Set BLiMS landing-zone target (`<T,lat,lon>`); takes two `f32` decimal-degree numbers.
+- `fsw_set_blims_target`: Set BLiMS landing-zone target (`<T,upwind_lat,upwind_lon,downwind_lat,downwind_lon>`); takes four `f32` decimal-degree numbers.
 - `fsw_reboot`: Force a software reboot on FSW (`<R>`).
 - `fsw_dump_flash`: Dump flash memory contents (`<G>`).
 - `fsw_wipe_flash`: Wipe flash memory (`<W>`).

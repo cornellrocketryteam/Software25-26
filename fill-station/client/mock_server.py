@@ -182,14 +182,20 @@ async def handler(websocket):
                 pass
 
             elif command == "fsw_set_blims_target":
-                lat = data.get("lat")
-                lon = data.get("lon")
+                upwind_lat = data.get("upwind_lat")
+                upwind_lon = data.get("upwind_lon")
+                downwind_lat = data.get("downwind_lat")
+                downwind_lon = data.get("downwind_lon")
                 if (
-                    isinstance(lat, (int, float)) and isinstance(lon, (int, float))
-                    and -90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0
+                    isinstance(upwind_lat, (int, float)) and isinstance(upwind_lon, (int, float))
+                    and isinstance(downwind_lat, (int, float)) and isinstance(downwind_lon, (int, float))
+                    and -90.0 <= upwind_lat <= 90.0 and -180.0 <= upwind_lon <= 180.0
+                    and -90.0 <= downwind_lat <= 90.0 and -180.0 <= downwind_lon <= 180.0
                 ):
-                    state["fsw"]["blims_upwind_lat"] = float(lat)
-                    state["fsw"]["blims_upwind_lon"] = float(lon)
+                    state["fsw"]["blims_upwind_lat"] = float(upwind_lat)
+                    state["fsw"]["blims_upwind_lon"] = float(upwind_lon)
+                    state["fsw"]["blims_downwind_lat"] = float(downwind_lat)
+                    state["fsw"]["blims_downwind_lon"] = float(downwind_lon)
                 else:
                     response = {"type": "error"}
 

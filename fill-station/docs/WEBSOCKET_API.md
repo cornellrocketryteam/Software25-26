@@ -449,11 +449,11 @@ The following commands send simple 1-byte command characters over the serial con
 ---
 
 ### `fsw_set_blims_target`
-Set the BLiMS landing-zone target. Sends `<T,lat,lon>` over the umbilical with two `f32` decimal-degree numbers. Range checked on the FSW: lat ∈ [-90, 90], lon ∈ [-180, 180].
+Set the BLiMS landing-zone target. Sends `<T,upwind_lat,upwind_lon,downwind_lat,downwind_lon>` over the umbilical with four `f32` decimal-degree numbers. Range checked on the FSW: lat ∈ [-90, 90], lon ∈ [-180, 180].
 
 **Format:**
 ```json
-{"command": "fsw_set_blims_target", "lat": 42.4419130, "lon": -76.4878000}
+{"command": "fsw_set_blims_target", "upwind_lat": 42.4419130, "upwind_lon": -76.4878000, "downwind_lat": 42.4500000, "downwind_lon": -76.4700000}
 ```
 
 **Response:**
@@ -483,7 +483,7 @@ Data received back from the Flight software, pushed to clients when `start_fsw_s
     "latitude": 42.44,
     "longitude": -76.48,
     "num_satellites": 8,
-    "timestamp": 12.34,
+    "gps_time": 12.34,
     "mag_x": 0.0, "mag_y": 0.0, "mag_z": 0.0,
     "accel_x": 0.0, "accel_y": 0.0, "accel_z": 9.81,
     "gyro_x": 0.0, "gyro_y": 0.0, "gyro_z": 0.0,
@@ -501,7 +501,7 @@ Data received back from the Flight software, pushed to clients when `start_fsw_s
     "cmd_a1": 0,
     "cmd_a2": 0,
     "cmd_a3": 0,
-    "airbrake_state": 0,
+    "airbrake_deployment": 0.0,
     "predicted_apogee": 0.0,
     "h_acc": 0,
     "v_acc": 0,
@@ -513,23 +513,21 @@ Data received back from the Flight software, pushed to clients when `start_fsw_s
     "head_acc": 0,
     "fix_type": 0,
     "head_mot": 0,
-    "blims_motor_position": 0.0,
+    "blims_brakeline_diff": 0.0,
     "blims_phase_id": 0,
     "blims_pid_p": 0.0,
     "blims_pid_i": 0.0,
     "blims_bearing": 0.0,
-    "blims_loiter_step": 0,
-    "blims_heading_des": 0.0,
-    "blims_heading_error": 0.0,
-    "blims_error_integral": 0.0,
-    "blims_dist_to_target_m": 0.0,
-    "blims_target_lat": 0.0,
-    "blims_target_lon": 0.0,
-    "blims_wind_from_deg": 0.0
+    "blims_upwind_lat": 0.0,
+    "blims_upwind_lon": 0.0,
+    "blims_downwind_lat": 0.0,
+    "blims_downwind_lon": 0.0,
+    "blims_wind_from_deg": 0.0,
+    "ms_since_boot_cfc": 0
   }
 }
 ```
 
 * `connected`: True if the background task can communicate with the serial device.
 * `flight_mode`: Human readable string.
-* `telemetry`: The `FswTelemetry` packet (parsed from a `$TELEM,<56 fields>\n` CSV line emitted by the FSW over the umbilical) exposed as JSON variables.
+* `telemetry`: The `FswTelemetry` packet (parsed from a `$TELEM,<54 fields>\n` CSV line emitted by the FSW over the umbilical) exposed as JSON variables.
