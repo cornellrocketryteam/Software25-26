@@ -56,7 +56,7 @@ export default function VentButtonComponent() {
                             disabled={ventSeconds <= 0}
                             className="px-4 border-2 border-gray-300 rounded text-2xl font-inter font-bold hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
                         >
-                            −
+                            -
                         </button>
                         <select
                             value={ventSeconds}
