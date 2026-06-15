@@ -4,7 +4,7 @@
 
 The QD (Quick Disconnect) stepper motor component drives a NEMA 17 stepper motor through an ISD02 integrated stepper driver. It is used to actuate the quick disconnect mechanism on the fill system. The motor is controlled via three signals from the TI AM64x SK board:
 
-- **STEP** (PWM pulse train) — each pulse advances the motor one step
+- **STEP** (GPIO bit-bang) — each pulse advances the motor one step
 - **DIR** (GPIO) — sets rotation direction
 - **ENA** (GPIO) — enables/disables the driver
 
@@ -37,7 +37,7 @@ The ISD02 spec sheet is located at `src/components/ISD02-04-08.pdf`.
 
 | Signal | Interface | Board Pin | Code Reference |
 |--------|-----------|-----------|----------------|
-| STEP | PWM sysfs | EHRPWM4 Channel A (pwmchip0, channel 0) | GPIO bit-bang in code |
+| STEP | GPIO | gpiochip2 (chip1), line 58 | `chip1, 58` in hardware.rs |
 | DIR | GPIO | gpiochip2 (chip1), line 43 | `chip1, 43` in hardware.rs |
 | ENA | GPIO | gpiochip2 (chip1), line 64 | `chip1, 64` in hardware.rs |
 
@@ -62,30 +62,28 @@ To move the motor N steps:
 1. **Set DIR** GPIO high or low based on desired direction
 2. **Set ENA** GPIO high (ensure driver is enabled)
 3. **Wait 2 ms** for driver to wake from possible idle state
-4. **Configure PWM** — set 50% duty cycle at the configured step frequency
-5. **Enable PWM** — hardware generates pulses automatically
-6. **Sleep** for `N / frequency` seconds (mutex released during sleep)
-7. **Disable PWM** — motor stops
+4. **Loop for N steps**:
+   a. **Set STEP HIGH**
+   b. **Sleep** for half the step period
+   c. **Set STEP LOW**
+   d. **Sleep** for half the step period
+5. **Disable driver** (set ENA LOW) when complete
 
-The step frequency is set to **1 KHz** (1000 steps/second), well under the 12 KHz maximum for full-step mode. At this rate:
-- 200 steps (1 revolution) takes **200 ms**
-- 50% duty cycle = 500 us pulse width, far exceeding the 4 us minimum
+The step frequency is configured in software and currently implements an acceleration/deceleration ramp. The cruise frequency is roughly **134 Hz**, and ramps up from **40 Hz** over 50 steps.
 
 ### Background Task Pattern
 
 All move commands use the same lock/sleep/lock pattern as the igniter:
 
 ```
-1. Lock hardware mutex
-2. Call begin_stepping(direction)  — sets GPIO + starts PWM
-3. Release mutex
-4. Sleep for computed duration     — other commands can execute
-5. Lock hardware mutex
-6. Call stop_stepping()            — disables PWM
-7. Release mutex
+1. Lock hardware mutex (if needed for coordination)
+2. In background thread: Set DIR and ENA
+3. Execute step loop with `smol::Timer` to yield execution
+4. Disable ENA
+5. Complete
 ```
 
-This ensures the hardware mutex is NOT held during the step duration, so ADC reads, valve commands, and other operations continue uninterrupted.
+Since `smol::Timer` is an async yield, the event loop can continue processing ADC reads, valve commands, and other operations during the sleep periods of the bit-bang pulse.
 
 ## Configuration
 
@@ -188,8 +186,8 @@ QD move complete (50 steps)
 ```
 
 ### Hardware Testing
-1. Connect oscilloscope to EHRPWM4_A output
-2. Verify pulse train at 1 KHz with 50% duty cycle
+1. Connect oscilloscope to STEP output (gpiochip2, line 58)
+2. Verify pulse train at around 134 Hz (cruise frequency) with 50% duty cycle
 3. Verify DIR GPIO toggles with direction parameter
 4. Verify ENA GPIO is high during operation
 5. Count pulses to confirm step accuracy
@@ -225,7 +223,4 @@ To determine the correct preset values:
 - Increase ISD02 output current via the onboard trimmer potentiometer
 - Ensure supply voltage is adequate (higher voltage = better high-speed performance)
 
-### PWM channel won't export
-- Check that the device tree overlay enables EHRPWM4
-- Verify `/sys/class/pwm/pwmchip0` exists on the target board
-- Verify `/sys/class/pwm/pwmchip0` exists if using hardware PWM
+

@@ -40,7 +40,7 @@ Complete documentation for the Cornell Rocketry Team fill station server.
 
 - **[QD_STEPPER.md](QD_STEPPER.md)** - QD Stepper Motor (Quick Disconnect)
   - ISD02 driver configuration
-  - PWM + GPIO control architecture
+  - GPIO control architecture
   - Calibration procedure
   - WebSocket commands
 
@@ -136,7 +136,7 @@ fill-station/
   - Timed sequencing for open/close operations
 
 - **QD Stepper** (`src/components/qd_stepper.rs`)
-  - PWM sysfs for STEP signal + GPIO for DIR/ENA
+  - GPIO bit-banging for STEP signal + GPIO for DIR/ENA
   - ISD02 integrated stepper driver (NEMA 17)
   - Background task execution (non-blocking moves)
 
