@@ -31,7 +31,7 @@ fill-station/
 │       ├── igniter.rs       # GPIO-based igniter control
 │       ├── solenoid_valve.rs # GPIO solenoid valve (SV1)
 │       ├── ball_valve.rs    # Two-pin GPIO ball valve
-│       ├── qd_stepper.rs   # PWM+GPIO stepper motor (QD)
+│       ├── qd_stepper.rs   # GPIO stepper motor (QD)
 │       ├── ads1015.rs       # I2C ADC driver (pressure sensors)
 │       ├── umbilical.rs     # FSW telemetry serial bridge
 │       └── mod.rs           # Component exports
@@ -60,7 +60,7 @@ fill-station/
 - **ADC Monitoring**: Dual ADS1015 12-bit ADCs (8 channels total)
 - **Pressure Sensors**: Calibrated scaling for ADC channels
 - **Umbilical**: CDC-ACM Serial connection for FSW command/telemetry linking
-- **QD Stepper**: NEMA 17 stepper motor via ISD02 driver (PWM step + GPIO dir/enable)
+- **QD Stepper**: NEMA 17 stepper motor via ISD02 driver (GPIO bit-bang step + GPIO dir/enable)
 - Platform-aware: Compiles on macOS for dev, runs on Linux
 
 ### ✅ Background Tasks
@@ -76,11 +76,12 @@ fill-station/
 
 ## WebSocket Commands
 
-### Igniter Control
+### Launch / Igniter Control
 ```json
+{"command": "launch"}
 {"command": "ignite"}
 ```
-*Note: This command fires both Igniter 1 and Igniter 2 concurrently for 3 seconds.*
+*Note: `launch` fires both Igniter 1 and Igniter 2 concurrently for 3 seconds AND simultaneously sends the `<L>` launch command string over the umbilical to the FSW. `ignite` only fires the hardware igniters.*
 
 ### Solenoid Valve Control
 ```json
@@ -121,7 +122,7 @@ See [`docs/ADC_STREAMING.md`](docs/ADC_STREAMING.md) for detailed protocol speci
   - **Signal**: Chip 1, Line 62
   - **ON_OFF**: Chip 1, Line 63
 - **QD Stepper**:
-  - **STEP**: PWM Chip 0, Channel 0 (EHRPWM4 Channel A)
+  - **STEP**: GPIO Chip 2, Line 58
   - **DIR**: Chip 1, Line 43
   - **ENA**: Chip 1, Line 64
 
@@ -140,9 +141,9 @@ const ADC_SAMPLE_RATE_HZ: u64 = 100;
 const PT1500_SCALE: f32 = 0.909754;
 const PT1500_OFFSET: f32 = 5.08926;
 
-// Pressure sensor scaling for PT2000
-const PT2000_SCALE: f32 = 1.22124;
-const PT2000_OFFSET: f32 = 5.37052;
+// Pressure sensor scaling for PT1000 (PT2 on ADC1 Ch2)
+const PT1000_SCALE: f32 = 0.6125;
+const PT1000_OFFSET: f32 = 5.0;
 
 // Load Cell scaling
 const LOADCELL_SCALE: f32 = 1.69661;
