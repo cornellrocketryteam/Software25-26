@@ -44,6 +44,10 @@ pub struct FlightLoop {
     // Umbilical logic
     umbilical_disconnect_time: Option<Instant>,
     vent_signal_sent: bool,
+    /// Set true by a successful WipeFlash command; required to arm Startup→Standby.
+    /// Cleared on dropback to Startup and false on boot, so a fresh wipe is
+    /// required before each arming.
+    flash_wiped: bool,
     mav_open_time: Option<Instant>,
     umbilical_prev: bool,
     cfc_arm_prev: bool,
@@ -186,6 +190,7 @@ impl FlightLoop {
             airbrakes_logged: false,
             umbilical_disconnect_time: None,
             vent_signal_sent: false,
+            flash_wiped: false,
             mav_open_time: None,
             umbilical_prev: false,
             cfc_arm_prev: false,
@@ -477,7 +482,10 @@ impl FlightLoop {
                 }
                 UmbilicalCommand::WipeFlash => {
                     log::warn!("UMBILICAL CMD: Wipe Flash Data");
-                    self.flight_state.wipe_flash_storage().await;
+                    if self.flight_state.wipe_flash_storage().await {
+                        self.flash_wiped = true;
+                        log::info!("Flash wipe confirmed — arming permitted.");
+                    }
                 }
                 UmbilicalCommand::FlashInfo => {
                     log::warn!("UMBILICAL CMD: Flash Storage Info");
@@ -527,6 +535,9 @@ impl FlightLoop {
                 }
                 UmbilicalCommand::WipeFramReboot => {
                     log::warn!("UMBILICAL CMD: Wipe Flash + FRAM and Reboot");
+                    // flash_wiped is intentionally not set here: sys_reset() below
+                    // discards all runtime state and reboots into Startup with
+                    // flash_wiped = false, so a fresh wipe is still required to arm.
                     let _ = self.flight_state.wipe_flash_storage().await;
                     self.flight_state.reset_fram().await;
                     cortex_m::peripheral::SCB::sys_reset();
@@ -683,8 +694,11 @@ impl FlightLoop {
                     log::error!("Altimeter invalid at Startup; transitioning to Fault");
                     return;
                 }
-                // LV: arming is driven solely by GPIO 41 (CFC_ARM) and Key arm command 
-                if self.flight_state.cfc_arm_active && self.flight_state.umbilical_connected {
+                // LV: arming is driven solely by GPIO 41 (CFC_ARM) and Key arm command
+                if self.flight_state.cfc_arm_active
+                    && self.flight_state.umbilical_connected
+                    && self.flash_wiped
+                {
                     if self.flight_state.altimeter_state == crate::state::SensorState::VALID {
                         // Record arming altitude (TODO: implement into storage)
                         self.alt_armed = true;
@@ -741,6 +755,7 @@ impl FlightLoop {
                 self.umbilical_prev = self.flight_state.umbilical_connected;
                 // LV: if GPIO 41 (CFC_ARM) goes low while in Standby, drop back to Startup
                 if !self.flight_state.cfc_arm_active {
+                    self.flash_wiped = false;
                     self.flight_state.flight_mode = FlightMode::Startup;
                     self.flight_state.write_packet_to_fram().await;
                     log::info!("CFC_ARM low in Standby; transitioning back to Startup");
