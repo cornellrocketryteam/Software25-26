@@ -50,7 +50,7 @@ pub struct FlightLoop {
     flash_wiped: bool,
     mav_open_time: Option<Instant>,
     umbilical_prev: bool,
-    cfc_arm_prev: bool,
+    key_prev: bool,
 
     // Flash logging timing
     last_flash_log: Option<Instant>,
@@ -193,7 +193,7 @@ impl FlightLoop {
             flash_wiped: false,
             mav_open_time: None,
             umbilical_prev: false,
-            cfc_arm_prev: false,
+            key_prev: false,
             last_flash_log: None,
             last_full_log: None,
             last_heartbeat: None,
@@ -640,10 +640,10 @@ impl FlightLoop {
             self.recovery_vent_sent = true;
         }
 
-        // CFC_ARM rising edge: acknowledge arming, or reject if no wipe was done.
-        let cfc_arm_now = self.flight_state.cfc_arm_active;
-        if cfc_arm_now && !self.cfc_arm_prev {
-            log::info!("CFC_ARM detected: arming signal received");
+        // Key rising edge: acknowledge arming, or reject if no wipe was done.
+        let key_now = self.flight_state.key_armed;
+        if key_now && !self.key_prev {
+            log::info!("Key armed detected: arming signal received");
             if self.flash_wiped {
                 self.flight_state.buzz(2); // arm ack
             } else {
@@ -652,7 +652,7 @@ impl FlightLoop {
                 self.flight_state.buzz(5); // distinct reject pattern
             }
         }
-        self.cfc_arm_prev = cfc_arm_now;
+        self.key_prev = key_now;
 
         // Transition logic
         match self.flight_state.flight_mode {
@@ -700,8 +700,8 @@ impl FlightLoop {
                     log::error!("Altimeter invalid at Startup; transitioning to Fault");
                     return;
                 }
-                // LV: arming is driven solely by GPIO 41 (CFC_ARM) and Key arm command
-                if self.flight_state.cfc_arm_active
+                // LV: arming is driven by key arm command, umbilical connection, and flash wipe
+                if self.flight_state.key_armed
                     && self.flight_state.umbilical_connected
                     && self.flash_wiped
                 {
@@ -759,12 +759,12 @@ impl FlightLoop {
                     }
                 }
                 self.umbilical_prev = self.flight_state.umbilical_connected;
-                // LV: if GPIO 41 (CFC_ARM) goes low while in Standby, drop back to Startup
-                if !self.flight_state.cfc_arm_active {
+                // LV: if key goes low while in Standby, drop back to Startup
+                if !self.flight_state.key_armed {
                     self.flash_wiped = false;
                     self.flight_state.flight_mode = FlightMode::Startup;
                     self.flight_state.write_packet_to_fram().await;
-                    log::info!("CFC_ARM low in Standby; transitioning back to Startup");
+                    log::info!("Key low in Standby; transitioning back to Startup");
                     return;
                 }
                 // Check altimeter for launch with umbilical
@@ -788,7 +788,7 @@ impl FlightLoop {
                     self.flight_state.flight_mode = FlightMode::Ascent;
                     self.flight_state.write_packet_to_fram().await;
                     log::info!("Transitioning to Ascent");
-                } else if !self.flight_state.cfc_arm_active{
+                } else if !self.flight_state.key_armed{
                     self.flight_state.flight_mode = FlightMode::Startup;
                     self.flight_state.write_packet_to_fram().await;
                     log::info!("Key not armed; Transitioning to Startup");
