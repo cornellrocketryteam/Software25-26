@@ -364,9 +364,12 @@ async fn usb_receiver_task(mut receiver: Receiver<'static, UsbDriver>) -> ! {
 
             let data = &buf[..n];
 
-            // Heartbeat is hot-path: bump the timestamp and skip the command channel.
-            if data == b"<H>" {
+            // Heartbeat is hot-path: bump the timestamp. Use substring search
+            // so we don't ignore heartbeats buffered with other commands.
+            if data.windows(3).any(|w| w == b"<H>") {
                 record_heartbeat();
+            }
+            if data == b"<H>" {
                 continue;
             }
 

@@ -180,6 +180,7 @@ impl<'a> OnboardFlash<'a> {
             if status[0] & 0x01 == 0 {
                 return Ok(());
             }
+            embassy_time::Timer::after_micros(500).await;
         }
         Err(Error::Spi)
     }

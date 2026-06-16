@@ -1259,6 +1259,16 @@ async fn umbilical_task(
                             continue;
                         }
 
+                        if !line.is_empty() {
+                            // Any output from FSW indicates it is alive and connected.
+                            // Update freshness even if it's just log output (e.g. wipe progress)
+                            {
+                                let mut umb = umbilical_readings.lock().await;
+                                umb.last_telem_instant = Some(Instant::now());
+                                umb.connected = true;
+                            }
+                        }
+
                         if let Some(csv) = line.strip_prefix("$TELEM,") {
                             let fields: Vec<&str> = csv.split(',').collect();
                             if let Some(telemetry) = FswTelemetry::from_csv(&fields) {
@@ -1271,10 +1281,6 @@ async fn umbilical_task(
                                     let mut umb = umbilical_readings.lock().await;
                                     umb.timestamp_ms = timestamp_ms;
                                     umb.telemetry = telemetry;
-                                    umb.last_telem_instant = Some(Instant::now());
-                                    // Flip connected true eagerly on fresh telemetry;
-                                    // safety monitor is the source of truth for staleness.
-                                    umb.connected = true;
                                 }
 
                                 debug!("FSW telemetry received: mode={}", telemetry.flight_mode_name());
