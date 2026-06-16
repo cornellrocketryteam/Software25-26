@@ -292,23 +292,9 @@ export function PropulsionPage() {
             case "BV":
                 if (valveDataRef.current.BV.actuated && action === 'CLOSE') { 
                     sendCommandWithDelay(actuateBallValveClose, buttondelay);
-                    // sendCommandWithDelay(() => { //define custom query function to update state
-                    //     updateValveData(prevState => ({
-                    //         ...prevState,
-                    //         BV: { actuated: false, state: "high" }
-                    //     }));
-                    //     console.log("Ball Valve toggled to CLOSED");
-                    // }, buttondelay + 50); // Delay state update to give command time to execute
                     sendCommandWithDelay(getBallValveState, buttondelay + 50); // Query the state of the ball valve after sending the command to update our state with the response from the server
                 } else if (!valveDataRef.current.BV.actuated && action === 'OPEN') {
                     sendCommandWithDelay(actuateBallValveOpen, buttondelay);
-                    // sendCommandWithDelay(() => { //define custom query function to update state
-                    //     updateValveData(prevState => ({
-                    //         ...prevState,
-                    //         BV: { actuated: true, state: "low" }
-                    //     }));
-                    //     console.log("Ball Valve toggled to OPEN");
-                    // }, buttondelay + 50); // Delay state update to give command time to execute
                     sendCommandWithDelay(getBallValveState, buttondelay + 50); // Query the state of the ball valve after sending the command to update our state with the response from the server
                 }
                 break;
@@ -316,23 +302,9 @@ export function PropulsionPage() {
             case "QD":
                 if (!valveDataRef.current.QD.retracted && action === 'RETRACT') {
                     sendCommandWithDelay(actuateQDRetract, buttondelay);
-                    // sendCommandWithDelay(() => { //define custom query function to update state
-                    //     updateValveData(prevState => ({
-                    //         ...prevState,
-                    //         QD: { ...prevState.QD, retracted: true }
-                    //     }));
-                    //     console.log("Quick Disconnect retracted");
-                    // }, buttondelay + 50);
                     sendCommandWithDelay(getQdState, buttondelay + 50); // Query the state of the quick disconnect after sending the command to update our state with the response from the server
                 } else if (valveDataRef.current.QD.retracted && action === 'EXTEND') {
                     sendCommandWithDelay(actuateQDExtend, buttondelay);
-                    // sendCommandWithDelay(() => { //define custom query function to update state
-                    //     updateValveData(prevState => ({
-                    //         ...prevState,
-                    //         QD: { ...prevState.QD, retracted: false }
-                    //     }));
-                    //     console.log("Quick Disconnect extended");
-                    // }, buttondelay + 50);
                     sendCommandWithDelay(getQdState, buttondelay + 50); // Query the state of the quick disconnect after sending the command to update our state with the response from the server
                 }
                 break;
@@ -360,7 +332,7 @@ export function PropulsionPage() {
 
             case "fsw_telemetry":
                 if (umbilicalDataRef.current.length > 500) { //Limit the size of the ADC data array to prevent memory issues, adjust as needed based on how much data you want to keep track of
-                    umbilicalDataRef.current.shift(); //Remove the oldest entry when we exceed the limit
+                    umbilicalDataRef.current.shift();   //Remove the oldest entry when we exceed the limit
                 }
 
                 // For testing purposes so we can simulate fill without any actual pressure readings 

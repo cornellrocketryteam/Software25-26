@@ -13,7 +13,6 @@ export default function VentButtonComponent() {
 
     // We can vent during a fill (the fill loop coordinates it), or as a standalone
     // pressure bleed-off when not filling — but only if there is pressure to release.
-    const canVent = fillUIActive || currentPsi > 0;
     const toggleVentAction = () => {
         if (ventSeconds === 0) {
             alert("Please select a vent time greater than 0 seconds.");
@@ -122,7 +121,7 @@ export default function VentButtonComponent() {
                                 }
                             }
                         }}
-                        disabled={confirmedVentSeconds === 0 || !canVent}
+                        disabled={confirmedVentSeconds === 0}
                         className="bg-[#E05A2B] border-[4px] border-black rounded-2xl px-10 py-3 font-inter font-bold text-[32px] text-white hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed"
                         >
                             {!ventUIActive ? "VENT" : "ABORT"}

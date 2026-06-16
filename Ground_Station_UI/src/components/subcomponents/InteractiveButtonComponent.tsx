@@ -93,11 +93,6 @@ export default function InteractiveButtonComponent() {
                   sendLaunchCommand();
                   break
               }
-              if (isLaunch) {
-                // Launch is terminal: lock all controls and persist via context.
-                setButtonInteractionState("DISABLED");
-                setHasLaunched(true);
-              }
               //We want to be able to call the 4 general commands as often as we want...
               setLaunchStep(0);
             }}
