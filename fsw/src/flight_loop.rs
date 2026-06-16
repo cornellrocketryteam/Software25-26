@@ -705,7 +705,7 @@ impl FlightLoop {
                         self.flight_state.reference_pressure
                     );
                 }
-                //self.flight_state.umbilical_connected = true;
+                self.flight_state.umbilical_connected = true;
                 if self.flight_state.umbilical_connected {
                     log::info!("Umbilical connected");
                     self.umbilical_disconnect_time = None;
@@ -777,7 +777,7 @@ impl FlightLoop {
                     log::error!("Altimeter invalid at Standby; transitioning to Fault");
                     return;
                 }
-                //self.flight_state.umbilical_connected = true;
+                self.flight_state.umbilical_connected = true;
                 if self.flight_state.umbilical_connected {
                     log::info!("Umbilical connected");
                     self.umbilical_disconnect_time = None;
@@ -947,6 +947,12 @@ impl FlightLoop {
             }
             
             FlightMode::DrogueDeployed => {
+                // Lazy-init entry time — handles recovery from power cycle where the
+                // Coast→DrogueDeployed transition (which normally sets this) was skipped.
+                if self.drogue_entry_time.is_none() {
+                    self.drogue_entry_time = Some(Instant::now());
+                }
+
                 if self.flight_state.altimeter_state != crate::state::SensorState::VALID {
                     // altimeter is not working
                     self.alt_armed = false;

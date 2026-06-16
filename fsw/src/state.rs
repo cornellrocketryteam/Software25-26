@@ -210,6 +210,9 @@ impl FlightState {
                         stored_blims_upwind_lon   = snap.blims_upwind_lon;
                         stored_blims_downwind_lat = snap.blims_downwind_lat;
                         stored_blims_downwind_lon = snap.blims_downwind_lon;
+                        // Restore altitude from snapshot — it's written every second and is
+                        // always fresher than the full packet log for mid-flight recovery.
+                        packet.altitude = snap.altitude;
                         log::info!(
                             "Snapshot recovered: mode={:?} cycle={} alt={:.2} mav={} sv={} launch_stage={} elapsed_ms={} upwind=({:.6},{:.6}) downwind=({:.6},{:.6})",
                             stored_mode, stored_cycle_count, snap.altitude,

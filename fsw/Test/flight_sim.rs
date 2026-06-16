@@ -521,16 +521,74 @@ pub async fn simulate_real_flight(flight_loop: &mut FlightLoop) {
     const FT_TO_M: f64 = 1.0 / 3.28084;
     const G_TO_MS2: f32 = 9.81;
 
+    // Find the peak altitude index once — used to split ascending vs descending search.
+    let peak_idx = {
+        let mut max_val = constants::TEST_ALTS_LST[0];
+        let mut max_i = 0usize;
+        for (i, &v) in constants::TEST_ALTS_LST.iter().enumerate() {
+            if v > max_val { max_val = v; max_i = i; }
+        }
+        max_i
+    };
+
+    // If we're recovering from a mid-flight power cycle, the FRAM-recovered
+    // packet.altitude (meters AGL) tells us where we were in the data arrays.
+    // Search the correct half of TEST_ALTS_LST (ascending vs descending) based
+    // on the recovered flight mode and resume from the nearest matching index.
+    let recovered_mode = flight_loop.flight_state.flight_mode;
+    let is_recovering = matches!(
+        recovered_mode,
+        FlightMode::Ascent | FlightMode::Coast | FlightMode::DrogueDeployed | FlightMode::MainDeployed
+    );
+
     let mut alt_index: usize = 0;
     let mut prev_alt: f64 = 0.0;
     let mut in_flight = false;
     let mut standby_log_cycle: u32 = 0;
 
+    if is_recovering {
+        // packet.altitude is in meters AGL — restored from the FRAM snapshot ring
+        // (written every second by log_to_fram) so it reflects where we were in the array.
+        let snap_alt_ft = flight_loop.flight_state.packet.altitude as f64 / FT_TO_M;
+
+        // Search the ascending half for Ascent/Coast, descending half for Drogue/Main.
+        let (search_start, search_end) = match recovered_mode {
+            FlightMode::Ascent | FlightMode::Coast => (0, peak_idx + 1),
+            FlightMode::DrogueDeployed | FlightMode::MainDeployed => (peak_idx, constants::TEST_ALTS_LST.len()),
+            _ => (0, constants::TEST_ALTS_LST.len()),
+        };
+
+        let mut best_i = search_start;
+        let mut best_diff = f64::MAX;
+        for i in search_start..search_end {
+            let diff = (constants::TEST_ALTS_LST[i] as f64 - snap_alt_ft).abs();
+            if diff < best_diff { best_diff = diff; best_i = i; }
+        }
+
+        prev_alt = constants::TEST_ALTS_LST[best_i] as f64 * FT_TO_M;
+        alt_index = (best_i + 1).min(constants::TEST_ALTS_LST.len());
+        in_flight = true;
+
+        // Mark SV already open so DrogueDeployed/MainDeployed timers don't re-fire.
+        if matches!(recovered_mode, FlightMode::DrogueDeployed | FlightMode::MainDeployed) {
+            flight_loop.sv_open = true;
+            flight_loop.drogue_deployed = true;
+        }
+        if matches!(recovered_mode, FlightMode::MainDeployed) {
+            flight_loop.main_chutes_deployed = true;
+        }
+
+        log::info!(
+            "[SIM] Recovering from {:?} — snap={:.1}ft  matched idx={}  alt={:.1}ft  resuming at alt_index={}",
+            recovered_mode, snap_alt_ft, best_i, constants::TEST_ALTS_LST[best_i], alt_index
+        );
+    }
+
     loop {
         let current_mode = flight_loop.flight_state.flight_mode;
 
-        flight_loop.sim_cfc_arm_override = Some(true);
-        flight_loop.sim_key_armed_override = Some(true);
+        //flight_loop.sim_cfc_arm_override = Some(true);
+        //flight_loop.sim_key_armed_override = Some(true);
 
         match current_mode {
             FlightMode::Startup | FlightMode::Standby => {

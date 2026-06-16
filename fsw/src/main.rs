@@ -217,15 +217,20 @@ async fn main(spawner: Spawner) {
         #[cfg(feature = "sim_real_flight")]
         {
             log::info!("Starting Real Flight Simulation...");
-            let _ = flight_loop.flight_state.wipe_flash_storage().await;
-            flight_loop.flight_state.reset_fram().await;
+            //let _ = flight_loop.flight_state.wipe_flash_storage().await;
+            //flight_loop.flight_state.reset_fram().await;
 
             flight_loop.set_blims(blims);
 
-            // Reset in-memory state so the simulation starts fresh
+            // Reset packet fields for a fresh sim run, but preserve the snapshot
+            // altitude so simulate_real_flight can resume at the right index after a power cycle.
+            let snap_altitude = flight_loop.flight_state.packet.altitude;
             flight_loop.flight_state.packet = crate::packet::Packet::default();
-            flight_loop.flight_state.flight_mode = crate::state::FlightMode::Startup;
-
+            flight_loop.flight_state.packet.altitude = snap_altitude;
+            //flight_loop.flight_state.flight_mode = crate::state::FlightMode::Startup;
+            if (flight_loop.flight_state.flight_mode == crate::state::FlightMode::MainDeployed && flight_loop.flight_state.packet.altitude == 0.0) {
+                flight_loop.flight_state.flight_mode = crate::state::FlightMode::Startup;
+            }
             flight_sim::simulate_real_flight(&mut flight_loop).await;
             log::info!("Simulation Complete.");
         }
