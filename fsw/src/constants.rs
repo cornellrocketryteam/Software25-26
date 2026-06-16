@@ -138,6 +138,7 @@ pub const MAIN_LOG_TIMEOUT_MS: u64 = 1_200_000; // 20 minutes
 pub const N2_ARM_ALTITUDE_M: f32 = 500.0;
 
 pub const UMBILICAL_TIMEOUT_MS: u64 = 15_000; // 15 seconds
+pub const STARTUP_BUZZ_PERIOD_MS: u64 = 5_000; // periodic status buzz in Startup
 
 /// Maximum age of the most recent umbilical heartbeat (`<H>`) before the link
 /// is considered down. Independent of `UMBILICAL_TIMEOUT_MS`, which gates the

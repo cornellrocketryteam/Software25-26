@@ -56,6 +56,7 @@ pub struct FlightLoop {
     last_flash_log: Option<Instant>,
     last_full_log: Option<Instant>,
     last_heartbeat: Option<Instant>,
+    last_startup_buzz: Option<Instant>,
 
     // Launch sequence
     pub launch_sequence_stage: LaunchStage,
@@ -197,6 +198,7 @@ impl FlightLoop {
             last_flash_log: None,
             last_full_log: None,
             last_heartbeat: None,
+            last_startup_buzz: None,
             launch_sequence_stage,
             launch_stage_start_time,
             recovery_vent_sent: false,
@@ -260,6 +262,7 @@ impl FlightLoop {
             self.flight_state.key_armed = armed;
             self.key_armed = armed;
         }
+
 
         // Sim override: inject pre-recorded vertical acceleration (m/s²).
         if let Some(accel_z) = self.sim_accel_z_override {
@@ -545,10 +548,14 @@ impl FlightLoop {
                 UmbilicalCommand::KeyArm => {
                     log::warn!("UMBILICAL CMD: Key Arm");
                     self.key_armed = true;
+                    self.flight_state.key_armed = true;
                 }
                 UmbilicalCommand::KeyDisarm => {
                     log::warn!("UMBILICAL CMD: Key Disarm");
                     self.key_armed = false;
+                    self.flight_state.key_armed = false;
+                    self.flight_state.buzz(1);
+                    self.last_startup_buzz = None; // buzz immediately on next Startup cycle
                 }
                 UmbilicalCommand::SetBlimsTarget { upwind_lat, upwind_lon, downwind_lat, downwind_lon } => {
                     log::warn!(
@@ -670,9 +677,6 @@ impl FlightLoop {
                     log::info!("Umbilical connected");
                     self.umbilical_disconnect_time = None;
                     self.vent_signal_sent = false;
-                    if !self.umbilical_prev {
-                        self.flight_state.buzz(2); // just reconnected
-                    }
                 } else {
                     log::info!("Umbilical disconnected");
                     // Start timer if not started
@@ -689,9 +693,19 @@ impl FlightLoop {
                             self.vent_signal_sent = true;
                         }
                     }
-                    if self.umbilical_prev {
-                        self.flight_state.buzz(3); // just disconnected
+                }
+                // Periodic status buzz: 2 beeps if umbilical connected, 3 if not, every 5s
+                let should_buzz = match self.last_startup_buzz {
+                    None => true,
+                    Some(last) => last.elapsed().as_millis() as u64 >= constants::STARTUP_BUZZ_PERIOD_MS,
+                };
+                if should_buzz {
+                    if self.flight_state.umbilical_connected {
+                        self.flight_state.buzz(2);
+                    } else {
+                        self.flight_state.buzz(3);
                     }
+                    self.last_startup_buzz = Some(Instant::now());
                 }
                 if self.flight_state.altimeter_state == crate::state::SensorState::INVALID {
                     self.alt_armed = false;
@@ -783,7 +797,7 @@ impl FlightLoop {
                     // Stage 1: SV Open (2s vent)
                     self.flight_state.open_sv(0).await;
                     self.sv_open = true;
-
+   
                     self.alt_armed = true;
                     self.flight_state.flight_mode = FlightMode::Ascent;
                     self.flight_state.write_packet_to_fram().await;

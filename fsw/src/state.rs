@@ -423,8 +423,7 @@ impl FlightState {
         // Update packet flight mode
         self.packet.flight_mode = self.flight_mode as u32;
 
-        // Update key armed status
-        self.key_armed = self.arming_switch.is_high();
+        // key_armed is set only by umbilical <KA>/<KD> commands, not from GPIO
         self.umbilical_connected = crate::umbilical::is_connected();
         self.cfc_arm_active = self.cfc_arm.is_high();
         let read_to = Duration::from_millis(constants::SENSOR_READ_TIMEOUT_MS);
