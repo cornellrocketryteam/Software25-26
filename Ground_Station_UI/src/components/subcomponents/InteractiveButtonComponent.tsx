@@ -22,7 +22,7 @@ export default function InteractiveButtonComponent() {
   const closedState: ActuationTypeIdentifier[] = ['CLOSE', 'RETRACT']; // Define which actions correspond to "close" state
 
   const sendLaunchCommand = () => {
-    wsRef.current?.send(JSON.stringify({command: 'fsw_launch'}));
+    wsRef.current?.send(JSON.stringify({command: 'launch'}));
     console.log('LAUNCH command sent:', new Date().toISOString());
   };
   const sendResetFramCommand = () => {

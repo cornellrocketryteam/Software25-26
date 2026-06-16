@@ -1,6 +1,7 @@
 import Header from "./components/HeaderComponent";
 import ButtonComponent from "./components/ButtonComponent";
 import VentButtonComponent from "./components/VentButtonComponent";
+import ConfirmationOverlay from "./components/ConfirmationOverlayComponent";
 import FillButtonComponent from "./components/FillComponent";
 import { useEffect, useRef, useState } from "react";
 import { createContext, useContext } from "react";
@@ -144,6 +145,32 @@ export function PropulsionPage() {
     const [ventUIActive, setVentUIActive] = useState(false); // State to control whether the vent UI is active and visible
     const [fillUIActive, setFillUIActive] = useState(false); // State to control whether the fill UI is active and visible
     const [buttonInteractionState, setButtonInteractionState] = useState<interactionType>("DISABLED"); // State to control whether buttons can be interacted with, to prevent spamming commands while waiting for server responses
+
+    const [isKeyArmed, setIsKeyArmed] = useState(false);
+    const [showKeyConfirmation, setShowKeyConfirmation] = useState(false);
+    const [pendingKeyAction, setPendingKeyAction] = useState<"KEY_ARM" | "KEY_DISARM" | null>(null);
+
+    const toggleKeyAction = (action: "KEY_ARM" | "KEY_DISARM") => {
+        setPendingKeyAction(action);
+        setShowKeyConfirmation(true);
+    };
+
+    const handleKeyConfirm = () => {
+        if (pendingKeyAction === "KEY_ARM") {
+            wsRef.current?.send(JSON.stringify({"command": "fsw_key_arm"}));
+            setIsKeyArmed(true);
+        } else if (pendingKeyAction === "KEY_DISARM") {
+            wsRef.current?.send(JSON.stringify({"command": "fsw_key_disarm"}));
+            setIsKeyArmed(false);
+        }
+        setShowKeyConfirmation(false);
+        setPendingKeyAction(null);
+    };
+
+    const handleKeyCancel = () => {
+        setShowKeyConfirmation(false);
+        setPendingKeyAction(null);
+    };
 
     // Track whether we've launched. Backed by sessionStorage so the locked-out launch
     // state survives a page refresh, but auto-clears when the tab closes (a new session
@@ -511,9 +538,28 @@ export function PropulsionPage() {
                                 <ButtonComponent buttonName="Wipe & Reboot" actuationLock='UNLOCKED'  />
                             </div>
                         </div>
+
+                        {/* Key Arm Toggle */}
+                        <div className="bg-[#D9D9D9] border-[6px] border-black rounded-3xl p-5 flex flex-col gap-4">
+                            <h2 className="text-2xl font-inter font-semibold"> Flight Software Key:</h2>
+                            <button
+                                onClick={() => toggleKeyAction(isKeyArmed ? "KEY_DISARM" : "KEY_ARM")}
+                                className={`${isKeyArmed ? "bg-red-500" : "bg-[#5A87FF]"} border-[6px] border-black rounded-2xl w-full py-4 font-inter font-bold text-3xl text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed`}
+                            >
+                                {isKeyArmed ? "Disarm Key" : "Arm Key"}
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
+
+            {showKeyConfirmation && (
+                <ConfirmationOverlay
+                    message={`Are you sure you want to ${pendingKeyAction === "KEY_ARM" ? "ARM the key" : "DISARM the key"}?`}
+                    onConfirm={handleKeyConfirm}
+                    onCancel={handleKeyCancel}
+                />
+            )}
         </PropulsionContext.Provider>
     );
 }
