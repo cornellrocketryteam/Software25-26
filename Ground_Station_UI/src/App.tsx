@@ -10,6 +10,8 @@ type AppContextType = {
   setCurrFlightMode: (flightMode: FlightMode) => void;
   uri: string;
   wsReady: boolean;
+  hasLaunched: boolean;
+  setHasLaunched: (launched: boolean) => void;
 }
 export type FlightMode = "....."| 'STANDBY' | 'STARTUP';
 
@@ -25,10 +27,16 @@ export const useAppContext = () => {
 
 function App() {
   const wsRef = useRef<WebSocket | null>(null);
-  //const uri = "ws://192.168.1.106:9000"; //<- Whenever you push uncomment this line and comment the one below
-  const uri = "ws://localhost:9000"; //<- For local testing only, comment this out before pushing
+
+  const uri = "ws://192.168.1.106:9000"; //This is the actual router IP we would use for launch, so make sure any pushed code has this line commented out
+  //const uri = "ws://localhost:9000"; //This is for testing on the mock server
   const [wsReady, setWsReady] = useState(false);
   const [currFlightMode, setCurrFlightMode] = useState<FlightMode>('.....');
+
+  // Track whether we've launched. Backed by sessionStorage so the locked-out launch
+  // state survives a page refresh, but auto-clears when the tab closes (a new session
+  // starts unlocked, rather than latching forever as localStorage would).
+  const [hasLaunched, setHasLaunched] = useState(() => sessionStorage.getItem('hasLaunched') === 'true');
 
   const handleMessage = (event: MessageEvent) => {
     //Parse JSON data here
@@ -53,6 +61,7 @@ function App() {
                 heartbeatInterval = setInterval(() => {
                     if (wsRef.current?.readyState === WebSocket.OPEN) {
                         wsRef.current.send(JSON.stringify({ "command": "heartbeat" }));
+                        console.log("Sent Heartbeat");
                     }
                 }, 5000);
             };
@@ -85,7 +94,7 @@ function App() {
         };
     }, []);
   return (
-    <AppContext.Provider value={{ setCurrFlightMode, currFlightMode, wsRef, uri: uri, wsReady}}>
+    <AppContext.Provider value={{hasLaunched, setHasLaunched, setCurrFlightMode, currFlightMode, wsRef, uri: uri, wsReady}}>
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<LandingPage />} />

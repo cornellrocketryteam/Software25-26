@@ -4,8 +4,15 @@ import ConfirmationOverlay from "./ConfirmationOverlayComponent";
 
 export default function VentButtonComponent() {
 
-    const { ventTimeoutRef, manualVentRef, fillUIActive, ventUIActive, setVentUIActive, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, handleButtonClickRef, isVentingRef } = usePropulsion();
+    const { ventTimeoutRef, manualVentRef, fillUIActive, ventUIActive, setVentUIActive, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, handleButtonClickRef, isVentingRef, telemetryDataRef } = usePropulsion();
     const [showConfirmation, setShowConfirmation] = useState(false);
+
+    // Latest tank pressure. This component re-renders on every telemetry message
+    // (valve state updates), so reading the ref here stays current with the UI.
+    const currentPsi = telemetryDataRef.current.at(-1)?.telemetry.pt3 ?? 0;
+
+    // We can vent during a fill (the fill loop coordinates it), or as a standalone
+    // pressure bleed-off when not filling — but only if there is pressure to release.
     const toggleVentAction = () => {
         if (ventSeconds === 0) {
             alert("Please select a vent time greater than 0 seconds.");
@@ -17,17 +24,23 @@ export default function VentButtonComponent() {
             alert("Vent time is already set to the selected value.");
         }
     }
-    //If we say yes, then we will actually be doin it :)
+    
     const handleVentConfirm = () => {
         setConfirmedVentSeconds(ventSeconds); 
         console.log(`Vent process set to last for ${ventSeconds} seconds.`); //<- inaccurate log due to state update timing, consider using ventSeconds directly in the log if needed
         setShowConfirmation(false);
       };
     
-      //We will not be doin it chat
     const handleVentCancel = () => {
         setVentSeconds(ventSeconds); // Reset the dropdown to the last confirmed value
         setShowConfirmation(false);
+    };
+
+    // Fine-tune the vent duration by 0.1s. Clamp to the [0, 10]s range the dropdown
+    // offers, and round to 1 decimal to avoid floating-point drift (e.g. 0.1 + 0.2).
+    const adjustVentSeconds = (delta: number) => {
+        const next = Math.min(10, Math.max(0, ventSeconds + delta));
+        setVentSeconds(Math.round(next * 10) / 10);
     };
     return (
         <>
@@ -35,15 +48,37 @@ export default function VentButtonComponent() {
             <h2 className="font-inter font-bold text-[42px] text-center mb-8">VENT BUTTON</h2>
                 <div className="bg-white border-[6px] border-black rounded-2xl px-6 py-4 mb-8">
                     <label className="font-inter text-xl mb-2 block">Number of seconds to open SV2:</label>
-                    <select 
-                        value={ventSeconds} 
-                        onChange={(e) => setVentSeconds(Number(e.target.value))}
-                        className="w-full p-2 border-2 border-gray-300 rounded text-xl font-inter"
-                    >
-                        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => (
-                        <option key={num} value={num}>{num} second{num > 0 ? 's' : ''}</option>
-                        ))}
-                    </select>
+                    <div className="flex flex-row items-stretch gap-2">
+                        <button
+                            type="button"
+                            onClick={() => adjustVentSeconds(-0.1)}
+                            disabled={ventSeconds <= 0}
+                            className="px-4 border-2 border-gray-300 rounded text-2xl font-inter font-bold hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                            -
+                        </button>
+                        <select
+                            value={ventSeconds}
+                            onChange={(e) => setVentSeconds(Number(e.target.value))}
+                            className="flex-1 p-2 border-2 border-gray-300 rounded text-xl font-inter"
+                        >
+                            {/* When fine-tuned to a fractional value, show it as a selectable option so the dropdown stays in sync */}
+                            {!Number.isInteger(ventSeconds) && (
+                                <option value={ventSeconds}>{ventSeconds} seconds</option>
+                            )}
+                            {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => (
+                            <option key={num} value={num}>{num} second{num > 0 ? 's' : ''}</option>
+                            ))}
+                        </select>
+                        <button
+                            type="button"
+                            onClick={() => adjustVentSeconds(0.1)}
+                            disabled={ventSeconds >= 10}
+                            className="px-4 border-2 border-gray-300 rounded text-2xl font-inter font-bold hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                            +
+                        </button>
+                    </div>
                 </div>
                 <div className="flex flex-row gap-4 justify-center">
                     <button 
@@ -55,7 +90,7 @@ export default function VentButtonComponent() {
                         <button
                         onClick={() => {
                             if (ventUIActive) { //We Abort Here
-                                // ABORT: close SV2 immediately and clear the venting lock
+                                //ABORT: close SV2 immediately and clear the venting lock
                                 if (ventTimeoutRef.current) {
                                     clearTimeout(ventTimeoutRef.current); // cancel the scheduled completion
                                     ventTimeoutRef.current = null;
@@ -65,10 +100,28 @@ export default function VentButtonComponent() {
                                 isVentingRef.current = false;
                                 setVentUIActive(false);
                             } else { //Start Manual Venting Process
-                                if(!isVentingRef.current) manualVentRef.current = true; //Do not stack with automated vent if it's already running
+                                if (isVentingRef.current) return; //Do not stack with a vent that's already running
+                                if (fillUIActive) {
+                                    //During a fill, hand off to the fill loop so it coordinates the vent (BV reopen, no stacking)
+                                    manualVentRef.current = true;
+                                } else {
+                                    //Not filling: drive a standalone vent to bleed off pressure. Open SV2 now, close it after the set duration.
+                                    isVentingRef.current = true;
+                                    setVentUIActive(true);
+                                    handleButtonClickRef.current("Solenoid Valve 2", 'OPEN');
+                                    console.log("🔴 Manual Vent START (no fill):", new Date().toISOString(), "PSI:", currentPsi, `Duration: ${confirmedVentSeconds}s`);
+
+                                    ventTimeoutRef.current = setTimeout(() => {
+                                        console.log("🟢 Manual Vent END (no fill):", new Date().toISOString());
+                                        handleButtonClickRef.current("Solenoid Valve 2", 'CLOSE');
+                                        ventTimeoutRef.current = null;
+                                        isVentingRef.current = false;
+                                        setVentUIActive(false);
+                                    }, confirmedVentSeconds * 1000);
+                                }
                             }
                         }}
-                        disabled={confirmedVentSeconds === 0 || !fillUIActive}
+                        disabled={confirmedVentSeconds === 0}
                         className="bg-[#E05A2B] border-[4px] border-black rounded-2xl px-10 py-3 font-inter font-bold text-[32px] text-white hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed"
                         >
                             {!ventUIActive ? "VENT" : "ABORT"}
@@ -79,7 +132,6 @@ export default function VentButtonComponent() {
                                 Vent duration: {confirmedVentSeconds} second{confirmedVentSeconds !== 1 ? 's' : ''}
                             </div>
                         )}
-
                     </div>
                     
                 </div>

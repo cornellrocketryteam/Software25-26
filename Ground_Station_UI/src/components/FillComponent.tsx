@@ -1,37 +1,16 @@
-import InitialFillComponent from "./subcomponents/InitialFillComponent";
-import SafeFillComponent from "./subcomponents/SafeFillComponent";
-import StopFillComponent from "./subcomponents/StopFillComponent";
+import FillButtonComponent from "./subcomponents/FillButtonComponent";
 import { usePropulsion } from "../PropulsionPage";
 
 
-export default function FillButtonComponent() {
+export default function FillComponent() {
     const { fillState } = usePropulsion();
     
     const renderContnet  = () => {
         switch (fillState) {
             case 'INITIAL':
                 return (
-                    <InitialFillComponent />
+                    <FillButtonComponent />
                 );
-
-            
-            // case 'INTERVENE':
-            //     return (
-            //         <InterveneFillComponent />
-            //     );
-
-            
-            case 'SAFE_PROCEDURE': //<- Currently unused, but this is where we would render the safe procedure component if we wanted to add it in.
-                return(
-                    <SafeFillComponent/>
-                );  
-
-            case 'STOP_FILL': //<- Currently unused, but this is where we would render the stop fill procedure component if we wanted to add it in.
-                return (
-                    <StopFillComponent/>
-                );
-
-            //Add POST_FILL case here
 
             default:
                 return (

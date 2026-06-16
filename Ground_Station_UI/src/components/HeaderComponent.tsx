@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import type { interactionType } from "../PropulsionPage";
+import { useAppContext } from "../App";
 
 interface HeaderProps {
     pageTitle: string;          // required, always needed
@@ -21,10 +22,11 @@ export default function Header({
         setButtonInteractionState
     }: HeaderProps) {
     const navigate = useNavigate();
-
+    const { hasLaunched } = useAppContext(); // Importing propulsion context to access shared state and functions 
 
     const isPropulsionPage = pageTitle === "Propulsion Page";
     const isRecoveryPage = pageTitle === "Recovery & Payload Page";
+
 
     return (
         <header className="bg-[#F9F9EB] px-8 py-4">
@@ -43,7 +45,7 @@ export default function Header({
                         Curr Rocket State: {currFlightMode}
                     </div>
                     {isPropulsionPage && (<button 
-                        disabled = {fillUIActive} // Disable interaction toggle when fill UI is active
+                        disabled = {fillUIActive || hasLaunched} // Disable interaction toggle when fill UI is active
                         onClick={() => {
                             if(canInteractRef?.current === "DISABLED"){
                                 setButtonInteractionState?.("ENABLED");

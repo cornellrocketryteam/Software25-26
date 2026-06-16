@@ -1,8 +1,7 @@
 import Header from "./components/HeaderComponent";
 import ButtonComponent from "./components/ButtonComponent";
 import VentButtonComponent from "./components/VentButtonComponent";
-import FillButtonComponent from "./components/FillButtonComponent";
-import HeaterPanelComponent from "./components/HeaterPanelComponent";
+import FillButtonComponent from "./components/FillComponent";
 import { useEffect, useRef, useState } from "react";
 import { createContext, useContext } from "react";
 import { useAppContext } from "./App";
@@ -23,6 +22,8 @@ type ValveData = {
 }
 
 type PropulsionContextType = {
+    hasLaunched: boolean;
+    setHasLaunched: (active: boolean) => void;
     ventUIActive: boolean;
     setVentUIActive: (active: boolean) => void;
     fillUIActive: boolean;
@@ -135,7 +136,7 @@ export const usePropulsion = () => {
 };
 
 export function PropulsionPage() {
-    const { wsRef, wsReady, currFlightMode} = useAppContext(); //The App's websocket refrence
+    const { wsRef, wsReady, currFlightMode, hasLaunched, setHasLaunched} = useAppContext(); //The App's websocket refrence
 
     const [fillState, setFillState] = useState<FillState>('INITIAL');
     const [ventSeconds, setVentSeconds] = useState(0);
@@ -144,6 +145,12 @@ export function PropulsionPage() {
     const [fillUIActive, setFillUIActive] = useState(false); // State to control whether the fill UI is active and visible
     const [buttonInteractionState, setButtonInteractionState] = useState<interactionType>("DISABLED"); // State to control whether buttons can be interacted with, to prevent spamming commands while waiting for server responses
 
+    // Track whether we've launched. Backed by sessionStorage so the locked-out launch
+    // state survives a page refresh, but auto-clears when the tab closes (a new session
+    // starts unlocked, rather than latching forever as localStorage would).
+    useEffect(() => {
+        sessionStorage.setItem('hasLaunched', String(hasLaunched));
+    }, [hasLaunched]);
 
     const pendingActionRef = useRef<ValveKey | null>(null); // Use useRef to store the pending action for confirmation
     const adcDataRef = useRef<AdcDataMessage[]>([]); // Use useRef to store the latest ADC data received from the server
@@ -154,19 +161,6 @@ export function PropulsionPage() {
     const canInteractRef = useRef<interactionType>(buttonInteractionState); // Ref to track whether buttons can be interacted with, to prevent spamming commands while waiting for server responses
     const ventTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // Stores the active vent timeout ID so it can be cancelled on abort
     const confirmedVentSecondsRef = useRef(confirmedVentSeconds); // Ref to track the confirmed vent seconds for the same reason as above
-
-    /**
-     * Below are examples of way to access elements in our refrence arrays
-     * 
-     * Access latest ADC or FSW data:
-     * adcDataRef.current.at(-1)
-     * umbilicalDataRef.current.at(-1)
-     * 
-     * Access the earliest ADC or FSW data:
-     * adcDat.current.at(0)
-     * umbilicalDataRef.current.at(0)
-     * 
-     */
 
     //Hearbeat command: send every 15 seconds to stay connected to server
     const heartbeatCommand = { "command": "heartbeat" };
@@ -202,12 +196,12 @@ export function PropulsionPage() {
     const startFSWStream = { "command": "start_fsw_stream" };
     const stopFSWStream = { "command": "stop_fsw_stream" };
 
+    //Command categories for handling pending actions and state updates:
     const queryCommands = ["get_valve_state", "get_ball_valve_state", "get_qd_state"]; //Only command for state query
     const actuationCommands = ["actuate_valve", "fsw_open_mav", "fsw_close_mav", "bv_open", "bv_close"]; //Set of commands that are used to change the state of the system
 
 
     //Stored Valve Data For UI Representation:
-    
     const [valveData, setValveData] = useState({ //TODO: Think of what to do with venting field in valve Data
         SV1: { "actuated": false, "continuity": false },
         SV2: { "actuated": false, "venting": false, "continuity": false },
@@ -239,8 +233,8 @@ export function PropulsionPage() {
     };
 
     /**
-    The paramaeter `updater` takes in a function whose parameter is the previous state of the valve data and whose return value is the new state of the valve data, 
-    which allows us to update our state based on the previous state in a safe way that avoids any issues with stale closures or asynchronous updates.
+    * The paramaeter `updater` takes in a function whose parameter is the previous state of the valve data and whose return value is the new state of the valve data, 
+    * which allows us to update our state based on the previous state in a safe way that avoids any issues with stale closures or asynchronous updates.
     */
     const updateValveData = (updater: (prev: typeof valveData) => typeof valveData) => {
         setValveData(prev => {
@@ -298,23 +292,9 @@ export function PropulsionPage() {
             case "BV":
                 if (valveDataRef.current.BV.actuated && action === 'CLOSE') { 
                     sendCommandWithDelay(actuateBallValveClose, buttondelay);
-                    // sendCommandWithDelay(() => { //define custom query function to update state
-                    //     updateValveData(prevState => ({
-                    //         ...prevState,
-                    //         BV: { actuated: false, state: "high" }
-                    //     }));
-                    //     console.log("Ball Valve toggled to CLOSED");
-                    // }, buttondelay + 50); // Delay state update to give command time to execute
                     sendCommandWithDelay(getBallValveState, buttondelay + 50); // Query the state of the ball valve after sending the command to update our state with the response from the server
                 } else if (!valveDataRef.current.BV.actuated && action === 'OPEN') {
                     sendCommandWithDelay(actuateBallValveOpen, buttondelay);
-                    // sendCommandWithDelay(() => { //define custom query function to update state
-                    //     updateValveData(prevState => ({
-                    //         ...prevState,
-                    //         BV: { actuated: true, state: "low" }
-                    //     }));
-                    //     console.log("Ball Valve toggled to OPEN");
-                    // }, buttondelay + 50); // Delay state update to give command time to execute
                     sendCommandWithDelay(getBallValveState, buttondelay + 50); // Query the state of the ball valve after sending the command to update our state with the response from the server
                 }
                 break;
@@ -322,23 +302,9 @@ export function PropulsionPage() {
             case "QD":
                 if (!valveDataRef.current.QD.retracted && action === 'RETRACT') {
                     sendCommandWithDelay(actuateQDRetract, buttondelay);
-                    // sendCommandWithDelay(() => { //define custom query function to update state
-                    //     updateValveData(prevState => ({
-                    //         ...prevState,
-                    //         QD: { ...prevState.QD, retracted: true }
-                    //     }));
-                    //     console.log("Quick Disconnect retracted");
-                    // }, buttondelay + 50);
                     sendCommandWithDelay(getQdState, buttondelay + 50); // Query the state of the quick disconnect after sending the command to update our state with the response from the server
                 } else if (valveDataRef.current.QD.retracted && action === 'EXTEND') {
                     sendCommandWithDelay(actuateQDExtend, buttondelay);
-                    // sendCommandWithDelay(() => { //define custom query function to update state
-                    //     updateValveData(prevState => ({
-                    //         ...prevState,
-                    //         QD: { ...prevState.QD, retracted: false }
-                    //     }));
-                    //     console.log("Quick Disconnect extended");
-                    // }, buttondelay + 50);
                     sendCommandWithDelay(getQdState, buttondelay + 50); // Query the state of the quick disconnect after sending the command to update our state with the response from the server
                 }
                 break;
@@ -366,19 +332,19 @@ export function PropulsionPage() {
 
             case "fsw_telemetry":
                 if (umbilicalDataRef.current.length > 500) { //Limit the size of the ADC data array to prevent memory issues, adjust as needed based on how much data you want to keep track of
-                    umbilicalDataRef.current.shift(); //Remove the oldest entry when we exceed the limit
+                    umbilicalDataRef.current.shift();   //Remove the oldest entry when we exceed the limit
                 }
 
-                // For testing purposes so we can simulate fill without any actual pressure readings
-                // const lastPressure = umbilicalDataRef.current.at(-1)?.telemetry.pt3 ?? 0;
+                // For testing purposes so we can simulate fill without any actual pressure readings 
+                const lastPressure = umbilicalDataRef.current.at(-1)?.telemetry.pt3 ?? 0;
 
-                // if (isFillingRef.current && !isVentingRef.current) {
-                //     data.telemetry.pt3 = lastPressure + (Math.random() * 4 + 1); // Random increase between 1-5 during fill
-                // } else if (isVentingRef.current || (valveDataRef.current.SV2.venting && valveDataRef.current.BV.actuated)) {
-                //     data.telemetry.pt3 = Math.max(0, lastPressure - (Math.random() * 15 + 10)); // Random decrease between 10-25 during vent
-                // } else {
-                //     data.telemetry.pt3 = lastPressure; // Hold when idle
-                // }
+                if (isFillingRef.current && !isVentingRef.current) {
+                    data.telemetry.pt3 = lastPressure + (Math.random() * 4 + 1); // Random increase between 1-5 during fill
+                } else if (isVentingRef.current || (valveDataRef.current.SV2.venting && valveDataRef.current.BV.actuated)) {
+                    data.telemetry.pt3 = Math.max(0, lastPressure - (Math.random() * 15 + 10)); // Random decrease between 10-25 during vent
+                } else {
+                    data.telemetry.pt3 = lastPressure; // Hold when idle
+                }
                 
                 console.log("Pressure:", new Date().toISOString(), "PSI:", data.telemetry.pt3 ?? "N/A", "SV2 Open (possible vent):", data.telemetry.sv_open ?? "N/A"); //Log pressure and venting status for testing
 
@@ -498,7 +464,7 @@ export function PropulsionPage() {
     }, [wsReady]); // Re-run effect if WebSocket connection status changes
 
     return (
-        <PropulsionContext.Provider value={{ ventTimeoutRef, confirmedVentSecondsRef, canInteractRef, buttonInteractionState, setButtonInteractionState, valveDataRef, fillUIActive, setFillUIActive, ventUIActive, setVentUIActive, isVentingRef, isFillingRef, manualVentRef, handleButtonClickRef, fillState, setFillState, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, valveData, adcDataRef: adcDataRef, telemetryDataRef: umbilicalDataRef }}>
+        <PropulsionContext.Provider value={{ hasLaunched, setHasLaunched, ventTimeoutRef, confirmedVentSecondsRef, canInteractRef, buttonInteractionState, setButtonInteractionState, valveDataRef, fillUIActive, setFillUIActive, ventUIActive, setVentUIActive, isVentingRef, isFillingRef, manualVentRef, handleButtonClickRef, fillState, setFillState, ventSeconds, setVentSeconds, confirmedVentSeconds, setConfirmedVentSeconds, valveData, adcDataRef: adcDataRef, telemetryDataRef: umbilicalDataRef }}>
             <div className={`min-h-screen bg-white ${ventUIActive ? 'cursor-wait' : ''}`}>
                 {/* Header */}
                 <Header
@@ -523,22 +489,28 @@ export function PropulsionPage() {
 
                     {/* Right Column */}
                     <div className="flex-1 flex flex-col gap-8">
-                        {/* 6 Button Grid */}
+                        {/* 6 Main Button Grid */}
                         <div className="bg-[#D9D9D9] border-[6px] border-black rounded-3xl p-5">
+                            <h2 className="text-2xl font-inter font-semibold"> Fill Station Commands:</h2>
                             <div className="grid grid-cols-2 gap-[25px]">
                                 <ButtonComponent buttonName="Solenoid Valve 1" currentState={valveData.SV1.actuated} actuationLock='LOCKED' />
                                 <ButtonComponent buttonName="Solenoid Valve 2" currentState={valveData.SV2.actuated} actuationLock='LOCKED' />
                                 <ButtonComponent buttonName="Ball Valve" currentState={valveData.BV.actuated} actuationLock='UNLOCKED' />
                                 <ButtonComponent buttonName="MAV" currentState={valveData.MAV.actuated} actuationLock='LOCKED' />
                                 <ButtonComponent buttonName="Quick Disconnect" currentState={valveData.QD.retracted} actuationLock='UNLOCKED' />
+                                <ButtonComponent buttonName="Launch Button" actuationLock='UNLOCKED' />
                             </div>
-
                         </div>
-
-
-
-                        {/* Home Assistant Tank Heaters */}
-                        <HeaterPanelComponent />
+                        {/* General System Commands */}
+                        <div className="bg-[#D9D9D9] border-[6px] border-black flex flex-col rounded-3xl p-5">
+                            <h2 className="text-2xl font-inter font-semibold"> General Purpose Commands:</h2>
+                            <div className="grid grid-cols-2 gap-[25px]">
+                                <ButtonComponent buttonName="Reset FRAM" actuationLock='UNLOCKED'  />
+                                <ButtonComponent buttonName="Wipe Flash" actuationLock='UNLOCKED'  />
+                                <ButtonComponent buttonName="Reboot FSW" actuationLock='UNLOCKED'  />
+                                <ButtonComponent buttonName="Wipe & Reboot" actuationLock='UNLOCKED'  />
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
