@@ -19,7 +19,7 @@ const REG_OUTX_L_G: u8 = 0x22;
 const WHO_AM_I_VALUE: u8 = 0x6C;
 
 const ACCEL_SCALE_2G: f32 = 9.80665 / 16384.0;    // datasheet values for 2G -- double check 
-const GYRO_SCALE_250DPS: f32 = 1.0 / 131.0;       // datasheet values for 2G -- double check 
+const GYRO_SCALE_250DPS: f32 = 8.75 / 1000.0;     // LSM6DSOX 250dps sensitivity is 8.75 mdps/LSB
 
 
 #[derive(Debug)]

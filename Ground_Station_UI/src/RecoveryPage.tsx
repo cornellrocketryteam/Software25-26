@@ -4,11 +4,12 @@ import TargetMap from './components/TargetMapComponent';
 import { useEffect, useState } from "react";
 import { useAppContext } from "./App";
 
-type BasicAction = "OPEN_PAYLOAD";
+type BasicAction = "OPEN_PAYLOAD" | "KEY_ARM" | "KEY_DISARM";
 
 export function RecoveryPage() {
     const [showConfirmation, setShowConfirmation] = useState(false);
     const [pendingAction, setPendingAction] = useState< BasicAction | null>(null);
+    const [isKeyArmed, setIsKeyArmed] = useState(false);
     const [latitudeTar1, setLatitudeTar1] = useState("");
     const [longitudeTar1, setLongitudeTar1] = useState("");
     const [latitudeTar2, setLatitudeTar2] = useState("");
@@ -25,6 +26,12 @@ export function RecoveryPage() {
         if (pendingAction !== null) {
             if(pendingAction === "OPEN_PAYLOAD"){
                 wsRef.current?.send(JSON.stringify({"command": "fsw_payload_n1"})); //Send command to extend payload, IMMEDIATELY, no checks needed.
+            } else if (pendingAction === "KEY_ARM") {
+                wsRef.current?.send(JSON.stringify({"command": "fsw_key_arm"}));
+                setIsKeyArmed(true);
+            } else if (pendingAction === "KEY_DISARM") {
+                wsRef.current?.send(JSON.stringify({"command": "fsw_key_disarm"}));
+                setIsKeyArmed(false);
             }
         }
         setShowConfirmation(false);
@@ -206,11 +213,26 @@ export function RecoveryPage() {
                         </button>
                     </div>
                 </div>
+
+                {/* Key Arm Toggle */}
+                <div className="bg-[#4A4A4A] border-[4px] border-black rounded-3xl px-6 py-4 flex items-center justify-between gap-4">
+                    <span className="font-inter font-bold text-white text-xl">
+                    Flight Software Key
+                    </span>
+                    <div className="flex gap-4">
+                        <button
+                            onClick={() => toggleAction(isKeyArmed ? "KEY_DISARM" : "KEY_ARM")}
+                            className={`${isKeyArmed ? "bg-red-500" : "bg-[#5A87FF]"} border-[3px] border-black rounded-2xl px-12 py-3 font-inter font-bold text-white text-xl hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed`}
+                        >
+                            {isKeyArmed ? "Disarm Key" : "Arm Key"}
+                        </button>
+                    </div>
+                </div>
             </div>
 
             {showConfirmation && (
                 <ConfirmationOverlay
-                    message="Are You Sure"
+                    message={`Are you sure you want to ${pendingAction === "KEY_ARM" ? "ARM the key" : pendingAction === "KEY_DISARM" ? "DISARM the key" : "open the payload"}?`}
                     onConfirm={handleConfirm}
                     onCancel={handleCancel}
                 />

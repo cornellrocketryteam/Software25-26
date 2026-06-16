@@ -756,6 +756,7 @@ impl FlightLoop {
                         self.flight_state.flight_mode = FlightMode::Standby;
                         self.flight_state.write_packet_to_fram().await;
                         log::info!("Transitioning to Standby (CFC_ARM high)");
+                        self.flight_state.start_imu_calibration();
                     }
                 }
             }

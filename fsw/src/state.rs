@@ -77,6 +77,12 @@ pub struct FlightState {
     imu_ok: bool,
     imu_fail_count: u8,
     imu_probe_count: u8,
+    pub imu_calibrating: bool,
+    imu_calibration_samples: u8,
+    imu_gyro_sum: [f32; 3],
+    imu_accel_sum: [f32; 3],
+    pub gyro_offsets: [f32; 3],
+    pub accel_rotation: [[f32; 3]; 3],
 
     // adc
     adc: Ads1015Sensor,
@@ -327,6 +333,16 @@ impl FlightState {
             imu_ok: true,
             imu_fail_count: 0,
             imu_probe_count: 0,
+            imu_calibrating: false,
+            imu_calibration_samples: 0,
+            imu_gyro_sum: [0.0; 3],
+            imu_accel_sum: [0.0; 3],
+            gyro_offsets: [0.0; 3],
+            accel_rotation: [
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ],
             adc: adc,
             arming_switch: arming_switch,
             cfc_arm: cfc_arm,
@@ -510,6 +526,33 @@ impl FlightState {
             match with_timeout(read_to, self.imu.read_into_packet(&mut self.packet)).await {
                 Ok(Ok(_)) => {
                     self.imu_fail_count = 0;
+                    if self.imu_calibrating {
+                        self.imu_accel_sum[0] += self.packet.accel_x;
+                        self.imu_accel_sum[1] += self.packet.accel_y;
+                        self.imu_accel_sum[2] += self.packet.accel_z;
+                        self.imu_gyro_sum[0] += self.packet.gyro_x;
+                        self.imu_gyro_sum[1] += self.packet.gyro_y;
+                        self.imu_gyro_sum[2] += self.packet.gyro_z;
+                        self.imu_calibration_samples += 1;
+
+                        if self.imu_calibration_samples >= 20 { // 1 second at 20Hz
+                            self.finish_imu_calibration();
+                        }
+                    } else {
+                        // Apply calibration
+                        self.packet.gyro_x -= self.gyro_offsets[0];
+                        self.packet.gyro_y -= self.gyro_offsets[1];
+                        self.packet.gyro_z -= self.gyro_offsets[2];
+
+                        let ax = self.packet.accel_x;
+                        let ay = self.packet.accel_y;
+                        let az = self.packet.accel_z;
+
+                        self.packet.accel_x = self.accel_rotation[0][0] * ax + self.accel_rotation[0][1] * ay + self.accel_rotation[0][2] * az;
+                        self.packet.accel_y = self.accel_rotation[1][0] * ax + self.accel_rotation[1][1] * ay + self.accel_rotation[1][2] * az;
+                        self.packet.accel_z = self.accel_rotation[2][0] * ax + self.accel_rotation[2][1] * ay + self.accel_rotation[2][2] * az;
+                    }
+
                     log::info!(
                         "IMU | Accel: X={:.2} Y={:.2} Z={:.2} m/s² | Gyro: X={:.2} Y={:.2} Z={:.2} °/s",
                         self.packet.accel_x,
@@ -574,6 +617,94 @@ impl FlightState {
         }
 
         log::info!("Flight mode: {:?}\n", self.flight_mode);
+    }
+
+    pub fn start_imu_calibration(&mut self) {
+        log::warn!("Starting IMU calibration (gyro zero + accel leveling to -Y)");
+        self.imu_calibrating = true;
+        self.imu_calibration_samples = 0;
+        self.imu_gyro_sum = [0.0; 3];
+        self.imu_accel_sum = [0.0; 3];
+    }
+
+    fn finish_imu_calibration(&mut self) {
+        self.imu_calibrating = false;
+        let n = self.imu_calibration_samples as f32;
+        if n == 0.0 {
+            return;
+        }
+
+        self.gyro_offsets[0] = self.imu_gyro_sum[0] / n;
+        self.gyro_offsets[1] = self.imu_gyro_sum[1] / n;
+        self.gyro_offsets[2] = self.imu_gyro_sum[2] / n;
+
+        let ax = self.imu_accel_sum[0] / n;
+        let ay = self.imu_accel_sum[1] / n;
+        let az = self.imu_accel_sum[2] / n;
+
+        // Calculate rotation matrix from measured accel vector (ax, ay, az) to ideal [0, -9.81, 0]
+        // Which is the same as rotating from (ax, ay, az) to (0, -1, 0)
+        let norm = libm::sqrtf(ax * ax + ay * ay + az * az);
+        if norm < 0.1 {
+            return; // invalid accel reading
+        }
+        let vx = ax / norm;
+        let vy = ay / norm;
+        let vz = az / norm;
+
+        // Ideal vector is B = (0, -1, 0). Measured is A = (vx, vy, vz).
+        // Axis of rotation v = A x B
+        // A x (0, -1, 0) = (vz, 0, -vx)
+        let rx = vz;
+        let ry = 0.0;
+        let rz = -vx;
+
+        // sine of angle = ||v||
+        let s = libm::sqrtf(rx * rx + ry * ry + rz * rz);
+        // cosine of angle = A . B
+        let c = -vy;
+
+        if s < 1e-5 {
+            // vectors are parallel or anti-parallel
+            if c > 0.0 {
+                // already aligned
+                self.accel_rotation = [
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                ];
+            } else {
+                // anti-aligned
+                self.accel_rotation = [
+                    [-1.0, 0.0, 0.0],
+                    [0.0, -1.0, 0.0],
+                    [0.0, 0.0, -1.0],
+                ];
+            }
+        } else {
+            // Rodrigues rotation formula: R = I + [v]_x + [v]_x^2 * (1 - c) / s^2
+            let k = (1.0 - c) / (s * s);
+            
+            self.accel_rotation = [
+                [
+                    1.0 + k * (-rz*rz - ry*ry),
+                    -rz + k * (rx*ry),
+                    ry + k * (rx*rz)
+                ],
+                [
+                    rz + k * (rx*ry),
+                    1.0 + k * (-rz*rz - rx*rx),
+                    -rx + k * (ry*rz)
+                ],
+                [
+                    -ry + k * (rx*rz),
+                    rx + k * (ry*rz),
+                    1.0 + k * (-ry*ry - rx*rx)
+                ]
+            ];
+        }
+
+        log::warn!("IMU calibration complete. Gyro offsets: {:.2}, {:.2}, {:.2}", self.gyro_offsets[0], self.gyro_offsets[1], self.gyro_offsets[2]);
     }
 
     pub async fn transmit(&mut self) {
