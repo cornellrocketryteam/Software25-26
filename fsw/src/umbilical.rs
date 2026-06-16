@@ -84,8 +84,8 @@ pub enum UmbilicalCommand {
     SetBlimsTarget { upwind_lat: f32, upwind_lon: f32, downwind_lat: f32, downwind_lon: f32 },
     TriggerDrogue, // Remove this functionality for real code
     TriggerMain,   // Remove this functionality for real code
-    //DrogueMode,    // Remove this functionality for real code
-    //MainMode,      // Remove this functionality for real code
+    DrogueMode,    // Remove this functionality for real code
+    MainMode,      // Remove this functionality for real code
     DeployAirbrakes, // Remove this functionality for real code
     RetractAirbrakes, // Remove this functionality for real code
     TriggerBLiMS, // Remove this functionality for real code
@@ -438,8 +438,8 @@ async fn usb_receiver_task(mut receiver: Receiver<'static, UsbDriver>) -> ! {
                 b"<KD>" => Some(UmbilicalCommand::KeyDisarm),
                 b"<D>" => Some(UmbilicalCommand::TriggerDrogue),
                 b"<d>" => Some(UmbilicalCommand::TriggerMain),
-                // b"<DR>" => Some(UmbilicalCommand::DrogueMode),
-                // b"<MR>" => Some(UmbilicalCommand::MainMode),
+                b"<DR>" => Some(UmbilicalCommand::DrogueMode),
+                b"<MR>" => Some(UmbilicalCommand::MainMode),
                 b"<A>" => Some(UmbilicalCommand::DeployAirbrakes),
                 b"<a>" => Some(UmbilicalCommand::RetractAirbrakes),
                 b"<B>" => Some(UmbilicalCommand::TriggerBLiMS),

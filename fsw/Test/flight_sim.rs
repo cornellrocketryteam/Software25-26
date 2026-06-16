@@ -2,6 +2,10 @@ use crate::constants::{self, TEST_ALTS_LST};
 use crate::flight_loop::{FlightLoop, LaunchStage};
 use crate::state::{FlightMode, SensorState};
 use embassy_time::{Duration, Instant, Timer};
+
+#[cfg(feature = "sim_blims")]
+#[path = "../../BLIMS/examples/blims_car_test/descent_alt_data.rs"]
+mod descent_alt_data;
 // Runs a full flight simulation (Scenario of just simple transitions between each state) on the given FlightLoop object.
 // This verifies logic transitions without needing real hardware inputs from the sensor modules.
 pub async fn simulate_flight_simple(flight_loop: &mut FlightLoop) {
@@ -611,33 +615,38 @@ pub async fn simulate_real_flight(flight_loop: &mut FlightLoop) {
 // Flash with:  cargo build --release --features sim_blims
 #[cfg(feature = "sim_blims")]
 pub async fn simulate_blims_descent(flight_loop: &mut FlightLoop) {
-    use blims::sim_data::{DESCENT_ALT_FT, DESCENT_DATA_SIZE};
+    use descent_alt_data::{DESCENT_ALT_FT, DESCENT_DATA_SIZE};
 
     log::info!("\n--- STARTING BLiMS DESCENT SIMULATION ---");
-    log::info!("Real GPS + L3 Launch 4 descent profile ({} samples @ 20 Hz)", DESCENT_DATA_SIZE);
-    log::info!("BLiMS motor active ~2000 ft → ~58 ft AGL");
+    log::info!("Send <T,upwind_lat,upwind_lon,downwind_lat,downwind_lon> to set targets.");
+    log::info!("Force MainDeployed via umbilical to begin altitude descent profile.");
 
-    // Force into MainDeployed for the whole run so check_transitions always
-    // reaches the BLiMS branch.
-    flight_loop.set_flight_mode(FlightMode::MainDeployed);
+    // Phase 1: run the normal loop until the user forces MainDeployed via umbilical.
+    loop {
+        flight_loop.flight_state.cycle_count += 1;
+        flight_loop.execute().await;
+
+        if flight_loop.flight_state.flight_mode == FlightMode::MainDeployed {
+            log::info!("MainDeployed detected — starting altitude descent profile ({} samples).", DESCENT_DATA_SIZE);
+            break;
+        }
+
+        Timer::after_millis(constants::MAIN_LOOP_DELAY_MS).await;
+    }
+
+    // Phase 2: inject the descent altitude profile through the normal execute() loop.
     flight_loop.main_chutes_deployed = true;
+    flight_loop.drogue_deployed = true;
+    flight_loop.key_armed = true;
+    flight_loop.alt_armed = true;
 
     for (i, &alt_ft) in DESCENT_ALT_FT.iter().enumerate() {
-        // 1. Read real hardware: GPS provides live lat/lon/heading/velocity for BLiMS.
-        flight_loop.flight_state.read_sensors().await;
+        // Inject simulated AGL altitude — execute() skips the AGL latch/conversion
+        // when sim_altitude_override is set, so this value reaches BLiMS directly.
+        flight_loop.sim_altitude_override = Some(alt_ft / 3.28084_f32);
 
-        // 2. Inject simulated altitude directly — feet → meters, force VALID so
-        //    check_transitions doesn't abort to Fault on a missing barometer.
-        flight_loop.flight_state.packet.altitude = alt_ft / 3.28084_f32;
-        flight_loop.flight_state.altimeter_state = SensorState::VALID;
-
-        // 3. Run check_transitions. In MainDeployed mode this calls blims.execute()
-        //    which computes the motor command and writes it to the ODrive PWM pin.
-        flight_loop.check_transitions().await;
-
-        // 4. Transmit telemetry over radio + USB and write to flash.
-        flight_loop.flight_state.transmit().await;
-        flight_loop.flight_state.save_packet_to_flash(false).await;
+        flight_loop.flight_state.cycle_count += 1;
+        flight_loop.execute().await;
 
         if i % 20 == 0 {
             let p = &flight_loop.flight_state.packet;

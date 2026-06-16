@@ -236,6 +236,7 @@ impl FlightLoop {
         self.flight_state.read_sensors().await;
 
         // 2a. Sim override: replace altitude + force altimeter VALID.
+        //     When set, the value is already AGL so skip the latch/conversion below.
         //     None in normal flight — zero cost path.
         if let Some(alt_m) = self.sim_altitude_override {
             self.flight_state.packet.altitude = alt_m;
@@ -266,29 +267,31 @@ impl FlightLoop {
             self.flight_state.cfc_arm_active = cfc_arm;
         }
 
-        // If arming_altitude was lost (power cycle into Standby or later mode),
-        // latch it now from the raw MSL reading before the AGL conversion runs,
-        // so this very cycle also shows correct AGL altitude.
-        if self.flight_state.arming_altitude == 0.0
-            && matches!(
-                self.flight_state.flight_mode,
-                FlightMode::Standby
-                    | FlightMode::Ascent
-                    | FlightMode::Coast
-                    | FlightMode::DrogueDeployed
-                    | FlightMode::MainDeployed
-            )
-            && self.flight_state.altimeter_state == SensorState::VALID
-        {
-            self.flight_state.arming_altitude = self.flight_state.packet.altitude;
-            log::info!(
-                "Arming altitude latched from MSL reading: {} m",
-                self.flight_state.arming_altitude
-            );
-        }
+        if self.sim_altitude_override.is_none() {
+            // If arming_altitude was lost (power cycle into Standby or later mode),
+            // latch it now from the raw MSL reading before the AGL conversion runs,
+            // so this very cycle also shows correct AGL altitude.
+            if self.flight_state.arming_altitude == 0.0
+                && matches!(
+                    self.flight_state.flight_mode,
+                    FlightMode::Standby
+                        | FlightMode::Ascent
+                        | FlightMode::Coast
+                        | FlightMode::DrogueDeployed
+                        | FlightMode::MainDeployed
+                )
+                && self.flight_state.altimeter_state == SensorState::VALID
+            {
+                self.flight_state.arming_altitude = self.flight_state.packet.altitude;
+                log::info!(
+                    "Arming altitude latched from MSL reading: {} m",
+                    self.flight_state.arming_altitude
+                );
+            }
 
-        // Convert raw altitude to AGL (above ground level)
-        self.flight_state.packet.altitude -= self.flight_state.arming_altitude;
+            // Convert raw altitude to AGL (above ground level)
+            self.flight_state.packet.altitude -= self.flight_state.arming_altitude;
+        }
 
         // 2b. Overpressure latch: if PT3 exceeds the threshold, open SV and
         // force Fault. Checked every cycle regardless of flight mode so tank
@@ -552,7 +555,6 @@ impl FlightLoop {
                     log::warn!("UMBILICAL CMD: Trigger Main");
                     self.flight_state.trigger_main().await;
                 }
-                /*
                 UmbilicalCommand::DrogueMode => {  // Remove only for testing
                     log::warn!("UMBILICAL CMD: Force Drogue Mode");
                     self.set_flight_mode(FlightMode::DrogueDeployed);
@@ -561,7 +563,6 @@ impl FlightLoop {
                     log::warn!("UMBILICAL CMD: Force Main Mode");
                     self.set_flight_mode(FlightMode::MainDeployed);
                 }
-                */
                 UmbilicalCommand::DeployAirbrakes => {
                     log::warn!("UMBILICAL CMD: Deploy Airbrakes (disabled — no controller)");
                 }
@@ -619,7 +620,7 @@ impl FlightLoop {
         if !self.recovery_vent_sent
             && matches!(
                 self.flight_state.flight_mode,
-                FlightMode::DrogueDeployed | FlightMode::MainDeployed | FlightMode::Fault
+                FlightMode::MainDeployed | FlightMode::Fault
             )
         {
             log::warn!("Recovery vent: opening SV on entry to {:?}", self.flight_state.flight_mode);
@@ -895,6 +896,17 @@ impl FlightLoop {
                     self.low_alt_time = None;
                 }
 
+                // Open SV 5s after drogue deploy
+                if !self.sv_open {
+                    if let Some(entry_time) = self.drogue_entry_time {
+                        if entry_time.elapsed().as_millis() as u64 >= constants::DROGUE_DEPLOY_DELAY_MS {
+                            log::warn!("Opening SV {}ms after drogue deploy", entry_time.elapsed().as_millis());
+                            self.flight_state.open_sv(0).await;
+                            self.sv_open = true;
+                        }
+                    }
+                }
+
                 // Get time since entry
                 if let Some(entry_time) = self.drogue_entry_time {
                     if entry_time.elapsed().as_millis() >= constants::MAIN_DEPLOY_DELAY_MS {
@@ -924,6 +936,10 @@ impl FlightLoop {
                     log::error!("Altimeter invalid at MainDeployed; transitioning to Fault");
                     return;
                 }
+
+                // SV stays open for the remainder of the flight.
+                self.flight_state.open_sv(0).await;
+                self.sv_open = true;
 
                 // N3: altitude < 76.2m (250ft) for 1s
                 if self.flight_state.packet.altitude < 76.2 && !self.n3_sent {
@@ -1077,13 +1093,9 @@ impl FlightLoop {
                     if sequence_now.duration_since(start).as_millis()
                         >= constants::MAV_OPEN_DURATION_MS
                     {
-                        log::info!("MAV cycle complete. Closing MAV, opening SV for rest of flight.");
+                        log::info!("MAV cycle complete. Closing MAV.");
                         self.flight_state.close_mav().await;
                         self.mav_open = false;
-
-                        // SV stays open for the remainder of the flight.
-                        self.flight_state.open_sv(0).await;
-                        self.sv_open = true;
 
                         // TRANSITION TO COAST if currently in Ascent
                         if self.flight_state.flight_mode == FlightMode::Ascent {

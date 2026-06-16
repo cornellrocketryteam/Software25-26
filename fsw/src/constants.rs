@@ -125,7 +125,9 @@ pub const PRESSURE_MAX_PA: f32 = 120_000.0;
 
 pub const ALT_SAMPLE_INTERVAL: u32 = 10;
 
-pub const MAIN_DEPLOY_DELAY_MS: u64 = 1000; // talk to R&P to find this exact number 
+pub const DROGUE_DEPLOY_DELAY_MS: u64 = 5_000; // 5 s after apogee before firing drogue + opening SV
+
+pub const MAIN_DEPLOY_DELAY_MS: u64 = 1000; // talk to R&P to find this exact number
 
 pub const MAIN_DEPLOY_ALTITUDE: f32 = 610.0; // ? find exact number
 
