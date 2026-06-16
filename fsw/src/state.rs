@@ -837,7 +837,7 @@ impl FlightState {
             crate::umbilical::print_str("Snapshot: flash not available\n");
             return;
         }
-        let to = Duration::from_millis(constants::FLASH_TIMEOUT_MS);
+        let to = Duration::from_millis(constants::SNAPSHOT_SCAN_TIMEOUT_MS);
         match with_timeout(to, self.flash.read_latest_snapshot()).await {
             Ok(Ok(Some(s))) => {
                 let mut msg = heapless::String::<160>::new();
@@ -863,7 +863,7 @@ impl FlightState {
         if !self.flash.flash_ok {
             return;
         }
-        let to = Duration::from_millis(constants::FLASH_TIMEOUT_MS);
+        let to = Duration::from_millis(constants::SNAPSHOT_RESET_TIMEOUT_MS);
         match with_timeout(to, self.flash.reset_snapshot_ring()).await {
             Ok(Ok(_)) => log::info!("Snapshot ring reset."),
             Ok(Err(e)) => log::warn!("Snapshot reset failed: {:?}", e),

@@ -1,4 +1,4 @@
-﻿// I2C Configuration
+// I2C Configuration
 
 /// I2C bus frequency in Hz (400kHz - Fast Mode)
 pub const I2C_FREQUENCY: u32 = 400_000;
@@ -101,9 +101,11 @@ pub const SNAPSHOT_LOGGING_PERIOD_MS: u64 = 200; // Snapshot ring rate: 5 Hz
 /// Per-cycle sensor read timeout (BMP390, GPS, IMU, ADC).
 pub const SENSOR_READ_TIMEOUT_MS: u64 = 30;
 /// QSPI flash op timeout (erase/program can be legitimately slow).
-pub const FLASH_TIMEOUT_MS: u64 = 200;
+pub const FLASH_TIMEOUT_MS: u64 = 500;
 /// Snapshot ring scan timeout: 1024 slots Ã— ~0.3ms/read = up to ~400ms at slow SPI speeds.
 pub const SNAPSHOT_SCAN_TIMEOUT_MS: u64 = 2_000;
+/// Snapshot ring reset timeout: 16 sectors × max 400ms/sector = up to ~6400ms.
+pub const SNAPSHOT_RESET_TIMEOUT_MS: u64 = 8_000;
 /// Full-flash wipe timeout. 14 MB / 4 KB sectors = up to 3584 sectors; W25Q128JV
 /// typical sector erase is ~45ms, max ~400ms â€” allow 5 minutes to be safe.
 pub const FLASH_WIPE_TIMEOUT_MS: u64 = 300_000;
