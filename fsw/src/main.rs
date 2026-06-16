@@ -217,7 +217,7 @@ async fn main(spawner: Spawner) {
         #[cfg(feature = "sim_real_flight")]
         {
             log::info!("Starting Real Flight Simulation...");
-            flight_loop.flight_state.wipe_flash_storage().await;
+            let _ = flight_loop.flight_state.wipe_flash_storage().await;
             flight_loop.flight_state.reset_fram().await;
 
             flight_loop.set_blims(blims);

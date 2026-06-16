@@ -527,7 +527,7 @@ impl FlightLoop {
                 }
                 UmbilicalCommand::WipeFramReboot => {
                     log::warn!("UMBILICAL CMD: Wipe Flash + FRAM and Reboot");
-                    self.flight_state.wipe_flash_storage().await;
+                    let _ = self.flight_state.wipe_flash_storage().await;
                     self.flight_state.reset_fram().await;
                     cortex_m::peripheral::SCB::sys_reset();
                 }

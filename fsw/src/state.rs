@@ -817,8 +817,9 @@ impl FlightState {
         crate::umbilical::end_dump();
     }
 
-    /// Erases all stored CSV data in the flash storage region
-    pub async fn wipe_flash_storage(&mut self) {
+    /// Erases all stored CSV data in the flash storage region.
+    /// Returns `true` only if the underlying wipe completed successfully.
+    pub async fn wipe_flash_storage(&mut self) -> bool {
         log::info!("Wiping QSPI Flash storage...");
         crate::umbilical::print_str("Wiping QSPI Flash... Please wait.\n");
         // Wiping a full 14 MB flash can take several minutes — use a dedicated timeout.
@@ -827,14 +828,17 @@ impl FlightState {
             Ok(Ok(_)) => {
                 log::info!("Flash storage wiped successfully.");
                 crate::umbilical::print_str("Flash wiped successfully.\n");
+                true
             }
             Ok(Err(e)) => {
                 log::error!("Failed to wipe flash storage: {:?}", e);
                 crate::umbilical::print_str("ERASE FAILED!\n");
+                false
             }
             Err(_) => {
                 log::error!("Flash wipe TIMEOUT");
                 crate::umbilical::print_str("ERASE TIMEOUT!\n");
+                false
             }
         }
     }
@@ -885,7 +889,7 @@ impl FlightState {
                 self.blims_wind_from_deg
             );
             self.blims_armed = true;
-            blims.enable();
+            blims.pulse_enable();
         }
 
         let alt_ft = self.packet.altitude * 3.28084_f32;
