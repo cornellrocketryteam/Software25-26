@@ -640,11 +640,17 @@ impl FlightLoop {
             self.recovery_vent_sent = true;
         }
 
-        // CFC_ARM rising edge: buzz once when arming signal goes high
+        // CFC_ARM rising edge: acknowledge arming, or reject if no wipe was done.
         let cfc_arm_now = self.flight_state.cfc_arm_active;
         if cfc_arm_now && !self.cfc_arm_prev {
             log::info!("CFC_ARM detected: arming signal received");
-            self.flight_state.buzz(2);
+            if self.flash_wiped {
+                self.flight_state.buzz(2); // arm ack
+            } else {
+                log::warn!("Arming blocked: flash not wiped");
+                crate::umbilical::print_str("Arming blocked: wipe flash first\n");
+                self.flight_state.buzz(5); // distinct reject pattern
+            }
         }
         self.cfc_arm_prev = cfc_arm_now;
 
