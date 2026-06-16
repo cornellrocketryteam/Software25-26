@@ -705,7 +705,7 @@ impl FlightLoop {
                         self.flight_state.reference_pressure
                     );
                 }
-                self.flight_state.umbilical_connected = true;
+                //self.flight_state.umbilical_connected = true;
                 if self.flight_state.umbilical_connected {
                     log::info!("Umbilical connected");
                     self.umbilical_disconnect_time = None;
@@ -777,7 +777,7 @@ impl FlightLoop {
                     log::error!("Altimeter invalid at Standby; transitioning to Fault");
                     return;
                 }
-                self.flight_state.umbilical_connected = true;
+                //self.flight_state.umbilical_connected = true;
                 if self.flight_state.umbilical_connected {
                     log::info!("Umbilical connected");
                     self.umbilical_disconnect_time = None;
