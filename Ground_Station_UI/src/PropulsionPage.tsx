@@ -2,7 +2,6 @@ import Header from "./components/HeaderComponent";
 import ButtonComponent from "./components/ButtonComponent";
 import VentButtonComponent from "./components/VentButtonComponent";
 import FillButtonComponent from "./components/FillComponent";
-import HeaterPanelComponent from "./components/HeaterPanelComponent";
 import { useEffect, useRef, useState } from "react";
 import { createContext, useContext } from "react";
 import { useAppContext } from "./App";

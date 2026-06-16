@@ -61,6 +61,7 @@ function App() {
                 heartbeatInterval = setInterval(() => {
                     if (wsRef.current?.readyState === WebSocket.OPEN) {
                         wsRef.current.send(JSON.stringify({ "command": "heartbeat" }));
+                        console.log("Sent Heartbeat");
                     }
                 }, 5000);
             };
