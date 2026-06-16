@@ -118,10 +118,7 @@ impl<'d> Blims<'d> {
             curr_time_ms: 0,
             prev_time_ms: 0,
         };
-        //hold enable high continuously so motor driver stays armed
-        b.enable_pin.set_low();
-        //embassy_time::block_for(Duration::from_millis(500));
-        //b.enable_pin.set_high();
+        // enable_pin starts LOW — caller must call enable() when ready to activate
         //neutral until first execute() call
         b.set_brakeline_diff(NEUTRAL_POS);
         b
@@ -249,11 +246,8 @@ impl<'d> Blims<'d> {
     // Motor
     // =========================================================================
 
-    /// Pulse enable low for 500 ms then high — resets/activates the ODrive.
-    /// Called automatically in `new()`; call again to re-arm after a delay.
-    pub fn pulse_enable(&mut self) {
-        self.enable_pin.set_low();
-        embassy_time::block_for(embassy_time::Duration::from_millis(500));
+    /// Assert enable HIGH — activates the ODrive motor driver.
+    pub fn enable(&mut self) {
         self.enable_pin.set_high();
     }
 
