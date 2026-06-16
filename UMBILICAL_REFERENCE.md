@@ -16,7 +16,7 @@ The flight computer accepts the following string-based commands from the ground 
 * `<H>` : Heartbeat (bumps heartbeat timestamp to maintain connection)
 * `<L>` : Launch (triggers the launch sequence if armed and in Standby)
 * `<V>` : Safe vehicle (closes MAV and SV)
-* `<KA>` / `<KD>` : Key Arm / Key Disarm (gates the Startup → Standby transition)
+* `<KA>` / `<KD>` : Key Arm / Key Disarm (sets/clears the internal `key_armed` flag)
 * `<M>` / `<m>` : Open MAV / Close MAV
 * `<S>` / `<s>` : Open SV (Solenoid Valve) / Close SV
 * `<D>` / `<d>` : Trigger Drogue / Trigger Main (manual override for recovery)
@@ -29,6 +29,7 @@ The flight computer accepts the following string-based commands from the ground 
 * `<R>` : Reboot flight computer
 * `<F>` / `<f>` : Reset FRAM / Dump FRAM
 * `<G>` / `<W>` / `<I>` : Dump Flash / Wipe Flash / Flash Info
+  * **`<W>` (Wipe Flash) must complete successfully before the board will arm from Startup → Standby.** This arming transition is driven by the physical CFC_ARM signal (not by `<KA>`); it is gated on a prior successful wipe. The wipe permission is cleared on every boot and whenever CFC_ARM goes low (Standby → Startup), so a successful wipe is required before each arming cycle.
 * `<X>` : Wipe FRAM and Reboot
 
 ### BLiMS (Steerable Parachute) Commands

@@ -40,8 +40,9 @@
 
 | Failsafe | Threshold | Trigger | Action | File |
 |---|---|---|---|---|
-| Key arm gate | — | Startup → Standby attempted | Blocked unless: key_armed=true AND umbilical connected AND altimeter VALID | `flight_loop.rs:547–559` |
-| Recovery vent | — | Entry to DrogueDeployed / MainDeployed / Fault | Opens SV once — one-shot flag prevents repeats | `flight_loop.rs:481–491` |
+| Arming gate | — | Startup → Standby attempted | Blocked unless: CFC_ARM high AND umbilical connected AND successful flash wipe (see below) AND altimeter VALID. Driven by the physical CFC_ARM signal (GPIO 41); the `<KA>`/`key_armed` flag is not part of this gate. | `flight_loop.rs:704–706` |
+| Flash-wipe arming interlock | — | CFC_ARM raised to arm (Startup → Standby) without a prior successful wipe | Transition blocked; FSW emits 5-beep buzz pattern and prints `Arming blocked: wipe flash first` over umbilical. Permission is cleared on every boot and whenever CFC_ARM drops (Standby → Startup); a fresh successful `<W>` is required before each arming. | `flight_loop.rs` |
+| Recovery vent | — | Entry to DrogueDeployed / MainDeployed / Fault | Opens SV once — one-shot flag prevents repeats | `flight_loop.rs:631–640` |
 | Invalid flight mode recovery | mode > Fault | Boot with corrupted FRAM | Defaults to Fault | `state.rs:179–184` |
 
 ### Actuators
