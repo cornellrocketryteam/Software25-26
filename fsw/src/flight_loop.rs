@@ -351,6 +351,14 @@ impl FlightLoop {
         // 4. Update actuators
         self.flight_state.update_actuators().await;
 
+        if matches!(
+            self.flight_state.flight_mode,
+            FlightMode::Ascent | FlightMode::Coast
+        ) {
+            let deployment = crate::airbrake_task::get_deployment();
+            self.flight_state.airbrake_system.set_deployment(deployment);
+        }
+
         // 5. Transmit telemetry (radio + USB umbilical binary frames)
         self.flight_state.transmit().await;
 
@@ -919,6 +927,11 @@ impl FlightLoop {
                         self.camera_deployed = true;
                         log::info!("Cameras deployed");
                         log::info!("Apogee reached at {:.2} m", self.filtered_alt[1]);
+
+                        // Retract Airbrakes at apogee
+                        self.flight_state.airbrake_system.set_deployment(0.0);
+                        log::info!("Airbrakes retracted at apogee");
+
                         // Deploy Drogue
                         self.flight_state.trigger_drogue().await;
                         self.flight_state.packet.ssa_drogue_deployed = 1;
