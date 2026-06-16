@@ -298,7 +298,32 @@ impl FlightLoop {
             self.flight_state.packet.altitude -= self.flight_state.arming_altitude;
         }
 
-        // 2b. Overpressure latch: if PT3 exceeds the threshold, open SV and
+        // 2b. Forward latest sensor data to the airbrake controller on Core 1.
+        // Signal::signal() is non-blocking and always delivers the most recent
+        // value, so the flight loop is never delayed by airbrake computation.
+        let airbrake_phase = match self.flight_state.flight_mode {
+            FlightMode::Startup | FlightMode::Standby => Some(crate::airbrake_task::AirbrakePhase::Pad),
+            FlightMode::Ascent  => Some(crate::airbrake_task::AirbrakePhase::Boost),
+            FlightMode::Coast   => Some(crate::airbrake_task::AirbrakePhase::Coast),
+            _ => None, // DrogueDeployed / MainDeployed / Fault — airbrakes inactive
+        };
+        if let Some(phase) = airbrake_phase {
+            crate::airbrake_task::AIRBRAKE_INPUT.signal(crate::airbrake_task::AirbrakeInput {
+                time:     self.flight_state.packet.timestamp,
+                altitude: self.flight_state.packet.altitude,
+                vel_d:    self.flight_state.packet.vel_d as f32,
+                reference_pressure: self.flight_state.reference_pressure,
+                gyro_x:   self.flight_state.packet.gyro_x,
+                gyro_y:   self.flight_state.packet.gyro_y,
+                gyro_z:   self.flight_state.packet.gyro_z,
+                accel_x:  self.flight_state.packet.accel_x,
+                accel_y:  self.flight_state.packet.accel_y,
+                accel_z:  self.flight_state.packet.accel_z,
+                phase,
+            });
+        }
+
+        // 2c. Overpressure latch: if PT3 exceeds the threshold, open SV and
         // force Fault. Checked every cycle regardless of flight mode so tank
         // overpressure before launch is handled the same as during flight.
         self.check_overpressure().await;

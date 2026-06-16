@@ -1,10 +1,12 @@
-//! Airbrake task stub — controller_in_rust is not linked in this build.
-//! Core 1 runs this task but does nothing; all deployment outputs stay at 0.
+//! Airbrake controller — runs on Core 1.
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
+
+use controller_in_rust_v3::airbrakes::AirbrakeSystem;
+use controller_in_rust_v3::types::{Phase, SensorInput as ControllerInput};
 
 #[derive(Clone, Copy)]
 pub enum AirbrakePhase {
@@ -16,8 +18,11 @@ pub enum AirbrakePhase {
 pub struct AirbrakeInput {
     pub time: f32,
     pub altitude: f32,
+    pub vel_d: f32,
+    pub reference_pressure: f32,
     pub gyro_x: f32,
     pub gyro_y: f32,
+    pub gyro_z: f32,
     pub accel_x: f32,
     pub accel_y: f32,
     pub accel_z: f32,
@@ -39,8 +44,32 @@ pub fn get_predicted_apogee() -> f32 {
 
 #[embassy_executor::task]
 pub async fn airbrake_core1_task() {
+    let mut system = AirbrakeSystem::new();
+
     loop {
-        let _ = AIRBRAKE_INPUT.wait().await;
-        // controller_in_rust not linked — deployment stays 0.0
+        let input = AIRBRAKE_INPUT.wait().await;
+
+        let ctrl_phase = match input.phase {
+            AirbrakePhase::Pad   => Phase::Pad,
+            AirbrakePhase::Boost => Phase::Boost,
+            AirbrakePhase::Coast => Phase::Coast,
+        };
+
+        let output = system.execute(&ControllerInput {
+            time: input.time,
+            altitude: input.altitude,
+            vel_d: input.vel_d,
+            reference_pressure: input.reference_pressure,
+            gyro_x: input.gyro_x,
+            gyro_y: input.gyro_y,
+            gyro_z: input.gyro_z,
+            accel_x: input.accel_x,
+            accel_y: input.accel_y,
+            accel_z: input.accel_z,
+            phase: ctrl_phase,
+        });
+
+        AIRBRAKE_DEPLOYMENT.store(output.deployment.to_bits(), Ordering::Release);
+        AIRBRAKE_PREDICTED_APOGEE.store(output.predicted_apogee.to_bits(), Ordering::Release);
     }
 }
