@@ -1,5 +1,4 @@
 import { useNavigate } from "react-router-dom";
-import { usePropulsion } from "../PropulsionPage";
 import type { interactionType } from "../PropulsionPage";
 import { useAppContext } from "../App";
 

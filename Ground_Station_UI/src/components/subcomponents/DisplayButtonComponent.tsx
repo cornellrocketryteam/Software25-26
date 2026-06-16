@@ -5,7 +5,7 @@ export default function DisplayButtonComponent() {
 
     // The launch button has no open/closed valve state, so in display (locked)
     // mode show a neutral grey "Standby" card instead of a misleading state.
-    if (buttonName === "Launch Button") {
+    if (buttonName === "Launch Button"|| buttonName === "Reset FRAM" || buttonName === "Wipe Flash" || buttonName === "Wipe & Reboot" || buttonName === "Reboot FSW") {
         return (
             <div className="bg-white border-[6px] border-black rounded-3xl p-4 flex flex-col items-center justify-center">
                 <p className="font-inter text-2xl mb-2">{buttonName}</p>

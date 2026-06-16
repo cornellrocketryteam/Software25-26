@@ -10,6 +10,7 @@ interface ButtonComponentProps {
     transitioning?: boolean
     showState?: boolean;
     currentState?: boolean;
+    alwaysInteractive?: boolean; // When true, render the interactive button regardless of buttonInteractionState
 }
 
 interface ButtonContextType {
@@ -37,6 +38,7 @@ const labelMap: { [key: string]: [string, string] } = {
     "Ball Valve":       ["OPEN",      "CLOSE"],
     "MAV":              ["OPEN",      "CLOSE"],
     "Quick Disconnect": ["RETRACT",      "EXTEND"],
+    
   };
   
   const stateMap: { [key: string]: [string, string] } = {
@@ -49,7 +51,7 @@ const labelMap: { [key: string]: [string, string] } = {
   
   
   
-export default function ButtonComponent({ buttonName, actuationLock, currentState = false, transitioning = false, showState = true }: ButtonComponentProps) {
+export default function ButtonComponent({ buttonName, actuationLock, currentState = false, transitioning = false, showState = true, alwaysInteractive = false }: ButtonComponentProps) {
     const {buttonInteractionState} = usePropulsion();
     const label = labelMap[buttonName] ?? ["ON", "OFF"];
     const stateLabels = stateMap[buttonName] ?? ["ON", "OFF"];
@@ -61,13 +63,13 @@ export default function ButtonComponent({ buttonName, actuationLock, currentStat
 
 
     const renderObject = () => {
-        if(buttonInteractionState === 'DISABLED') {
-            return (
-                <DisplayButtonComponent />
-            );
-        } else if(buttonInteractionState === 'ENABLED') {
+        if(alwaysInteractive || buttonInteractionState === 'ENABLED') {
             return (
                 <InteractiveButtonComponent />
+            );
+        } else if(buttonInteractionState === 'DISABLED') {
+            return (
+                <DisplayButtonComponent />
             );
         }
     };

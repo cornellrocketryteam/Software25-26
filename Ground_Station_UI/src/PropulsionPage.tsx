@@ -197,6 +197,7 @@ export function PropulsionPage() {
     const startFSWStream = { "command": "start_fsw_stream" };
     const stopFSWStream = { "command": "stop_fsw_stream" };
 
+    //Command categories for handling pending actions and state updates:
     const queryCommands = ["get_valve_state", "get_ball_valve_state", "get_qd_state"]; //Only command for state query
     const actuationCommands = ["actuate_valve", "fsw_open_mav", "fsw_close_mav", "bv_open", "bv_close"]; //Set of commands that are used to change the state of the system
 
@@ -513,27 +514,35 @@ export function PropulsionPage() {
 
                         {/* VENT BUTTON */}
                         <VentButtonComponent />
+
+                        {/* Home Assistant Tank Heaters */}
+                        <HeaterPanelComponent />
                     </div>
 
                     {/* Right Column */}
                     <div className="flex-1 flex flex-col gap-8">
-                        {/* 6 Button Grid */}
+                        {/* 6 Main Button Grid */}
                         <div className="bg-[#D9D9D9] border-[6px] border-black rounded-3xl p-5">
+                            <h2 className="text-2xl font-inter font-semibold"> Fill Station Commands:</h2>
                             <div className="grid grid-cols-2 gap-[25px]">
                                 <ButtonComponent buttonName="Solenoid Valve 1" currentState={valveData.SV1.actuated} actuationLock='LOCKED' />
                                 <ButtonComponent buttonName="Solenoid Valve 2" currentState={valveData.SV2.actuated} actuationLock='LOCKED' />
                                 <ButtonComponent buttonName="Ball Valve" currentState={valveData.BV.actuated} actuationLock='UNLOCKED' />
                                 <ButtonComponent buttonName="MAV" currentState={valveData.MAV.actuated} actuationLock='LOCKED' />
                                 <ButtonComponent buttonName="Quick Disconnect" currentState={valveData.QD.retracted} actuationLock='UNLOCKED' />
-                                <ButtonComponent buttonName="Launch Button" actuationLock='UNLOCKED' ></ButtonComponent>
+                                <ButtonComponent buttonName="Launch Button" actuationLock='UNLOCKED' />
                             </div>
-
                         </div>
-
-
-
-                        {/* Home Assistant Tank Heaters */}
-                        <HeaterPanelComponent />
+                        {/* General System Commands */}
+                        <div className="bg-[#D9D9D9] border-[6px] border-black flex flex-col rounded-3xl p-5">
+                            <h2 className="text-2xl font-inter font-semibold"> General Purpose Commands:</h2>
+                            <div className="grid grid-cols-2 gap-[25px]">
+                                <ButtonComponent buttonName="Reset FRAM" actuationLock='UNLOCKED'  />
+                                <ButtonComponent buttonName="Wipe Flash" actuationLock='UNLOCKED'  />
+                                <ButtonComponent buttonName="Reboot FSW" actuationLock='UNLOCKED'  />
+                                <ButtonComponent buttonName="Wipe & Reboot" actuationLock='UNLOCKED'  />
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
