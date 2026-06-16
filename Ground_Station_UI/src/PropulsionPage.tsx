@@ -514,9 +514,6 @@ export function PropulsionPage() {
 
                         {/* VENT BUTTON */}
                         <VentButtonComponent />
-
-                        {/* Home Assistant Tank Heaters */}
-                        <HeaterPanelComponent />
                     </div>
 
                     {/* Right Column */}
