@@ -89,10 +89,12 @@ async fn main(spawner: Spawner) {
     spawner.spawn(usb_send_task(sender).unwrap());
 
     // Input detection loop — never touches USB directly, so it never blocks.
-    let button = Input::new(p.PIN_0, Pull::Down);
-    let key = Input::new(p.PIN_1, Pull::Down);
+    let button = Input::new(p.PIN_0, Pull::Down);    // launch button
+    let key    = Input::new(p.PIN_1, Pull::Down);    // key switch (arm/disarm via edges)
+    let disarm = Input::new(p.PIN_3, Pull::Down);    // dedicated disarm button
     let mut prev_button = false;
-    let mut prev_key = false;
+    let mut prev_key    = false;
+    let mut prev_disarm = false;
 
     // Log startup over USB so the serial monitor confirms firmware is running.
     CMD_CHAN.try_send(b"DBG:ready\n").ok();
@@ -100,22 +102,27 @@ async fn main(spawner: Spawner) {
     let mut log_tick: u32 = 0;
 
     loop {
-        let btn = button.is_high();
-        let key_on = key.is_high();
+        let btn      = button.is_high();
+        let key_on   = key.is_high();
+        let disarm_on = disarm.is_high();
 
-        // Send a raw GPIO snapshot every 200 ticks (~2 s) over USB so the
-        // serial monitor shows live pin levels without flooding the channel.
+        // Send a raw GPIO snapshot every 200 ticks (~2 s) over USB.
         if log_tick % 200 == 0 {
-            let msg: &'static [u8] = match (btn, key_on) {
-                (false, false) => b"DBG:btn=0 key=0\n",
-                (true,  false) => b"DBG:btn=1 key=0\n",
-                (false, true)  => b"DBG:btn=0 key=1\n",
-                (true,  true)  => b"DBG:btn=1 key=1\n",
+            let msg: &'static [u8] = match (btn, key_on, disarm_on) {
+                (false, false, false) => b"DBG:btn=0 key=0 dis=0\n",
+                (true,  false, false) => b"DBG:btn=1 key=0 dis=0\n",
+                (false, true,  false) => b"DBG:btn=0 key=1 dis=0\n",
+                (true,  true,  false) => b"DBG:btn=1 key=1 dis=0\n",
+                (false, false, true)  => b"DBG:btn=0 key=0 dis=1\n",
+                (true,  false, true)  => b"DBG:btn=1 key=0 dis=1\n",
+                (false, true,  true)  => b"DBG:btn=0 key=1 dis=1\n",
+                (true,  true,  true)  => b"DBG:btn=1 key=1 dis=1\n",
             };
             CMD_CHAN.try_send(msg).ok();
         }
         log_tick = log_tick.wrapping_add(1);
 
+        // Launch button: send <L> on any state change (latching toggle).
         if btn != prev_button {
             CMD_CHAN.try_send(b"DBG:btn_edge\n").ok();
             CMD_CHAN.try_send(b"<L>\n").ok();
@@ -123,6 +130,7 @@ async fn main(spawner: Spawner) {
         }
         prev_button = btn;
 
+        // Key switch: rising edge → arm, falling edge → disarm.
         if key_on && !prev_key {
             CMD_CHAN.try_send(b"DBG:key_rise\n").ok();
             CMD_CHAN.try_send(b"<KA>\n").ok();
@@ -133,6 +141,14 @@ async fn main(spawner: Spawner) {
             Timer::after(Duration::from_millis(100)).await;
         }
         prev_key = key_on;
+
+        // Dedicated disarm button (PIN_3): any state change sends <KD>.
+        if disarm_on != prev_disarm {
+            CMD_CHAN.try_send(b"DBG:disarm_edge\n").ok();
+            CMD_CHAN.try_send(b"<KD>\n").ok();
+            Timer::after(Duration::from_millis(100)).await;
+        }
+        prev_disarm = disarm_on;
 
         Timer::after(Duration::from_millis(10)).await;
     }

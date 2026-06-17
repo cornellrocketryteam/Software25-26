@@ -81,7 +81,7 @@ def main():
                                 print("\n🚀 Key armed command received from Pico!")
                                 asyncio.run(send_key_armed_command())
                             if '<KD>' in line:
-                                print("\n🚀 Key disarmed command received from Pico!")
+                                print("\n🔒 Key disarm command received from Pico!")
                                 asyncio.run(send_key_disarmed_command())
                     except UnicodeDecodeError:
                         # Ignore binary garbage on the line
