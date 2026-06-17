@@ -14,7 +14,7 @@ export default function InteractiveButtonComponent() {
   const [launchStep, setLaunchStep] = useState(0);
   // Non-launch commands lock themselves locally after firing (one per button instance).
   // Only the launch button uses the shared, persisted hasLaunched from propulsion context.
-  const { handleButtonClickRef, setButtonInteractionState, hasLaunched, setHasLaunched } = usePropulsion();
+  const { handleButtonClickRef, hasLaunched } = usePropulsion();
   const { wsRef } = useAppContext();
   const { buttonName, showState, currentState, label, stateLabel, actuationLock } = useButton();
   const [openLabel, closeLabel] = label;
@@ -22,7 +22,7 @@ export default function InteractiveButtonComponent() {
   const closedState: ActuationTypeIdentifier[] = ['CLOSE', 'RETRACT']; // Define which actions correspond to "close" state
 
   const sendLaunchCommand = () => {
-    wsRef.current?.send(JSON.stringify({command: 'launch'}));
+    wsRef.current?.send(JSON.stringify({command: 'Launch'}));
     console.log('LAUNCH command sent:', new Date().toISOString());
   };
   const sendResetFramCommand = () => {

@@ -13,7 +13,7 @@ type AppContextType = {
   hasLaunched: boolean;
   setHasLaunched: (launched: boolean) => void;
 }
-export type FlightMode = "....."| 'STANDBY' | 'STARTUP';
+export type FlightMode = "....."| 'Standby' | 'Startup' | 'Ascent' | 'Coast' | 'DrogueDeployed' | 'MainDeployed' | 'Fault';
 
 export const AppContext = createContext<AppContextType | null>(null);
 
