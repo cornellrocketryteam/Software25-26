@@ -8,7 +8,7 @@ use embassy_executor::Spawner;
 use embassy_rp::gpio::{Input, Pull};
 use embassy_rp::peripherals::USB;
 use embassy_rp::usb::{Driver, InterruptHandler};
-use embassy_rp::{bind_interrupts, peripherals};
+use embassy_rp::bind_interrupts;
 use embassy_time::{Duration, Timer};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::{Builder, Config};
@@ -64,7 +64,7 @@ async fn main(spawner: Spawner) {
     spawner.spawn(usb_task(usb).unwrap());
 
     // Pin 0 for the button, pulled down.
-    let mut button = Input::new(p.PIN_0, Pull::Down);
+    let button = Input::new(p.PIN_0, Pull::Down);
     let mut prev_state = false;
 
     defmt::info!("Ready to launch!");
