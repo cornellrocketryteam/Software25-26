@@ -44,7 +44,7 @@ pub enum Error {
 ///   6..10  flight_mode
 ///  10..14  cycle_count
 ///  14..18  pressure
-///  18..22  temp
+///  18..22  arming_altitude
 ///  22..26  altitude
 ///  26..30  mav_open
 ///  30..34  sv_open
@@ -62,7 +62,7 @@ pub struct Snapshot {
     pub flight_mode: u32,
     pub cycle_count: u32,
     pub pressure: f32,
-    pub temp: f32,
+    pub arming_altitude: f32,
     pub altitude: f32,
     pub mav_open: u32,
     pub sv_open: u32,
@@ -82,7 +82,7 @@ impl Snapshot {
         b[6..10].copy_from_slice(&self.flight_mode.to_le_bytes());
         b[10..14].copy_from_slice(&self.cycle_count.to_le_bytes());
         b[14..18].copy_from_slice(&self.pressure.to_le_bytes());
-        b[18..22].copy_from_slice(&self.temp.to_le_bytes());
+        b[18..22].copy_from_slice(&self.arming_altitude.to_le_bytes());
         b[22..26].copy_from_slice(&self.altitude.to_le_bytes());
         b[26..30].copy_from_slice(&self.mav_open.to_le_bytes());
         b[30..34].copy_from_slice(&self.sv_open.to_le_bytes());
@@ -112,7 +112,7 @@ impl Snapshot {
             flight_mode: u32at(6),
             cycle_count: u32at(10),
             pressure: f32at(14),
-            temp: f32at(18),
+            arming_altitude: f32at(18),
             altitude: f32at(22),
             mav_open: u32at(26),
             sv_open: u32at(30),

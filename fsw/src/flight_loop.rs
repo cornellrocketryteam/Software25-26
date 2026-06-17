@@ -815,6 +815,8 @@ impl FlightLoop {
                 if !self.flight_state.key_armed {
                     self.flash_wiped = false;
                     self.flight_state.flight_mode = FlightMode::Startup;
+                    self.flight_state.arming_altitude = 0.0;
+                    self.alt_armed = false;
                     self.flight_state.write_packet_to_fram().await;
                     log::info!("Key low in Standby; transitioning back to Startup");
                     return;
@@ -842,6 +844,8 @@ impl FlightLoop {
                     log::info!("Transitioning to Ascent");
                 } else if !self.flight_state.key_armed{
                     self.flight_state.flight_mode = FlightMode::Startup;
+                    self.flight_state.arming_altitude = 0.0;
+                    self.alt_armed = false;
                     self.flight_state.write_packet_to_fram().await;
                     log::info!("Key not armed; Transitioning to Startup");
                 }

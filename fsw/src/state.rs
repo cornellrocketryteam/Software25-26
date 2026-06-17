@@ -196,6 +196,7 @@ impl FlightState {
         let mut stored_blims_upwind_lon   = constants::BLIMS_UPWIND_TARGET_LON;
         let mut stored_blims_downwind_lat = constants::BLIMS_DOWNWIND_TARGET_LAT;
         let mut stored_blims_downwind_lon = constants::BLIMS_DOWNWIND_TARGET_LON;
+        let mut stored_arming_altitude = 0.0f32;
         if flash_ok {
             match with_timeout(scan_to, flash.initialize_snapshot_ring()).await {
                 Ok(Ok(_)) => match with_timeout(scan_to, flash.read_latest_snapshot()).await {
@@ -210,12 +211,13 @@ impl FlightState {
                         stored_blims_upwind_lon   = snap.blims_upwind_lon;
                         stored_blims_downwind_lat = snap.blims_downwind_lat;
                         stored_blims_downwind_lon = snap.blims_downwind_lon;
+                        stored_arming_altitude = snap.arming_altitude;
                         // Restore altitude from snapshot — it's written every second and is
                         // always fresher than the full packet log for mid-flight recovery.
                         packet.altitude = snap.altitude;
                         log::info!(
-                            "Snapshot recovered: mode={:?} cycle={} alt={:.2} mav={} sv={} launch_stage={} elapsed_ms={} upwind=({:.6},{:.6}) downwind=({:.6},{:.6})",
-                            stored_mode, stored_cycle_count, snap.altitude,
+                            "Snapshot recovered: mode={:?} cycle={} alt={:.2} arm={:.2} mav={} sv={} launch_stage={} elapsed_ms={} upwind=({:.6},{:.6}) downwind=({:.6},{:.6})",
+                            stored_mode, stored_cycle_count, snap.altitude, snap.arming_altitude,
                             stored_mav_open, stored_sv_open,
                             stored_launch_stage, stored_launch_elapsed_ms,
                             stored_blims_upwind_lat, stored_blims_upwind_lon,
@@ -350,7 +352,7 @@ impl FlightState {
             arming_switch: arming_switch,
             cfc_arm: cfc_arm,
             cfc_arm_active: false,
-            arming_altitude: 0.0,
+            arming_altitude: stored_arming_altitude,
             radio: radio,
             reference_pressure: 0.0,
             ssa,
@@ -847,9 +849,9 @@ impl FlightState {
                 let _ = core::fmt::write(
                     &mut msg,
                     format_args!(
-                        "SNAP seq={} mode={} cyc={} p={:.1} t={:.2} alt={:.2} mav={} sv={} launch_stage={} elapsed_ms={}\n",
+                        "SNAP seq={} mode={} cyc={} p={:.1} arm={:.2} alt={:.2} mav={} sv={} launch_stage={} elapsed_ms={}\n",
                         s.seq, s.flight_mode, s.cycle_count,
-                        s.pressure, s.temp, s.altitude,
+                        s.pressure, s.arming_altitude, s.altitude,
                         s.mav_open, s.sv_open, s.launch_stage, s.launch_elapsed_ms
                     ),
                 );
@@ -884,7 +886,7 @@ impl FlightState {
             flight_mode: self.flight_mode as u32,
             cycle_count: self.cycle_count,
             pressure: self.packet.pressure,
-            temp: self.packet.temp,
+            arming_altitude: self.arming_altitude,
             altitude: self.packet.altitude,
             mav_open: self.packet.mav_open as u32,
             sv_open: self.packet.sv_open as u32,
