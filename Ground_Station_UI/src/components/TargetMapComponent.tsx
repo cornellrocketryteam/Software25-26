@@ -104,7 +104,7 @@ export function TargetMap({ coords, heightClass = "h-96" }: TargetMapProps) {
             >
                 <TileLayer
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    url={navigator.onLine ? "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" : "/tiles/{z}/{x}/{y}.png"}
                 />
                 {targets.map((t) => (
                     <Marker
