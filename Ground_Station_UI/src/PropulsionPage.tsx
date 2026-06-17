@@ -364,16 +364,16 @@ export function PropulsionPage() {
                 }
 
                 // For testing purposes so we can simulate fill without any actual pressure readings 
-                const lastPressure = umbilicalDataRef.current.at(-1)?.telemetry.pt3 ?? 0;
+                // const lastPressure = umbilicalDataRef.current.at(-1)?.telemetry.pt3 ?? 0;
 
-                if (isFillingRef.current && !isVentingRef.current) {
-                    data.telemetry.pt3 = lastPressure + (Math.random() * 4 + 1); // Random increase between 1-5 during fill
-                } else if (isVentingRef.current || (valveDataRef.current.SV2.venting && valveDataRef.current.BV.actuated)) {
-                    data.telemetry.pt3 = Math.max(0, lastPressure - (Math.random() * 15 + 10)); // Random decrease between 10-25 during vent
-                } else {
-                    data.telemetry.pt3 = lastPressure; // Hold when idle
-                }
-                
+                // if (isFillingRef.current && !isVentingRef.current) {
+                //     data.telemetry.pt3 = lastPressure + (Math.random() * 4 + 1); // Random increase between 1-5 during fill
+                // } else if (isVentingRef.current || (valveDataRef.current.SV2.venting && valveDataRef.current.BV.actuated)) {
+                //     data.telemetry.pt3 = Math.max(0, lastPressure - (Math.random() * 15 + 10)); // Random decrease between 10-25 during vent
+                // } else {
+                //     data.telemetry.pt3 = lastPressure; // Hold when idle
+                // }
+
                 console.log("Pressure:", new Date().toISOString(), "PSI:", data.telemetry.pt3 ?? "N/A", "SV2 Open (possible vent):", data.telemetry.sv_open ?? "N/A"); //Log pressure and venting status for testing
 
                 umbilicalDataRef.current.push(data); //Store the latest umbilical data in the ref
