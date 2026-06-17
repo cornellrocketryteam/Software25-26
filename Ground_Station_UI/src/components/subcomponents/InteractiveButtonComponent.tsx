@@ -22,23 +22,23 @@ export default function InteractiveButtonComponent() {
   const closedState: ActuationTypeIdentifier[] = ['CLOSE', 'RETRACT']; // Define which actions correspond to "close" state
 
   const sendLaunchCommand = () => {
-    wsRef.current?.send(JSON.stringify({command: 'Launch'}));
+    wsRef.current?.send(JSON.stringify({ command: 'launch' }));
     console.log('LAUNCH command sent:', new Date().toISOString());
   };
   const sendResetFramCommand = () => {
-    wsRef.current?.send(JSON.stringify({command: 'fsw_reset_fram'}));
+    wsRef.current?.send(JSON.stringify({ command: 'fsw_reset_fram' }));
     console.log('RESET FRAM command sent:', new Date().toISOString());
   };
   const sendWipeFlashCommand = () => {
-    wsRef.current?.send(JSON.stringify({command: 'fsw_wipe_flash'}));
+    wsRef.current?.send(JSON.stringify({ command: 'fsw_wipe_flash' }));
     console.log('WIPE FLASH command sent:', new Date().toISOString());
   };
   const sendRebootCommand = () => {
-    wsRef.current?.send(JSON.stringify({command: 'fsw_reboot'}));
+    wsRef.current?.send(JSON.stringify({ command: 'fsw_reboot' }));
     console.log('REBOOT command sent:', new Date().toISOString());
   };
   const sendWipeRebootCommand = () => {
-    wsRef.current?.send(JSON.stringify({command: 'fsw_wipe_fram_reboot'}));
+    wsRef.current?.send(JSON.stringify({ command: 'fsw_wipe_fram_reboot' }));
     console.log('WIPE & FLASH command sent:', new Date().toISOString());
   };
 
@@ -56,9 +56,8 @@ export default function InteractiveButtonComponent() {
           <button
             onClick={() => setLaunchStep(1)}
             disabled={isLocked}
-            className={`${
-              isLocked ? 'bg-[#9CA3AF] cursor-not-allowed' : (isLaunch ? 'bg-[#D63A1F] hover:opacity-90' : 'bg-[#5A87FF] hover:opacity-90')
-            } border-[6px] border-black rounded-2xl w-full py-4 font-inter font-bold text-3xl text-white`}
+            className={`${isLocked ? 'bg-[#9CA3AF] cursor-not-allowed' : (isLaunch ? 'bg-[#D63A1F] hover:opacity-90' : 'bg-[#5A87FF] hover:opacity-90')
+              } border-[6px] border-black rounded-2xl w-full py-4 font-inter font-bold text-3xl text-white`}
           >
             {isLaunch ? (isLocked ? 'Launched' : 'Launch') : (isLocked ? 'Command Sent' : 'Send Command')}
           </button>
@@ -105,10 +104,10 @@ export default function InteractiveButtonComponent() {
 
   const toggleAction = (action: ActuationTypeIdentifier) => {
 
-    if (((openState.includes(action) && currentState) || (closedState.includes(action) && !currentState)) 
+    if (((openState.includes(action) && currentState) || (closedState.includes(action) && !currentState))
       && actuationLock === 'LOCKED') {
       return;
-    } 
+    }
     setPendingAction(action);
     setShowConfirmation(true);
   };
@@ -130,39 +129,37 @@ export default function InteractiveButtonComponent() {
     <>
       <div className="bg-white border-[6px] border-black rounded-3xl p-4 flex flex-col items-center justify-center w-full overflow-hidden">
         <p className="font-inter text-2xl mb-2">{buttonName}</p>
-        
+
         <div className="flex gap-2">
-        <div className="flex flex-col gap-2 min-w-0 w-full">
-              <>
-                <button
-                  onClick={() => {
-                    if(buttonName === "Solenoid Valve 1" || buttonName === "Solenoid Valve 2" || buttonName === "Ball Valve" || buttonName === "MAV"){
-                      toggleAction('OPEN');
-                    } else if (buttonName === "Quick Disconnect"){
-                      toggleAction('RETRACT');
-                    }
-                  }}
-                  className={`${
-                    currentState && actuationLock === 'LOCKED' ? 'bg-[#ADC7AC]/50 cursor-not-allowed opacity-50' : 'bg-[#ADC7AC]'
+          <div className="flex flex-col gap-2 min-w-0 w-full">
+            <>
+              <button
+                onClick={() => {
+                  if (buttonName === "Solenoid Valve 1" || buttonName === "Solenoid Valve 2" || buttonName === "Ball Valve" || buttonName === "MAV") {
+                    toggleAction('OPEN');
+                  } else if (buttonName === "Quick Disconnect") {
+                    toggleAction('RETRACT');
+                  }
+                }}
+                className={`${currentState && actuationLock === 'LOCKED' ? 'bg-[#ADC7AC]/50 cursor-not-allowed opacity-50' : 'bg-[#ADC7AC]'
                   } border-[6px] border-black rounded-2xl w-full py-3 font-inter font-bold text-2xl text-white`}
-                >
-                  {openLabel}
-                </button>
-                <button
-                  onClick={() => {
-                    if(buttonName === "Solenoid Valve 1" || buttonName === "Solenoid Valve 2" || buttonName === "Ball Valve" || buttonName === "MAV"){
-                      toggleAction('CLOSE');
-                    } else if (buttonName === "Quick Disconnect"){
-                      toggleAction('EXTEND');
-                    }
-                  }}
-                  className={`${
-                    !currentState && actuationLock === 'LOCKED'? 'bg-[#E27D7D]/50 cursor-not-allowed opacity-50' : 'bg-[#E27D7D]'
+              >
+                {openLabel}
+              </button>
+              <button
+                onClick={() => {
+                  if (buttonName === "Solenoid Valve 1" || buttonName === "Solenoid Valve 2" || buttonName === "Ball Valve" || buttonName === "MAV") {
+                    toggleAction('CLOSE');
+                  } else if (buttonName === "Quick Disconnect") {
+                    toggleAction('EXTEND');
+                  }
+                }}
+                className={`${!currentState && actuationLock === 'LOCKED' ? 'bg-[#E27D7D]/50 cursor-not-allowed opacity-50' : 'bg-[#E27D7D]'
                   } border-[6px] border-black rounded-2xl w-full py-3 font-inter font-bold text-2xl text-white`}
-                >
-                  {closeLabel}
-                </button>
-              </>
+              >
+                {closeLabel}
+              </button>
+            </>
           </div>
 
           {showState && ( // Only show state indicator if showState is true - allows flexibility for buttons that don't need a state display like the backup launch button

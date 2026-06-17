@@ -3,7 +3,6 @@ import ButtonComponent from "./components/ButtonComponent";
 import VentButtonComponent from "./components/VentButtonComponent";
 import ConfirmationOverlay from "./components/ConfirmationOverlayComponent";
 import FillButtonComponent from "./components/FillComponent";
-import ConfirmationOverlay from "./components/ConfirmationOverlayComponent";
 import { useEffect, useRef, useState } from "react";
 import { createContext, useContext } from "react";
 import { useAppContext } from "./App";
@@ -149,32 +148,6 @@ export function PropulsionPage() {
     const [isKeyArmed, setIsKeyArmed] = useState(false);
     const [showKeyConfirmation, setShowKeyConfirmation] = useState(false);
     const [pendingKeyAction, setPendingKeyAction] = useState<'KEY_ARM' | 'KEY_DISARM' | null>(null);
-
-    const [isKeyArmed, setIsKeyArmed] = useState(false);
-    const [showKeyConfirmation, setShowKeyConfirmation] = useState(false);
-    const [pendingKeyAction, setPendingKeyAction] = useState<"KEY_ARM" | "KEY_DISARM" | null>(null);
-
-    const toggleKeyAction = (action: "KEY_ARM" | "KEY_DISARM") => {
-        setPendingKeyAction(action);
-        setShowKeyConfirmation(true);
-    };
-
-    const handleKeyConfirm = () => {
-        if (pendingKeyAction === "KEY_ARM") {
-            wsRef.current?.send(JSON.stringify({"command": "fsw_key_arm"}));
-            setIsKeyArmed(true);
-        } else if (pendingKeyAction === "KEY_DISARM") {
-            wsRef.current?.send(JSON.stringify({"command": "fsw_key_disarm"}));
-            setIsKeyArmed(false);
-        }
-        setShowKeyConfirmation(false);
-        setPendingKeyAction(null);
-    };
-
-    const handleKeyCancel = () => {
-        setShowKeyConfirmation(false);
-        setPendingKeyAction(null);
-    };
 
     // Track whether we've launched. Backed by sessionStorage so the locked-out launch
     // state survives a page refresh, but auto-clears when the tab closes (a new session
@@ -541,23 +514,7 @@ export function PropulsionPage() {
                         {/* VENT BUTTON */}
                         <VentButtonComponent />
 
-                        {/* Key Arm Toggle */}
-                        <div className="bg-[#D9D9D9] border-[6px] border-black rounded-3xl p-5 flex flex-col gap-4">
-                            <h2 className="text-2xl font-inter font-semibold"> Flight Software Key:</h2>
-                            <button
-                                onClick={() => toggleKeyAction(isKeyArmed ? "KEY_DISARM" : "KEY_ARM")}
-                                className={`${isKeyArmed ? "bg-red-500" : "bg-[#5A87FF]"} border-[6px] border-black rounded-2xl w-full py-4 font-inter font-bold text-3xl text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed`}
-                            >
-                                {isKeyArmed ? "Disarm Key" : "Arm Key"}
-                            </button>
-                        </div>
-                        {showKeyConfirmation && (
-                            <ConfirmationOverlay
-                                message={`Are you sure you want to ${pendingKeyAction === "KEY_ARM" ? "ARM the key" : "DISARM the key"}?`}
-                                onConfirm={handleKeyConfirm}
-                                onCancel={handleKeyCancel}
-                            />
-                        )}
+
                     </div>
 
                     {/* Right Column */}
