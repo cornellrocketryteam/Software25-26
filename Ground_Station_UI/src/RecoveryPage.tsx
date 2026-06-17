@@ -13,7 +13,9 @@ export function RecoveryPage() {
     const [longitudeTar1, setLongitudeTar1] = useState("");
     const [latitudeTar2, setLatitudeTar2] = useState("");
     const [longitudeTar2, setLongitudeTar2] = useState("");
-    const [confirmedCoords, setConfirmedCoords] = useState<{lat_1: string, lng_1: string, lat_2: string, lng_2: string} | null>(null);
+    const [latitudeTar3, setLatitudeTar3] = useState("");
+    const [longitudeTar3, setLongitudeTar3] = useState("");
+    const [confirmedCoords, setConfirmedCoords] = useState<{lat_1: string, lng_1: string, lat_2: string, lng_2: string, lat_3: string, lng_3: string} | null>(null);
     const { wsRef, wsReady, currFlightMode } = useAppContext();
 
     const toggleAction = (action: BasicAction) => {
@@ -36,8 +38,12 @@ export function RecoveryPage() {
         setPendingAction(null);
     };
 
-    const handleMessage = (_event: MessageEvent) => {
-    // Reserved for future telemetry handling on this page
+    const handleMessage = (event: MessageEvent) => {
+        //Parse JSON data here
+        const data = JSON.parse(event.data);
+        if(data.type === "fsw_telemetry"){
+            // Handle telemetry data if needed
+        }
     };
     
     const basicValidCheckForCoords = (lat: number, lng: number) => {
@@ -100,17 +106,25 @@ export function RecoveryPage() {
                         </h2>
                     </div>
                     {confirmedCoords && (
-                        <div className="flex flex-col gap-4">
-                            <h2 className="text-2xl font-inter flex gap-4">
-                                <span className="font-bold">Upwind Target:</span>
-                                <span>{`Lat: ${confirmedCoords.lat_1}°`}</span>
-                                <span>{`Lon: ${confirmedCoords.lng_1}°`}</span>
-                            </h2>
-                            <h2 className="text-2xl font-inter flex gap-4">
-                                <span className="font-bold">Downwind Target:</span>
-                                <span>{`Lat: ${confirmedCoords.lat_2}°`}</span>
-                                <span>{`Lon: ${confirmedCoords.lng_2}°`}</span>
-                            </h2>
+                        <div className="flex flex-row gap-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <h2 className="text-2xl font-inter flex gap-4">
+                                    <span className="font-bold">Upwind Target:</span>
+                                    <span>{`Lat: ${confirmedCoords.lat_1}°`}</span>
+                                    <span>{`Lon: ${confirmedCoords.lng_1}°`}</span>
+                                </h2>
+                                <h2 className="text-2xl font-inter flex gap-4">
+                                    <span className="font-bold">Downwind Target:</span>
+                                    <span>{`Lat: ${confirmedCoords.lat_2}°`}</span>
+                                    <span>{`Lon: ${confirmedCoords.lng_2}°`}</span>
+                                </h2>
+                                <h2 className="text-2xl font-inter flex gap-4">
+                                    <span className="font-bold">Current Location:</span>
+                                    <span>{`Lat: ${confirmedCoords.lat_3}°`}</span>
+                                    <span>{`Lon: ${confirmedCoords.lng_3}°`}</span>
+                                </h2>
+                            </div>
+                            
                         </div>
                     )}
                 </div>
@@ -135,7 +149,7 @@ export function RecoveryPage() {
                                 value={latitudeTar1}
                                 onChange={(e) => setLatitudeTar1(e.target.value)}
                                 onWheel={(e) => e.currentTarget.blur()}
-                                placeholder="e.g. 29.2490"
+                                placeholder="e.g. 29.2490°"
                                 className="border-[3px] border-black rounded-xl px-4 py-2 font-inter text-lg bg-white focus:outline-none"
                             />
                         </div>
@@ -146,7 +160,7 @@ export function RecoveryPage() {
                                 value={longitudeTar1}
                                 onChange={(e) => setLongitudeTar1(e.target.value)}
                                 onWheel={(e) => e.currentTarget.blur()}
-                                placeholder="e.g. -103.2500"
+                                placeholder="e.g. -103.2500°"
                                 className="border-[3px] border-black rounded-xl px-4 py-2 font-inter text-lg bg-white focus:outline-none"
                             />
                         </div>
@@ -158,7 +172,7 @@ export function RecoveryPage() {
                                 value={latitudeTar2}
                                 onChange={(e) => setLatitudeTar2(e.target.value)}
                                 onWheel={(e) => e.currentTarget.blur()}
-                                placeholder="e.g. 31.9300"
+                                placeholder="e.g. 31.9300°"
                                 className="border-[3px] border-black rounded-xl px-4 py-2 font-inter text-lg bg-white focus:outline-none"
                             />
                         </div>
@@ -169,18 +183,40 @@ export function RecoveryPage() {
                                 value={longitudeTar2}
                                 onChange={(e) => setLongitudeTar2(e.target.value)}
                                 onWheel={(e) => e.currentTarget.blur()}
-                                placeholder="e.g. -104.8700"
+                                placeholder="e.g. -104.8700°"
+                                className="border-[3px] border-black rounded-xl px-4 py-2 font-inter text-lg bg-white focus:outline-none"
+                            />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <label className="font-inter text-lg">Current Latitude</label>
+                            <input
+                                type="number"
+                                value={latitudeTar3}
+                                onChange={(e) => setLatitudeTar3(e.target.value)}
+                                onWheel={(e) => e.currentTarget.blur()}
+                                placeholder="e.g. 42.454323°"
+                                className="border-[3px] border-black rounded-xl px-4 py-2 font-inter text-lg bg-white focus:outline-none"
+                            />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <label className="font-inter text-lg">Current Longitude</label>
+                            <input
+                                type="number"
+                                value={longitudeTar3}
+                                onChange={(e) => setLongitudeTar3(e.target.value)}
+                                onWheel={(e) => e.currentTarget.blur()}
+                                placeholder="e.g. -76.475266°"
                                 className="border-[3px] border-black rounded-xl px-4 py-2 font-inter text-lg bg-white focus:outline-none"
                             />
                         </div>
                         <button
                             onClick={() => {
-                                if(!basicValidCheckForCoords(Number(latitudeTar1), Number(longitudeTar1)) || !basicValidCheckForCoords(Number(latitudeTar2), Number(longitudeTar2))) return;
+                                if(!basicValidCheckForCoords(Number(latitudeTar1), Number(longitudeTar1)) || !basicValidCheckForCoords(Number(latitudeTar2), Number(longitudeTar2)) || !basicValidCheckForCoords(Number(latitudeTar3), Number(longitudeTar3))) return;
                                 const lat_tar1 = Number(latitudeTar1);
                                 const lon_tar1 = Number(longitudeTar1);
                                 const lat_tar2 = Number(latitudeTar2);
                                 const lon_tar2 = Number(longitudeTar2);
-                                setConfirmedCoords({lat_1: latitudeTar1, lng_1: longitudeTar1, lat_2: latitudeTar2, lng_2: longitudeTar2});
+                                setConfirmedCoords({lat_1: latitudeTar1, lng_1: longitudeTar1, lat_2: latitudeTar2, lng_2: longitudeTar2, lat_3: latitudeTar3, lng_3: longitudeTar3});
                             
                                 wsRef.current?.send(JSON.stringify({ "command": "fsw_set_blims_target", lat_tar1, lon_tar1, lat_tar2, lon_tar2 }));
                             }}

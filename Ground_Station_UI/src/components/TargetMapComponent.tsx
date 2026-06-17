@@ -8,6 +8,8 @@ export type TargetCoords = {
     lng_1: string;
     lat_2: string;
     lng_2: string;
+    lat_3: string;
+    lng_3: string;
 };
 
 type ParsedTarget = {
@@ -39,9 +41,11 @@ const makeMarkerIcon = (color: string, label: string) =>
         popupAnchor: [0, -30],
     });
 
-/** Keeps the map framed around whatever targets are currently shown. */
+
+// Keeps the map framed around the confirmed targets. We key the effect off the
 function FitBounds({ targets }: { targets: ParsedTarget[] }) {
     const map = useMap();
+    const positionsKey = targets.map((t) => t.position.join(",")).join("|");
     useEffect(() => {
         if (targets.length === 0) return;
         if (targets.length === 1) {
@@ -52,7 +56,8 @@ function FitBounds({ targets }: { targets: ParsedTarget[] }) {
                 { padding: [60, 60], maxZoom: 16 }
             );
         }
-    }, [map, targets]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [map, positionsKey]);
     return null;
 }
 
@@ -63,13 +68,14 @@ type TargetMapProps = {
 };
 
 /**
- * Renders confirmed recovery target coordinates on an interactive map.
+ * Renders confirmed recovery target coordinates on an interactive map
  * Self-contained and prop-driven — it is simple to drop it into any page (or remove it) freely.
  */
 export function TargetMap({ coords, heightClass = "h-96" }: TargetMapProps) {
     const targets: ParsedTarget[] = [
-        { label: "U", lat: coords?.lat_1, lng: coords?.lng_1, color: "#5A87FF" },
-        { label: "D", lat: coords?.lat_2, lng: coords?.lng_2, color: "#FF6B5A" },
+        { label: "U", lat: coords?.lat_1, lng: coords?.lng_1, color: "#5A87FF" }, //Upwind Location
+        { label: "D", lat: coords?.lat_2, lng: coords?.lng_2, color: "#FF6B5A" }, //Downwind Location
+        { label: "B", lat: coords?.lat_3, lng: coords?.lng_3, color: "#8A9A5B" }, //Current Location
     ]
         .map(({ label, lat, lng, color }) => ({
             label,
@@ -117,9 +123,9 @@ export function TargetMap({ coords, heightClass = "h-96" }: TargetMapProps) {
                         </Popup>
                     </Marker>
                 ))}
-                {targets.length === 2 && (
+                {targets.length === 3 && (
                     <Polyline
-                        positions={targets.map((t) => t.position)}
+                        positions={[targets[0].position, targets[1].position]}
                         pathOptions={{ color: "#000", weight: 2, dashArray: "6 6" }}
                     />
                 )}
