@@ -89,6 +89,7 @@ pub enum UmbilicalCommand {
     DeployAirbrakes, // Remove this functionality for real code
     RetractAirbrakes, // Remove this functionality for real code
     TriggerBLiMS, // Remove this functionality for real code
+    FaultMode,   // Remove this functionality for real code
 }
 
 /// Command channel: receiver task pushes commands, flight loop polls them.
@@ -446,6 +447,7 @@ async fn usb_receiver_task(mut receiver: Receiver<'static, UsbDriver>) -> ! {
                 b"<A>" => Some(UmbilicalCommand::DeployAirbrakes),
                 b"<a>" => Some(UmbilicalCommand::RetractAirbrakes),
                 b"<B>" => Some(UmbilicalCommand::TriggerBLiMS),
+                b"<FU>" => Some(UmbilicalCommand::FaultMode),
                 _ => None,
             };
 

@@ -624,6 +624,10 @@ impl FlightLoop {
                     log::warn!("UMBILICAL CMD: Trigger BLiMS nudge");
                     self.trigger_blims().await;
                 }
+                UmbilicalCommand::FaultMode => {
+                    log::warn!("UMBILICAL CMD: Force Fault Mode");
+                    self.set_flight_mode(FlightMode::Fault);
+                }
             }
         }
     }
