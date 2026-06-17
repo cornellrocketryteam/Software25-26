@@ -146,7 +146,7 @@ pub const STARTUP_BUZZ_PERIOD_MS: u64 = 5_000; // periodic status buzz in Startu
 /// is considered down. Independent of `UMBILICAL_TIMEOUT_MS`, which gates the
 /// vent-on-disconnect action.
 pub const HEARTBEAT_TIMEOUT_MS: u64 = 5_000; // 5 s â€” 3 s was too tight for USB CDC jitter
-pub const MAV_OPEN_DURATION_MS: u64 =  7880; // 7.88 for LV 
+pub const MAV_OPEN_DURATION_MS: u64 =  6000; // 6.00 for LV 
 pub const LAUNCH_SV_PREVENT_MS: u64 = 2_000;  // 2 s SV open before closing
 pub const SSA_THRESHOLD_MS: u64 = 1000; // Duration to fire ematch
 

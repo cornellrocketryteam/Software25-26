@@ -6,25 +6,31 @@ import serial
 import serial.tools.list_ports
 import websockets
 
-WEBSOCKET_URI = "ws://127.0.0.1:9000"
+WEBSOCKET_URI = "ws://192.168.1.106:9000"
 
-async def send_launch_command(uri=WEBSOCKET_URI):
+async def _ws_send(uri: str, command: dict, label: str):
+    """Open a WebSocket, send one command, wait briefly for a response."""
     try:
         print(f"Connecting to {uri}...")
-        async with websockets.connect(uri) as websocket:
-            # The JSON payload matching the fill-station's Command enum
-            command = {"command": "launch"}
+        async with websockets.connect(uri, open_timeout=5) as websocket:
             await websocket.send(json.dumps(command))
-            print(f"Sent launch command to {uri} successfully!")
-            
-            # Optionally wait for a brief moment to receive a response
+            print(f"Sent {label} to {uri} successfully!")
             try:
                 response = await asyncio.wait_for(websocket.recv(), timeout=2.0)
                 print(f"Received response: {response}")
             except asyncio.TimeoutError:
-                print("No immediate response received (this is normal if no response is expected).")
+                print("No immediate response received (normal if server sends none).")
     except Exception as e:
-        print(f"Failed to send launch command: {e}")
+        print(f"Failed to send {label}: {e}")
+
+async def send_launch_command(uri=WEBSOCKET_URI):
+    await _ws_send(uri, {"command": "launch"}, "launch command")
+
+async def send_key_armed_command(uri=WEBSOCKET_URI):
+    await _ws_send(uri, {"command": "fsw_key_arm"}, "key armed command")
+
+async def send_key_disarmed_command(uri=WEBSOCKET_URI):
+    await _ws_send(uri, {"command": "fsw_key_disarm"}, "key disarmed command")
 
 def main():
     print("Looking for a connected Raspberry Pi Pico...")
@@ -32,9 +38,13 @@ def main():
     pico_port = None
     
     for p in ports:
-        # Check standard MicroPython Pico descriptors or hardware IDs
-        # 2E8A:0005 is the typical VID:PID for Raspberry Pi Pico with MicroPython
-        if "2E8A" in p.hwid or "Pico" in p.description or "Board in FS mode" in p.description:
+        # Firmware sets VID=0xC0DE, PID=0xCAFE, product="LaunchButton".
+        # Also accept the official RPi VID (0x2E8A) in case firmware changes.
+        hwid_upper = p.hwid.upper()
+        if ("C0DE" in hwid_upper or "2E8A" in hwid_upper
+                or "LaunchButton" in p.description
+                or "Pico" in p.description
+                or "Board in FS mode" in p.description):
             pico_port = p.device
             break
             
@@ -67,6 +77,12 @@ def main():
                             if '<L>' in line:
                                 print("\n🚀 Launch command received from Pico!")
                                 asyncio.run(send_launch_command())
+                            if '<KA>' in line:
+                                print("\n🚀 Key armed command received from Pico!")
+                                asyncio.run(send_key_armed_command())
+                            if '<KD>' in line:
+                                print("\n🚀 Key disarmed command received from Pico!")
+                                asyncio.run(send_key_disarmed_command())
                     except UnicodeDecodeError:
                         # Ignore binary garbage on the line
                         pass
