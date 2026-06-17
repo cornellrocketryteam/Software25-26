@@ -514,7 +514,16 @@ export function PropulsionPage() {
                         {/* VENT BUTTON */}
                         <VentButtonComponent />
 
-
+                        {/* Key Arm Toggle */}
+                        <div className="bg-[#D9D9D9] border-[6px] border-black rounded-3xl p-5 flex flex-col gap-4">
+                            <h2 className="text-2xl font-inter font-semibold"> Flight Software Key:</h2>
+                            <button
+                                onClick={() => toggleKeyAction(isKeyArmed ? "KEY_DISARM" : "KEY_ARM")}
+                                className={`${isKeyArmed ? "bg-red-500" : "bg-[#5A87FF]"} border-[6px] border-black rounded-2xl w-full py-4 font-inter font-bold text-3xl text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed`}
+                            >
+                                {isKeyArmed ? "Disarm Key" : "Arm Key"}
+                            </button>
+                        </div>
                     </div>
 
                     {/* Right Column */}
@@ -540,17 +549,6 @@ export function PropulsionPage() {
                                 <ButtonComponent buttonName="Reboot FSW" actuationLock='UNLOCKED'  />
                                 <ButtonComponent buttonName="Wipe & Reboot" actuationLock='UNLOCKED'  />
                             </div>
-                        </div>
-
-                        {/* Key Arm Toggle */}
-                        <div className="bg-[#D9D9D9] border-[6px] border-black rounded-3xl p-5 flex flex-col gap-4">
-                            <h2 className="text-2xl font-inter font-semibold"> Flight Software Key:</h2>
-                            <button
-                                onClick={() => toggleKeyAction(isKeyArmed ? "KEY_DISARM" : "KEY_ARM")}
-                                className={`${isKeyArmed ? "bg-red-500" : "bg-[#5A87FF]"} border-[6px] border-black rounded-2xl w-full py-4 font-inter font-bold text-3xl text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed`}
-                            >
-                                {isKeyArmed ? "Disarm Key" : "Arm Key"}
-                            </button>
                         </div>
                     </div>
                 </div>
