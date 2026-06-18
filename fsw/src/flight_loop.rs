@@ -1044,7 +1044,7 @@ impl FlightLoop {
                 }
 
                 // N4: any accel axis > 50 m/s²
-                if !self.n4_sent {
+                if !self.n4_sent && self.n3_sent {
                     let ax = self.flight_state.packet.accel_x;
                     let ay = self.flight_state.packet.accel_y;
                     let az = self.flight_state.packet.accel_z;
