@@ -145,7 +145,7 @@ async fn main(spawner: Spawner) {
         // Dedicated disarm button (PIN_3): any state change sends <KD>.
         if disarm_on != prev_disarm {
             CMD_CHAN.try_send(b"DBG:disarm_edge\n").ok();
-            CMD_CHAN.try_send(b"<KD>\n").ok();
+            CMD_CHAN.try_send(b"<X>\n").ok();
             Timer::after(Duration::from_millis(100)).await;
         }
         prev_disarm = disarm_on;

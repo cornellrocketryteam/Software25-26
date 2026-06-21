@@ -29,8 +29,8 @@ async def send_launch_command(uri=WEBSOCKET_URI):
 async def send_key_armed_command(uri=WEBSOCKET_URI):
     await _ws_send(uri, {"command": "fsw_key_arm"}, "key armed command")
 
-async def send_key_disarmed_command(uri=WEBSOCKET_URI):
-    await _ws_send(uri, {"command": "fsw_key_disarm"}, "key disarmed command")
+async def send_wipe_reboot_command(uri=WEBSOCKET_URI):
+    await _ws_send(uri, {"command": "fsw_wipe_fram_reboot"}, "wipe fram reboot command")
 
 def main():
     print("Looking for a connected Raspberry Pi Pico...")
@@ -80,9 +80,9 @@ def main():
                             if '<KA>' in line:
                                 print("\n🚀 Key armed command received from Pico!")
                                 asyncio.run(send_key_armed_command())
-                            if '<KD>' in line:
-                                print("\n🔒 Key disarm command received from Pico!")
-                                asyncio.run(send_key_disarmed_command())
+                            if '<X>' in line:
+                                print("\nWipe fram and reboot command received from Pico!")
+                                asyncio.run(send_wipe_reboot_command())
                     except UnicodeDecodeError:
                         # Ignore binary garbage on the line
                         pass

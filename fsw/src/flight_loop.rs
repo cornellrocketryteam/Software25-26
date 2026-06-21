@@ -926,7 +926,7 @@ impl FlightLoop {
                     self.filtered_alt[0] = avg_alt;
 
                     // Apogee detection logic
-                    if self.filtered_alt[2] != -1.0
+                    if self.filtered_alt[2] != -1.0 && self.flight_state.packet.altitude > 76.2
                         && self.filtered_alt[1] != -1.0
                         && self.filtered_alt[0] != -1.0
                         && self.filtered_alt[2] > self.filtered_alt[1]
@@ -1000,7 +1000,7 @@ impl FlightLoop {
                     if entry_time.elapsed().as_millis() >= constants::MAIN_DEPLOY_DELAY_MS {
                         // LV: deploy main below 610 m AGL. Altimeter is in meters.
                         let alt_m = self.flight_state.packet.altitude;
-                        if alt_m < constants::MAIN_DEPLOY_ALTITUDE {
+                        if alt_m < constants::MAIN_DEPLOY_ALTITUDE && alt_m > 76.2 {
                             // Deploy Main
                             self.flight_state.trigger_main().await;
                             self.flight_state.packet.ssa_main_deployed = 1;

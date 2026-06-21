@@ -46,102 +46,101 @@ const END_MARKER: &[u8]   = b"END FLASH BINARY DUMP";
 
 const FAST_TAG: u8  = 0xFA;
 const FULL_TAG: u8  = 0xFB;
-const FAST_SIZE: usize = 84;  // payload bytes (tag not included)
-const FULL_SIZE: usize = 199; // payload bytes (tag not included)
+const FAST_SIZE: usize = 92;  // payload bytes (tag not included) — mirrors FastRecord::SIZE in packet.rs
+const FULL_SIZE: usize = 193; // payload bytes (tag not included) — mirrors Packet::SIZE in packet.rs
 
-// Fast record payload offsets
+// Fast record payload offsets (mirrors FastRecord::to_bytes() in packet.rs)
 mod fast {
-    pub const MS_SINCE_BOOT:       usize = 0;   // u32
-    pub const FLIGHT_MODE:         usize = 4;   // u32
-    pub const PRESSURE:            usize = 8;   // f32
-    pub const TEMP:                usize = 12;  // f32
-    pub const ALTITUDE:            usize = 16;  // f32
-    pub const MAG_X:               usize = 20;  // f32
-    pub const MAG_Y:               usize = 24;  // f32
-    pub const MAG_Z:               usize = 28;  // f32
-    pub const ACCEL_X:             usize = 32;  // f32
-    pub const ACCEL_Y:             usize = 36;  // f32
-    pub const ACCEL_Z:             usize = 40;  // f32
-    pub const GYRO_X:              usize = 44;  // f32
-    pub const GYRO_Y:              usize = 48;  // f32
-    pub const GYRO_Z:              usize = 52;  // f32
-    pub const PT3:                 usize = 56;  // f32
-    pub const PT4:                 usize = 60;  // f32
-    pub const RTD:                 usize = 64;  // f32
-    pub const SV_OPEN:             usize = 68;  // u8
-    pub const MAV_OPEN:            usize = 69;  // u8
-    pub const SSA_DROGUE:          usize = 70;  // u8
-    pub const SSA_MAIN:            usize = 71;  // u8
-    pub const CMD_N1:              usize = 72;  // u8
-    pub const CMD_N2:              usize = 73;  // u8
-    pub const CMD_N3:              usize = 74;  // u8
-    pub const CMD_N4:              usize = 75;  // u8
-    pub const CMD_A1:              usize = 76;  // u8
-    pub const CMD_A2:              usize = 77;  // u8
-    pub const CMD_A3:              usize = 78;  // u8
-    pub const AIRBRAKE_STATE:      usize = 79;  // u8
-    pub const PREDICTED_APOGEE:    usize = 80;  // f32
+    pub const MS_SINCE_BOOT:          usize = 0;   // u32
+    pub const FLIGHT_MODE:            usize = 4;   // u32
+    pub const PRESSURE:               usize = 8;   // f32
+    pub const TEMP:                   usize = 12;  // f32
+    pub const ALTITUDE:               usize = 16;  // f32
+    pub const MAG_X:                  usize = 20;  // f32
+    pub const MAG_Y:                  usize = 24;  // f32
+    pub const MAG_Z:                  usize = 28;  // f32
+    pub const ACCEL_X:                usize = 32;  // f32
+    pub const ACCEL_Y:                usize = 36;  // f32
+    pub const ACCEL_Z:                usize = 40;  // f32
+    pub const GYRO_X:                 usize = 44;  // f32
+    pub const GYRO_Y:                 usize = 48;  // f32
+    pub const GYRO_Z:                 usize = 52;  // f32
+    pub const PT3:                    usize = 56;  // f32
+    pub const PT4:                    usize = 60;  // f32
+    pub const RTD:                    usize = 64;  // f32
+    pub const SV_OPEN:                usize = 68;  // u8
+    pub const MAV_OPEN:                usize = 69;  // u8
+    pub const SSA_DROGUE:             usize = 70;  // u8
+    pub const SSA_MAIN:               usize = 71;  // u8
+    pub const CMD_N1:                 usize = 72;  // u8
+    pub const CMD_N2:                 usize = 73;  // u8
+    pub const CMD_N3:                 usize = 74;  // u8
+    pub const CMD_N4:                 usize = 75;  // u8
+    pub const CMD_A1:                 usize = 76;  // u8
+    pub const CMD_A2:                 usize = 77;  // u8
+    pub const CMD_A3:                 usize = 78;  // u8
+    pub const AIRBRAKE_DEPLOYMENT:    usize = 79;  // f32
+    pub const PREDICTED_APOGEE:       usize = 83;  // f32
+    pub const BLIMS_BRAKELINE_DIFF:   usize = 87;  // f32
+    pub const BLIMS_PHASE_ID:         usize = 91;  // i8
 }
 
 // Full record payload offsets (mirrors Packet::to_bytes() in packet.rs)
 mod full {
-    pub const FLIGHT_MODE:         usize = 0;   // u32
-    pub const PRESSURE:            usize = 4;   // f32
-    pub const TEMP:                usize = 8;   // f32
-    pub const ALTITUDE:            usize = 12;  // f32
-    pub const LATITUDE:            usize = 16;  // f32
-    pub const LONGITUDE:           usize = 20;  // f32
-    pub const NUM_SATELLITES:      usize = 24;  // u32
-    pub const TIMESTAMP:           usize = 28;  // f32
-    pub const MAG_X:               usize = 32;  // f32
-    pub const MAG_Y:               usize = 36;  // f32
-    pub const MAG_Z:               usize = 40;  // f32
-    pub const ACCEL_X:             usize = 44;  // f32
-    pub const ACCEL_Y:             usize = 48;  // f32
-    pub const ACCEL_Z:             usize = 52;  // f32
-    pub const GYRO_X:              usize = 56;  // f32
-    pub const GYRO_Y:              usize = 60;  // f32
-    pub const GYRO_Z:              usize = 64;  // f32
-    pub const PT3:                 usize = 68;  // f32
-    pub const PT4:                 usize = 72;  // f32
-    pub const RTD:                 usize = 76;  // f32
-    pub const SV_OPEN:             usize = 80;  // u8
-    pub const MAV_OPEN:            usize = 81;  // u8
-    pub const SSA_DROGUE:          usize = 82;  // u8
-    pub const SSA_MAIN:            usize = 83;  // u8
-    pub const CMD_N1:              usize = 84;  // u8
-    pub const CMD_N2:              usize = 85;  // u8
-    pub const CMD_N3:              usize = 86;  // u8
-    pub const CMD_N4:              usize = 87;  // u8
-    pub const CMD_A1:              usize = 88;  // u8
-    pub const CMD_A2:              usize = 89;  // u8
-    pub const CMD_A3:              usize = 90;  // u8
-    pub const AIRBRAKE_STATE:      usize = 91;  // u8
-    pub const PREDICTED_APOGEE:    usize = 92;  // f32
-    pub const H_ACC:               usize = 96;  // u32
-    pub const V_ACC:               usize = 100; // u32
-    pub const VEL_N:               usize = 104; // f64
-    pub const VEL_E:               usize = 112; // f64
-    pub const VEL_D:               usize = 120; // f64
-    pub const G_SPEED:             usize = 128; // f64
-    pub const S_ACC:               usize = 136; // u32
-    pub const HEAD_ACC:            usize = 140; // u32
-    pub const FIX_TYPE:            usize = 144; // u8
-    pub const HEAD_MOT:            usize = 145; // i32
-    pub const BLIMS_MOTOR_POS:     usize = 149; // f32
-    pub const BLIMS_PHASE_ID:      usize = 153; // i8
-    pub const BLIMS_PID_P:         usize = 154; // f32
-    pub const BLIMS_PID_I:         usize = 158; // f32
-    pub const BLIMS_BEARING:       usize = 162; // f32
-    pub const BLIMS_LOITER_STEP:   usize = 166; // i8
-    pub const BLIMS_HEADING_DES:   usize = 167; // f32
-    pub const BLIMS_HEADING_ERR:   usize = 171; // f32
-    pub const BLIMS_ERR_INTEGRAL:  usize = 175; // f32
-    pub const BLIMS_DIST_TO_TGT:   usize = 179; // f32
-    pub const BLIMS_TARGET_LAT:    usize = 183; // f32
-    pub const BLIMS_TARGET_LON:    usize = 187; // f32
-    pub const BLIMS_WIND_FROM_DEG: usize = 191; // f32
-    pub const MS_SINCE_BOOT:       usize = 195; // u32
+    pub const FLIGHT_MODE:            usize = 0;   // u32
+    pub const PRESSURE:               usize = 4;   // f32
+    pub const TEMP:                   usize = 8;   // f32
+    pub const ALTITUDE:               usize = 12;  // f32
+    pub const LATITUDE:               usize = 16;  // f32
+    pub const LONGITUDE:              usize = 20;  // f32
+    pub const NUM_SATELLITES:         usize = 24;  // u32
+    pub const TIMESTAMP:              usize = 28;  // f32
+    pub const MAG_X:                  usize = 32;  // f32
+    pub const MAG_Y:                  usize = 36;  // f32
+    pub const MAG_Z:                  usize = 40;  // f32
+    pub const ACCEL_X:                usize = 44;  // f32
+    pub const ACCEL_Y:                usize = 48;  // f32
+    pub const ACCEL_Z:                usize = 52;  // f32
+    pub const GYRO_X:                 usize = 56;  // f32
+    pub const GYRO_Y:                 usize = 60;  // f32
+    pub const GYRO_Z:                 usize = 64;  // f32
+    pub const PT3:                    usize = 68;  // f32
+    pub const PT4:                    usize = 72;  // f32
+    pub const RTD:                    usize = 76;  // f32
+    pub const SV_OPEN:                usize = 80;  // u8
+    pub const MAV_OPEN:               usize = 81;  // u8
+    pub const SSA_DROGUE:             usize = 82;  // u8
+    pub const SSA_MAIN:               usize = 83;  // u8
+    pub const CMD_N1:                 usize = 84;  // u8
+    pub const CMD_N2:                 usize = 85;  // u8
+    pub const CMD_N3:                 usize = 86;  // u8
+    pub const CMD_N4:                 usize = 87;  // u8
+    pub const CMD_A1:                 usize = 88;  // u8
+    pub const CMD_A2:                 usize = 89;  // u8
+    pub const CMD_A3:                 usize = 90;  // u8
+    pub const AIRBRAKE_DEPLOYMENT:    usize = 91;  // f32
+    pub const PREDICTED_APOGEE:       usize = 95;  // f32
+    pub const H_ACC:                  usize = 99;  // u32
+    pub const V_ACC:                  usize = 103; // u32
+    pub const VEL_N:                  usize = 107; // f64
+    pub const VEL_E:                  usize = 115; // f64
+    pub const VEL_D:                  usize = 123; // f64
+    pub const G_SPEED:                usize = 131; // f64
+    pub const S_ACC:                  usize = 139; // u32
+    pub const HEAD_ACC:               usize = 143; // u32
+    pub const FIX_TYPE:               usize = 147; // u8
+    pub const HEAD_MOT:               usize = 148; // i32
+    pub const BLIMS_BRAKELINE_DIFF:   usize = 152; // f32
+    pub const BLIMS_PHASE_ID:         usize = 156; // i8
+    pub const BLIMS_PID_P:            usize = 157; // f32
+    pub const BLIMS_PID_I:            usize = 161; // f32
+    pub const BLIMS_BEARING:          usize = 165; // f32
+    pub const BLIMS_UPWIND_LAT:       usize = 169; // f32
+    pub const BLIMS_UPWIND_LON:       usize = 173; // f32
+    pub const BLIMS_DOWNWIND_LAT:     usize = 177; // f32
+    pub const BLIMS_DOWNWIND_LON:     usize = 181; // f32
+    pub const BLIMS_WIND_FROM_DEG:    usize = 185; // f32
+    pub const MS_SINCE_BOOT_CFC:      usize = 189; // u32
 }
 
 // ── Carry-forward state for GPS / BLiMS (absent in fast records) ─────────────
@@ -162,18 +161,13 @@ struct SlowFields {
     head_acc:            u32,
     fix_type:            u8,
     head_mot:            i32,
-    blims_motor_pos:     f32,
-    blims_phase_id:      i8,
     blims_pid_p:         f32,
     blims_pid_i:         f32,
     blims_bearing:       f32,
-    blims_loiter_step:   i8,
-    blims_heading_des:   f32,
-    blims_heading_err:   f32,
-    blims_err_integral:  f32,
-    blims_dist_to_tgt:   f32,
-    blims_target_lat:    f32,
-    blims_target_lon:    f32,
+    blims_upwind_lat:    f32,
+    blims_upwind_lon:    f32,
+    blims_downwind_lat:  f32,
+    blims_downwind_lon:  f32,
     blims_wind_from_deg: f32,
 }
 
@@ -192,7 +186,8 @@ fn f64le(b: &[u8], off: usize) -> f64 {
     f64::from_le_bytes(b[off..off+8].try_into().unwrap())
 }
 
-/// Emit one CSV data row from a full-record payload (199 bytes).
+/// Emit one CSV data row from a full-record payload (193 bytes).
+/// Column order mirrors Packet::CSV_HEADER in packet.rs exactly.
 fn csv_from_full(p: &[u8], slow: &mut SlowFields) -> String {
     slow.latitude            = f32le(p, full::LATITUDE);
     slow.longitude           = f32le(p, full::LONGITUDE);
@@ -208,22 +203,17 @@ fn csv_from_full(p: &[u8], slow: &mut SlowFields) -> String {
     slow.head_acc            = u32le(p, full::HEAD_ACC);
     slow.fix_type            = p[full::FIX_TYPE];
     slow.head_mot            = i32le(p, full::HEAD_MOT);
-    slow.blims_motor_pos     = f32le(p, full::BLIMS_MOTOR_POS);
-    slow.blims_phase_id      = p[full::BLIMS_PHASE_ID] as i8;
     slow.blims_pid_p         = f32le(p, full::BLIMS_PID_P);
     slow.blims_pid_i         = f32le(p, full::BLIMS_PID_I);
     slow.blims_bearing       = f32le(p, full::BLIMS_BEARING);
-    slow.blims_loiter_step   = p[full::BLIMS_LOITER_STEP] as i8;
-    slow.blims_heading_des   = f32le(p, full::BLIMS_HEADING_DES);
-    slow.blims_heading_err   = f32le(p, full::BLIMS_HEADING_ERR);
-    slow.blims_err_integral  = f32le(p, full::BLIMS_ERR_INTEGRAL);
-    slow.blims_dist_to_tgt   = f32le(p, full::BLIMS_DIST_TO_TGT);
-    slow.blims_target_lat    = f32le(p, full::BLIMS_TARGET_LAT);
-    slow.blims_target_lon    = f32le(p, full::BLIMS_TARGET_LON);
+    slow.blims_upwind_lat    = f32le(p, full::BLIMS_UPWIND_LAT);
+    slow.blims_upwind_lon    = f32le(p, full::BLIMS_UPWIND_LON);
+    slow.blims_downwind_lat  = f32le(p, full::BLIMS_DOWNWIND_LAT);
+    slow.blims_downwind_lon  = f32le(p, full::BLIMS_DOWNWIND_LON);
     slow.blims_wind_from_deg = f32le(p, full::BLIMS_WIND_FROM_DEG);
 
     format!(
-        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
+        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
         u32le(p, full::FLIGHT_MODE),
         f32le(p, full::PRESSURE),
         f32le(p, full::TEMP),
@@ -255,7 +245,7 @@ fn csv_from_full(p: &[u8], slow: &mut SlowFields) -> String {
         p[full::CMD_A1],
         p[full::CMD_A2],
         p[full::CMD_A3],
-        p[full::AIRBRAKE_STATE],
+        f32le(p, full::AIRBRAKE_DEPLOYMENT),
         f32le(p, full::PREDICTED_APOGEE),
         slow.h_acc,
         slow.v_acc,
@@ -267,28 +257,25 @@ fn csv_from_full(p: &[u8], slow: &mut SlowFields) -> String {
         slow.head_acc,
         slow.fix_type,
         slow.head_mot,
-        slow.blims_motor_pos,
-        slow.blims_phase_id,
+        f32le(p, full::BLIMS_BRAKELINE_DIFF),
+        p[full::BLIMS_PHASE_ID] as i8,
         slow.blims_pid_p,
         slow.blims_pid_i,
         slow.blims_bearing,
-        slow.blims_loiter_step,
-        slow.blims_heading_des,
-        slow.blims_heading_err,
-        slow.blims_err_integral,
-        slow.blims_dist_to_tgt,
-        slow.blims_target_lat,
-        slow.blims_target_lon,
+        slow.blims_upwind_lat,
+        slow.blims_upwind_lon,
+        slow.blims_downwind_lat,
+        slow.blims_downwind_lon,
         slow.blims_wind_from_deg,
-        u32le(p, full::MS_SINCE_BOOT),
+        u32le(p, full::MS_SINCE_BOOT_CFC),
     )
 }
 
-/// Emit one CSV data row from a fast-record payload (84 bytes), filling
-/// GPS / BLiMS columns from carry-forward `slow`.
+/// Emit one CSV data row from a fast-record payload (92 bytes), filling
+/// GPS / BLiMS-config columns (absent in fast records) from carry-forward `slow`.
 fn csv_from_fast(p: &[u8], slow: &SlowFields) -> String {
     format!(
-        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
+        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
         u32le(p, fast::FLIGHT_MODE),
         f32le(p, fast::PRESSURE),
         f32le(p, fast::TEMP),
@@ -320,7 +307,7 @@ fn csv_from_fast(p: &[u8], slow: &SlowFields) -> String {
         p[fast::CMD_A1],
         p[fast::CMD_A2],
         p[fast::CMD_A3],
-        p[fast::AIRBRAKE_STATE],
+        f32le(p, fast::AIRBRAKE_DEPLOYMENT),
         f32le(p, fast::PREDICTED_APOGEE),
         slow.h_acc,
         slow.v_acc,
@@ -332,18 +319,15 @@ fn csv_from_fast(p: &[u8], slow: &SlowFields) -> String {
         slow.head_acc,
         slow.fix_type,
         slow.head_mot,
-        slow.blims_motor_pos,
-        slow.blims_phase_id,
+        f32le(p, fast::BLIMS_BRAKELINE_DIFF),
+        p[fast::BLIMS_PHASE_ID] as i8,
         slow.blims_pid_p,
         slow.blims_pid_i,
         slow.blims_bearing,
-        slow.blims_loiter_step,
-        slow.blims_heading_des,
-        slow.blims_heading_err,
-        slow.blims_err_integral,
-        slow.blims_dist_to_tgt,
-        slow.blims_target_lat,
-        slow.blims_target_lon,
+        slow.blims_upwind_lat,
+        slow.blims_upwind_lon,
+        slow.blims_downwind_lat,
+        slow.blims_downwind_lon,
         slow.blims_wind_from_deg,
         u32le(p, fast::MS_SINCE_BOOT),
     )
@@ -623,7 +607,7 @@ fn main() {
     });
     let mut writer = BufWriter::new(file);
 
-    // Header row (matches Packet::CSV_HEADER in packet.rs)
+    // Header row (matches Packet::CSV_HEADER in packet.rs exactly)
     writeln!(writer,
         "flight_mode,pressure,temp,altitude,latitude,longitude,num_satellites,timestamp,\
          mag_x,mag_y,mag_z,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,\
@@ -631,10 +615,9 @@ fn main() {
          cmd_n1,cmd_n2,cmd_n3,cmd_n4,cmd_a1,cmd_a2,cmd_a3,\
          airbrake_deployment,predicted_apogee,h_acc,v_acc,\
          vel_n,vel_e,vel_d,g_speed,s_acc,head_acc,fix_type,head_mot,\
-         blims_motor_position,blims_phase_id,blims_pid_p,blims_pid_i,blims_bearing,\
-         blims_loiter_step,blims_heading_des,blims_heading_error,blims_error_integral,\
-         blims_dist_to_target_m,blims_target_lat,blims_target_lon,blims_wind_from_deg,\
-         ms_since_boot_cfc"
+         blims_brakeline_diff,blims_phase_id,blims_pid_p,blims_pid_i,blims_bearing,\
+         blims_upwind_lat,blims_upwind_lon,blims_downwind_lat,blims_downwind_lon,\
+         blims_wind_from_deg,ms_since_boot_cfc"
     ).expect("Failed to write header");
 
     for row in &csv_rows {
