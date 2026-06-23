@@ -64,6 +64,10 @@ pub struct FlightState {
     // altimeter
     altimeter: Bmp390Sensor<'static>,
     pub altimeter_state: SensorState,
+    /// Consecutive failed altimeter reads. The altimeter is only declared INVALID
+    /// after ALTIMETER_FAIL_THRESHOLD failures in a row, so a single SPI glitch
+    /// can't fault the flight. Reset to 0 on any successful read.
+    altimeter_fail_count: u8,
     pub reference_pressure: f32,
 
     // gps
@@ -330,6 +334,7 @@ impl FlightState {
             umbilical_connected: false,
             altimeter: altimeter,
             altimeter_state: altimeter_init,
+            altimeter_fail_count: 0,
             gps: gps,
             gps_ok,
             gps_fail_count: 0,
@@ -452,6 +457,7 @@ impl FlightState {
         // Read altimeter and update packet
         match with_timeout(read_to, self.altimeter.read_into_packet(&mut self.packet)).await {
             Ok(Ok(_)) => {
+                self.altimeter_fail_count = 0;
                 self.altimeter_state = SensorState::VALID;
                 log::info!(
                     "BMP | Pressure = {:.2} Pa, Temp = {:.2} °C, Alt = {:.2} m",
@@ -460,13 +466,29 @@ impl FlightState {
                     self.packet.altitude
                 );
             }
+            // A single failed read does not flip the altimeter to INVALID — that would
+            // fault the flight on one SPI glitch. Only declare INVALID after
+            // ALTIMETER_FAIL_THRESHOLD consecutive failures; until then the previous
+            // (VALID) state is held so the flight loop keeps using the last good data.
             Ok(Err(e)) => {
-                self.altimeter_state = SensorState::INVALID;
-                log::error!("Failed to read BMP390: {:?}", e);
+                self.altimeter_fail_count = self.altimeter_fail_count.saturating_add(1);
+                log::error!(
+                    "Failed to read BMP390 ({}/{}): {:?}",
+                    self.altimeter_fail_count, constants::ALTIMETER_FAIL_THRESHOLD, e
+                );
+                if self.altimeter_fail_count >= constants::ALTIMETER_FAIL_THRESHOLD {
+                    self.altimeter_state = SensorState::INVALID;
+                }
             }
             Err(_) => {
-                self.altimeter_state = SensorState::INVALID;
-                log::error!("BMP390 read TIMEOUT");
+                self.altimeter_fail_count = self.altimeter_fail_count.saturating_add(1);
+                log::error!(
+                    "BMP390 read TIMEOUT ({}/{})",
+                    self.altimeter_fail_count, constants::ALTIMETER_FAIL_THRESHOLD
+                );
+                if self.altimeter_fail_count >= constants::ALTIMETER_FAIL_THRESHOLD {
+                    self.altimeter_state = SensorState::INVALID;
+                }
             }
         }
 

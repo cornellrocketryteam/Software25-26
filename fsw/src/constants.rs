@@ -121,9 +121,21 @@ pub const USB_LOGGER_BUFFER_SIZE: usize = 4096;
 pub const ARMING_ALTITUDE: f32 = 100.0; // Altitude in meters to arm parachutes (Placeholder)
 
 // Pressure Validity Thresholds (Pa)
-// 80 kPa (~2000m) to 120 kPa (~ -1400m) covers reasonable ground operation range
-pub const PRESSURE_MIN_PA: f32 = 80_000.0;
+// Intentionally very loose: a healthy BMP390 is now confirmed by its CHIP_ID
+// (0x60) on every read (see bmp390.rs), so this range only has to reject gross
+// nonsense — it is NOT the disconnect detector. The floor was previously 80 kPa
+// (~2000 m ASL), which a real flight crosses on the way up and which faulted the
+// 2026 IREC flight at ~3500 ft AGL. 1 kPa ≈ 25,900 m ASL (~82,000 ft AGL), far
+// above any flight we will ever make, so real flight pressure can never fall
+// below it; the ceiling of 120 kPa (~ -1400 m ASL) is above the world-record
+// sea-level high (~108.4 kPa).
+pub const PRESSURE_MIN_PA: f32 = 1_000.0;
 pub const PRESSURE_MAX_PA: f32 = 120_000.0;
+
+// Consecutive failed altimeter reads required before the altimeter is declared
+// INVALID (which forces Fault in flight). Debounces single-sample SPI glitches
+// so one bad read can't end a flight. Mirrors the overpressure 3-sample latch.
+pub const ALTIMETER_FAIL_THRESHOLD: u8 = 3;
 
 pub const ALT_SAMPLE_INTERVAL: u32 = 10;
 

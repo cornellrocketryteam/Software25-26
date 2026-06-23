@@ -19,9 +19,11 @@
 |---|---|---|---|---|
 | Sensor init timeout | 500 ms per sensor | BMP390 / GPS / IMU / ADC fails to init | Mark sensor unavailable, boot continues | `state.rs:196–245`, `constants.rs:92` |
 | Sensor read timeout | 30 ms per cycle | Per-cycle sensor read hangs | Mark reading INVALID, flight loop continues | `state.rs:357–435`, `constants.rs:85` |
-| Pressure bounds check | 80,000 – 120,000 Pa | Altimeter reading outside range | Reject reading entirely, skip altitude calc | `bmp390.rs:60`, `constants.rs:104–105` |
-| Altimeter validity guard (Startup) | Any | Altimeter = INVALID at Startup | Force transition to Fault immediately | `flight_loop.rs:539–545` |
-| Altimeter validity guard (Standby) | Any | Altimeter becomes INVALID while armed | Force transition to Fault immediately | `flight_loop.rs:568–575` |
+| BMP390 disconnect detection | CHIP_ID ≠ 0x60 | Every altimeter read verifies CHIP_ID (0x00); a disconnected/floating SPI bus reads 0xFF or 0x00 | Reject reading (`NotConnected`) — deterministic disconnect detector, replaces relying on the pressure range | `bmp390.rs` (`read_into_packet`) |
+| Pressure bounds check | 1,000 – 120,000 Pa | Altimeter pressure outside range | Reject reading entirely — **loose sanity backstop only**; floor (1 kPa ≈ 82,000 ft AGL) sits far above any reachable altitude so real flight pressure is never rejected. Disconnect is handled by the CHIP_ID check above, not this range. | `bmp390.rs`, `constants.rs:125–126` |
+| Altimeter failure debounce | 3 consecutive failed reads | Read errors / timeouts / CHIP_ID mismatch | Altimeter held VALID (last good data) until 3 failures in a row, then declared INVALID — one SPI glitch can't fault the flight | `state.rs` (`read_sensors`), `constants.rs:ALTIMETER_FAIL_THRESHOLD` |
+| Altimeter validity guard (Startup) | Any | Altimeter = INVALID at Startup (after debounce) | Force transition to Fault immediately | `flight_loop.rs` (Startup arm) |
+| Altimeter validity guard (Standby) | Any | Altimeter becomes INVALID while armed (after debounce) | Force transition to Fault immediately | `flight_loop.rs` (Standby arm) |
 
 ### Pressure / Overpressure
 
