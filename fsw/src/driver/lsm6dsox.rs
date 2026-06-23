@@ -18,8 +18,12 @@ const REG_OUTX_L_G: u8 = 0x22;
 
 const WHO_AM_I_VALUE: u8 = 0x6C;
 
-const ACCEL_SCALE_2G: f32 = 9.80665 / 16384.0;    // datasheet values for 2G -- double check 
-const GYRO_SCALE_250DPS: f32 = 8.75 / 1000.0;     // LSM6DSOX 250dps sensitivity is 8.75 mdps/LSB
+// Accel: ±16g range. LSM6DSOX ±16g sensitivity is 0.488 mg/LSB = 2048 LSB/g.
+// ±2g saturated during boost (rocket pulls ~11g), so we must use the full ±16g range.
+const ACCEL_SCALE_16G: f32 = 9.80665 / 2048.0;    // m/s² per LSB at ±16g
+// Gyro: ±2000dps range. LSM6DSOX ±2000dps sensitivity is 70 mdps/LSB.
+// ±250dps saturated during high-roll boost, so we must use the full ±2000dps range.
+const GYRO_SCALE_2000DPS: f32 = 70.0 / 1000.0;    // °/s per LSB at ±2000dps
 
 
 #[derive(Debug)]
@@ -69,10 +73,10 @@ impl Lsm6dsoxSensor {
             return Err(Lsm6dsoxError::InvalidDeviceId(who_am_i));
         }
 
-        // Configure accel: 416 Hz, ±2g
-        self.write_register(REG_CTRL1_XL, 0x60).await?;
-        // Configure gyro: 416 Hz, 250 dps
-        self.write_register(REG_CTRL2_G, 0x60).await?;
+        // Configure accel: 416 Hz, ±16g (CTRL1_XL: ODR_XL=0110, FS_XL=01)
+        self.write_register(REG_CTRL1_XL, 0x64).await?;
+        // Configure gyro: 416 Hz, ±2000 dps (CTRL2_G: ODR_G=0110, FS_G=11)
+        self.write_register(REG_CTRL2_G, 0x6C).await?;
         // BDU enable (block data update)
         self.write_register(REG_CTRL3_C, 0x04).await?;
         Ok(())
@@ -122,13 +126,13 @@ impl Lsm6dsoxSensor {
         let accel_y_raw = i16::from_le_bytes([data[8], data[9]]);
         let accel_z_raw = i16::from_le_bytes([data[10], data[11]]);
 
-        packet.accel_x = accel_x_raw as f32 * ACCEL_SCALE_2G;
-        packet.accel_y = accel_y_raw as f32 * ACCEL_SCALE_2G;
-        packet.accel_z = accel_z_raw as f32 * ACCEL_SCALE_2G;
+        packet.accel_x = accel_x_raw as f32 * ACCEL_SCALE_16G;
+        packet.accel_y = accel_y_raw as f32 * ACCEL_SCALE_16G;
+        packet.accel_z = accel_z_raw as f32 * ACCEL_SCALE_16G;
 
-        packet.gyro_x = gyro_x_raw as f32 * GYRO_SCALE_250DPS;
-        packet.gyro_y = gyro_y_raw as f32 * GYRO_SCALE_250DPS;
-        packet.gyro_z = gyro_z_raw as f32 * GYRO_SCALE_250DPS;
+        packet.gyro_x = gyro_x_raw as f32 * GYRO_SCALE_2000DPS;
+        packet.gyro_y = gyro_y_raw as f32 * GYRO_SCALE_2000DPS;
+        packet.gyro_z = gyro_z_raw as f32 * GYRO_SCALE_2000DPS;
 
         Ok(())
     }
