@@ -932,6 +932,18 @@ impl FlightLoop {
                         && self.filtered_alt[2] > self.filtered_alt[1]
                         && self.filtered_alt[1] > self.filtered_alt[0]
                     {
+                        // Safety: by apogee the umbilical must be physically gone.
+                        // If it still reads connected the flight state is untrustworthy
+                        // (rocket never left the pad, or a comms fault) — fault instead of
+                        // deploying drogue.
+                        if self.flight_state.umbilical_connected {
+                            log::error!(
+                                "Umbilical still connected at apogee; faulting instead of deploying drogue"
+                            );
+                            self.flight_state.flight_mode = FlightMode::Fault;
+                            self.flight_state.write_packet_to_fram().await;
+                            return;
+                        }
                         self.camera_deployed = true;
                         log::info!("Cameras deployed");
                         log::info!("Apogee reached at {:.2} m", self.filtered_alt[1]);
@@ -1001,6 +1013,17 @@ impl FlightLoop {
                         // LV: deploy main below 610 m AGL. Altimeter is in meters.
                         let alt_m = self.flight_state.packet.altitude;
                         if alt_m < constants::MAIN_DEPLOY_ALTITUDE && alt_m > 76.2 {
+                            // Safety: by main-deploy altitude the umbilical must be
+                            // physically gone. If it still reads connected the flight
+                            // state is untrustworthy — fault instead of deploying main.
+                            if self.flight_state.umbilical_connected {
+                                log::error!(
+                                    "Umbilical still connected at main-deploy altitude; faulting instead of deploying main"
+                                );
+                                self.flight_state.flight_mode = FlightMode::Fault;
+                                self.flight_state.write_packet_to_fram().await;
+                                return;
+                            }
                             // Deploy Main
                             self.flight_state.trigger_main().await;
                             self.flight_state.packet.ssa_main_deployed = 1;
@@ -1185,10 +1208,18 @@ impl FlightLoop {
                         self.flight_state.close_mav().await;
                         self.mav_open = false;
 
-                        // TRANSITION TO COAST if currently in Ascent
+                        // TRANSITION TO COAST if currently in Ascent.
+                        // Safety: the umbilical must be physically gone by now (it rips
+                        // away at liftoff, well before the MAV cycle completes). If it
+                        // still reads connected, fault instead of coasting.
                         if self.flight_state.flight_mode == FlightMode::Ascent {
-                            log::warn!("MAV closed; Transitioning from Ascent to Coast.");
-                            self.flight_state.flight_mode = FlightMode::Coast;
+                            if self.flight_state.umbilical_connected {
+                                log::error!("Umbilical still connected at Ascent→Coast; faulting instead of coasting.");
+                                self.flight_state.flight_mode = FlightMode::Fault;
+                            } else {
+                                log::warn!("MAV closed; Transitioning from Ascent to Coast.");
+                                self.flight_state.flight_mode = FlightMode::Coast;
+                            }
                             self.flight_state.write_packet_to_fram().await;
                         }
 
@@ -1200,9 +1231,15 @@ impl FlightLoop {
             LaunchStage::Done => {
                 // Handles recovery: if we rebooted mid-sequence and restored Done,
                 // push to Coast on the first iteration rather than waiting forever.
+                // Same umbilical guard as the normal Ascent→Coast path.
                 if self.flight_state.flight_mode == FlightMode::Ascent {
-                    log::warn!("Launch sequence Done on recovery; transitioning Ascent → Coast.");
-                    self.flight_state.flight_mode = FlightMode::Coast;
+                    if self.flight_state.umbilical_connected {
+                        log::error!("Umbilical still connected at Ascent→Coast (recovery); faulting instead of coasting.");
+                        self.flight_state.flight_mode = FlightMode::Fault;
+                    } else {
+                        log::warn!("Launch sequence Done on recovery; transitioning Ascent → Coast.");
+                        self.flight_state.flight_mode = FlightMode::Coast;
+                    }
                     self.flight_state.write_packet_to_fram().await;
                 }
             }
