@@ -46,4 +46,11 @@
 			AM64X_IOPAD(0x02a8, PIN_OUTPUT|PIN_DRIVE_STRENGTH_NOMINAL, 0) /* (E19) USB0_DRVVBUS */
 		>;
 	};
+	/* PRU header pins. Paste configured lines from TI SysConfig here
+	 * (skip the "Pin not configured" entries). */
+	pruheader_pins_default: pruheader-default-pins {
+		pinctrl-single,pins = <
+			AM64X_IOPAD(0x0164, PIN_DEBOUNCE_DISABLE|PIN_INPUT|PIN_DRIVE_STRENGTH_NOMINAL|PIN_SCMITT_TRIGGER_ENABLE, 7) /* (R4) PRG0_PRU0_GPO1.GPIO1_1 */
+		>;
+	};
 };

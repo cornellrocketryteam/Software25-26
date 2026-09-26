@@ -21,7 +21,7 @@
 
 &main_pmx0 {
     pinctrl-names = "default";
-    pinctrl-0 = <&allgpio0_pins_default &allgpio1_pins_default>;
+    pinctrl-0 = <&allgpio0_pins_default &allgpio1_pins_default &pruheader_pins_default>;
 };
 
 /* Disable peripherals that conflict with our GPIO usages */

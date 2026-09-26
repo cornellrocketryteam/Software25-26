@@ -23,17 +23,21 @@
 #define PIN_INPUT_PULLUP    0x00060000
 #define PIN_INPUT_PULLDOWN  0x00040000
 
-#define PIN_DEBOUNCE_DISABLE	(0 << DEBOUNCE_SHIFT)
-#define PIN_DEBOUNCE_CONF1	(1 << DEBOUNCE_SHIFT)
-#define PIN_DEBOUNCE_CONF2	(2 << DEBOUNCE_SHIFT)
-#define PIN_DEBOUNCE_CONF3	(3 << DEBOUNCE_SHIFT)
-#define PIN_DEBOUNCE_CONF4	(4 << DEBOUNCE_SHIFT)
-#define PIN_DEBOUNCE_CONF5	(5 << DEBOUNCE_SHIFT)
-#define PIN_DEBOUNCE_CONF6	(6 << DEBOUNCE_SHIFT)
+/* Literal constants (not shifts) so fold-expressions.py can evaluate them */
+#define PIN_DEBOUNCE_DISABLE	0x00000000
+#define PIN_DEBOUNCE_CONF1	0x00000800
+#define PIN_DEBOUNCE_CONF2	0x00001000
+#define PIN_DEBOUNCE_CONF3	0x00001800
+#define PIN_DEBOUNCE_CONF4	0x00002000
+#define PIN_DEBOUNCE_CONF5	0x00002800
+#define PIN_DEBOUNCE_CONF6	0x00003000
+
+/* PADCONFIG ST_EN (bit 14); spelling matches TI SysConfig output */
+#define PIN_SCMITT_TRIGGER_ENABLE	0x00004000
 
 /* Drive-strength flags used by TI SysConfig-generated pin mux files */
 #define PIN_DRIVE_STRENGTH_NOMINAL	0
-#define PIN_DRIVE_STRENGTH_HIGH		(1 << 19)
+#define PIN_DRIVE_STRENGTH_HIGH		0x00080000
 
 #define AM62AX_IOPAD(pa, val, muxmode)		(((pa) & 0x1fff)) ((val) | (muxmode))
 #define AM62AX_MCU_IOPAD(pa, val, muxmode)	(((pa) & 0x1fff)) ((val) | (muxmode))
