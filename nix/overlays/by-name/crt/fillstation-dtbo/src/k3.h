@@ -31,6 +31,11 @@
 #define PIN_DEBOUNCE_CONF5	(5 << DEBOUNCE_SHIFT)
 #define PIN_DEBOUNCE_CONF6	(6 << DEBOUNCE_SHIFT)
 
+/* Schmitt trigger flags used by TI SysConfig-generated pin mux files (spelling is SysConfig's) */
+#define ST_EN_SHIFT		(14)
+#define PIN_SCMITT_TRIGGER_ENABLE	(1 << ST_EN_SHIFT)
+#define PIN_SCMITT_TRIGGER_DISABLE	(0 << ST_EN_SHIFT)
+
 /* Drive-strength flags used by TI SysConfig-generated pin mux files */
 #define PIN_DRIVE_STRENGTH_NOMINAL	0
 #define PIN_DRIVE_STRENGTH_HIGH		(1 << 19)
@@ -41,7 +46,7 @@
 #define AM62X_IOPAD(pa, val, muxmode)		(((pa) & 0x1fff)) ((val) | (muxmode))
 #define AM62X_MCU_IOPAD(pa, val, muxmode)	(((pa) & 0x1fff)) ((val) | (muxmode))
 
-#define AM64X_IOPAD(pa, val, muxmode)  (pa), ((val) + (muxmode))
+#define AM64X_IOPAD(pa, val, muxmode)		(((pa) & 0x1fff)) ((val) | (muxmode))
 #define AM64X_MCU_IOPAD(pa, val, muxmode)	(((pa) & 0x1fff)) ((val) | (muxmode))
 
 #define AM65X_IOPAD(pa, val, muxmode)		(((pa) & 0x1fff)) ((val) | (muxmode))

@@ -62,6 +62,8 @@ Complete documentation for the Cornell Rocketry Team fill station server.
 - **[DTBO_BUILDER.md](DTBO_BUILDER.md)** - Device Tree Overlay automated builder
   - Automated SysConfig to DTBO conversion
   - How to update pinmux configuration
+- **[PRU_HEADER.md](PRU_HEADER.md)** - Adding GPIO / I2C / PWM / SPI on the PRU header pads
+  - Usable pads, per-peripheral overlay recipes, on-board tests
   - Integrated into Nix build system
 
 - **[WIFI_SETUP.md](WIFI_SETUP.md)** - Wi-Fi Configuration Guide

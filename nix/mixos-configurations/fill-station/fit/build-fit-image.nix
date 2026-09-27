@@ -49,6 +49,20 @@ stdenvNoCC.mkDerivation {
     fdtput -d dtb-merged /bus@f4000/cdns-usb@f900000/usb@f400000 phys
     fdtput -d dtb-merged /bus@f4000/cdns-usb@f900000/usb@f400000 phy-names
 
+    # Sanity-check that the overlay did what we meant
+    expect() {
+      if [ "$2" != "$3" ]; then
+        echo "DTB check failed: $1: expected '$3', got '$2'" >&2
+        exit 1
+      fi
+    }
+    usb0=/bus@f4000/cdns-usb@f900000/usb@f400000
+    expect "usb0 dr_mode" "$(fdtget dtb-merged $usb0 dr_mode)" host
+    expect "usb0 phys removed" "$(fdtget -d absent dtb-merged $usb0 phys)" absent
+    expect "PRU test pin (GPIO1_1)" \
+      "$(fdtget -tx dtb-merged /bus@f4000/pinctrl@f4000/pru-test-default-pins pinctrl-single,pins)" \
+      "164 50007"
+
     # Add kernel boot parameters to the merged DTB
     fdtput --auto-path --verbose --type=s dtb-merged /chosen bootargs "''${kernelParams[@]}"
     

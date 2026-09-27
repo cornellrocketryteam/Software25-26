@@ -41,6 +41,11 @@
 			AM64X_IOPAD(0x00b4, PIN_INPUT|PIN_DRIVE_STRENGTH_NOMINAL, 1) /* (R21) GPMC0_CSn3.I2C2_SDA */
 		>;
 	};
+	pru_test_pins_default: pru-test-default-pins {
+		pinctrl-single,pins = <
+			AM64X_IOPAD(0x0164, PIN_INPUT|PIN_DRIVE_STRENGTH_NOMINAL, 7) /* (R4) PRG0_PRU0_GPO1.GPIO1_1 */
+		>;
+	};
 	myusb1_pins_default: myusb1-default-pins {
 		pinctrl-single,pins = <
 			AM64X_IOPAD(0x02a8, PIN_OUTPUT|PIN_DRIVE_STRENGTH_NOMINAL, 0) /* (E19) USB0_DRVVBUS */

@@ -2,7 +2,6 @@
   stdenvNoCC,
   dtc,
   clang,
-  python3,
 }:
 stdenvNoCC.mkDerivation {
   name = "fillstation-pinmux-overlay";
@@ -12,24 +11,21 @@ stdenvNoCC.mkDerivation {
   nativeBuildInputs = [
     dtc
     clang
-    python3
   ];
 
   buildPhase = ''
-    # Step 4: Preprocess with clang
-    clang -E -P -x assembler-with-cpp -I . \
+    # Preprocess with clang (-undef so predefined macros like `linux` can't
+    # leak into the DTS). Pinmux cell expressions are left for dtc to evaluate.
+    clang -E -P -undef -nostdinc -x assembler-with-cpp -I . \
       k3-am64-fillstation-pinmux-overlay.dts \
       -o overlay.pp.dts
 
-    # Step 5: Fold expressions into constants
-    python3 ${./fold-expressions.py} overlay.pp.dts overlay.clean.dts
-
-    # Step 6: Compile overlay
+    # Compile overlay
     dtc -@ -I dts -O dtb \
       -o k3-am64-fillstation-pinmux-overlay.dtbo \
-      overlay.clean.dts
+      overlay.pp.dts
 
-    # Step 7: Verify
+    # Verify
     echo "Verifying overlay metadata..."
     fdtdump k3-am64-fillstation-pinmux-overlay.dtbo | grep -q "__symbols__" || \
       (echo "ERROR: Missing __symbols__" && exit 1)
