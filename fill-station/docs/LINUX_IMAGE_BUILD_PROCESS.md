@@ -119,6 +119,13 @@ The system requires several custom-built packages specific to the TI AM64x platf
 - The actual ground station Rust application
 - WebSocket server on port 9000
 - Controls hardware components (igniters, ADCs, valves, etc.)
+- Also installs the helper binaries from `fill-station/src/bin/` (`adc_monitor`, `adc_test`, `dual_adc_monitor`)
+
+#### **fillstation-dtbo** (`fillstation-dtbo/package.nix`)
+- Device tree overlay (pinmux, I2C2, ePWM, USB0 host, PRU-header GPIOs)
+- Preprocessed with `clang -E`, compiled with `dtc -@`
+- Merged into the kernel's `k3-am642-sk.dtb` at FIT build time (see below)
+- See [DTBO_BUILDER.md](DTBO_BUILDER.md) and [PRU_HEADER.md](PRU_HEADER.md)
 
 ---
 
@@ -149,12 +156,20 @@ Defines the system configuration:
       process = "${lib.getExe' pkgs.crt.dropbear-minimal "dropbear"} -F -R";
     };
     fill-station = {
-      action = "once";
+      action = "respawn";  # restarted by init if it exits/crashes
       process = lib.getExe pkgs.crt.fill-station;
+    };
+    watchdog = {
+      action = "respawn";
+      process = "/bin/watchdog -F /dev/watchdog";
     };
     wpa_supplicant = {
       action = "respawn";
       process = "${lib.getExe' pkgs.wpa_supplicant "wpa_supplicant"} -i wlan0 -c /etc/wpa_supplicant.conf";
+    };
+    mount_data = {
+      action = "wait";  # mounts the DATA partition at /tmp/data (CSV logs)
+      process = "sh -c 'mkdir -p /tmp/data && (mount -t vfat -L DATA /tmp/data || ...)'";
     };
     dhcp = {
       action = "respawn";
@@ -167,16 +182,24 @@ Defines the system configuration:
     pkgs.crt.dropbear-minimal  # Lightweight SSH server
     pkgs.libgpiod              # GPIO control utilities
     pkgs.tcpdump               # Network debugging
-    pkgs.crt.fill-station      # Main application
+    pkgs.crt.fill-station      # Main application (+ src/bin helpers)
     pkgs.iw                    # Wi-Fi configuration
     pkgs.wpa_supplicant        # WPA2 connection tool
+    pkgs.util-linux            # mount -L etc.
   ];
+
+  # wl18xx Wi-Fi firmware, found via firmware_class.path=/etc/lib/firmware
+  etc."lib/firmware".source = ...;
+  etc."wpa_supplicant.conf".source = ...;  # SSID/PSK baked into the image
+  etc."shadow".source = ...;               # root password hash baked in
 }
 ```
 
 **Key aspects:**
-- Uses musl libc for smaller binary sizes and static linking
-- Minimal init system from MixOS (not systemd)
+- Everything is cross-compiled for `aarch64-unknown-linux-musl` (dynamically linked against musl; the libraries ship in the image's `/nix/store`)
+- `buildPlatform` is hardcoded to `aarch64-linux`, so building from a Mac needs an aarch64 Linux builder
+- Minimal busybox init from MixOS (not systemd); services are generated into `/etc/inittab`
+- MixOS also adds default services: `mixos sysinit`, `syslogd`, `klogd`, `crond`, and `mdev -d` (device hotplug + module autoload)
 - Console on `ttyS2` (115200 baud, set in FIT image kernel parameters)
 - Imports both FIT and SD image build definitions
 
@@ -191,15 +214,17 @@ The FIT (Flattened Image Tree) image is a standard format for bundling kernel, d
 ```nix
 system.build.fitImage = pkgs.callPackage ./build-fit-image.nix {
   kernel = "${config.boot.kernel}/Image";
-  dtb = ./k3-am642-sk-fill-station.dtb;
+  dtb = "${config.boot.kernel}/dtbs/ti/k3-am642-sk.dtb";
+  dtbOverlay = "${pkgs.crt.fillstation-dtbo}/k3-am64-fillstation-pinmux-overlay.dtbo";
   initrd = "${config.system.build.initrd}/initrd";
 };
 ```
 
-Passes three inputs to the build script:
+Passes four inputs to the build script:
 1. **Kernel Image**: Uncompressed ARM64 kernel from `fill-station-linux`
-2. **DTB** (Device Tree Blob): Hardware description for AM64x SK board with custom peripherals
-3. **Initrd**: Initial RAM disk containing minimal userspace and init system
+2. **DTB** (Device Tree Blob): The stock SK-AM64 DTB built by the kernel itself
+3. **DTB overlay**: Fill-station pinmux/peripheral overlay from `fillstation-dtbo`
+4. **Initrd**: Initial RAM disk built by MixOS (see [Initrd and Root Filesystem](#initrd-and-root-filesystem))
 
 #### **FIT Build Script** (`fit/build-fit-image.nix`)
 
@@ -210,15 +235,27 @@ The build process:
 cp ${kernel} kernel
 xz --format=lzma kernel
 
-# 2. Patch device tree with kernel boot parameters
+# 2. Merge the fill-station overlay into the stock SK DTB
 cp ${dtb} dtb
-chmod u+w dtb
-fdtput --auto-path --verbose --type=s dtb /chosen bootargs "quiet console=ttyS2,115200n8 panic=-1"
+fdtoverlay -i dtb -o dtb-merged ${dtbOverlay}
 
-# 3. Copy initrd (already compressed)
+# 3. Delete properties an overlay can't remove (USB0 SerDes PHY — USB 2.0 only)
+fdtput -d dtb-merged /bus@f4000/cdns-usb@f900000/usb@f400000 phys
+fdtput -d dtb-merged /bus@f4000/cdns-usb@f900000/usb@f400000 phy-names
+
+# 4. Sanity-check the merged tree (build fails on mismatch)
+expect "usb0 dr_mode" "$(fdtget dtb-merged $usb0 dr_mode)" host
+expect "PRU test pin (GPIO1_1)" "$(fdtget -tx dtb-merged .../pru-test-default-pins pinctrl-single,pins)" "164 50007"
+
+# 5. Write kernel boot parameters into /chosen/bootargs
+fdtput --auto-path --verbose --type=s dtb-merged /chosen bootargs \
+  "quiet console=ttyS2,115200n8 panic=-1 firmware_class.path=/etc/lib/firmware"
+mv dtb-merged dtb
+
+# 6. Copy initrd (already xz-compressed)
 cp ${initrd} initrd
 
-# 4. Generate FIT image using U-Boot mkimage tool
+# 7. Generate FIT image using U-Boot mkimage tool
 cp ${./fitImage.its} fitImage.its
 substituteInPlace fitImage.its --subst-var loadaddr  # Insert load address
 mkimage -f fitImage.its fitImage.itb
@@ -228,6 +265,7 @@ mkimage -f fitImage.its fitImage.itb
 - `quiet` (or `debug` if debug=true): Controls verbosity
 - `console=ttyS2,115200n8`: Serial console configuration
 - `panic=-1`: Reboot immediately on kernel panic
+- `firmware_class.path=/etc/lib/firmware`: Where the kernel looks for the wl18xx Wi-Fi firmware
 
 **Load address**: `0x82000000` - Memory address where U-Boot loads the FIT image
 
@@ -290,6 +328,68 @@ Defines the structure of the FIT image:
 
 ---
 
+### Initrd and Root Filesystem
+
+The `initrd` inside the FIT is produced by MixOS (`system.build.initrd`). It is
+tiny on its own: an xz-compressed cpio with just two things:
+
+```
+/init                 -> mixos-rdinit (small Zig program)
+/nix/store/…-mixos.erofs   (the real root filesystem, LZMA-compressed EROFS)
+```
+
+At boot, `mixos-rdinit` mounts `/dev`, `/sys`, `/proc`, loop-mounts the EROFS
+image **read-only** at `/sysroot`, moves the pseudo-filesystems into it,
+`chroot`s, and execs busybox `/sbin/init`. The whole system runs from RAM — the
+SD card is only read at boot (plus the DATA partition, see below).
+
+The EROFS root contains:
+- `/nix/store` — the runtime closure (fill-station, busybox, dropbear, libgpiod,
+  iw, wpa_supplicant, tcpdump, util-linux, musl, …)
+- `/bin` — merged `bin` packages + busybox applets
+- `/etc/*` — symlinks into the store (`inittab`, `mdev.conf`, `passwd`,
+  `shadow`, `wpa_supplicant.conf`, `lib/firmware`, …)
+- `/lib/modules/<version>/` — **all** `=m` kernel modules (see below)
+
+Runtime storage:
+- `/` is read-only; `/tmp` (and `/run` → `/tmp`) is tmpfs
+- `/state` (and `/var`) is a tmpfs — **nothing persists across reboots**
+- The only persistent storage is the SD card's `DATA` partition, mounted at
+  `/tmp/data` by the `mount_data` init entry (CSV logs go here)
+
+#### Kernel modules
+
+Because `CONFIG_MODULES=y`, MixOS splits the kernel's modules into a separate
+output and copies **every** `=m` module into `/lib/modules/<version>/` in the
+EROFS (≈1,400 `.ko` files, ~70 MB), then runs busybox `depmod`.
+
+Nothing loads modules explicitly — `boot.kernelModules` is unset (empty).
+Instead MixOS installs this mdev rule:
+
+```
+$MODALIAS=.* 0:0 660 @modprobe "$MODALIAS"
+```
+
+so a module is loaded only if a device node with a matching modalias appears:
+at boot via `mixos sysinit` → `mdev -s` (coldplug), and afterwards via the
+`mdev -d` hotplug daemon. This is best-effort. Anything the fill station
+depends on (I2C, USB CDC-ACM, Wi-Fi, ePWM, …) is built in (`=y`). When adding a
+driver, prefer `=y`; if you must use `=m` and it doesn't autoload, add it to
+`boot.kernelModules` in `default.nix`. Check with `lsmod` over SSH.
+
+#### Boot-time services (`/etc/inittab`)
+
+Generated from `init` in `default.nix` plus MixOS defaults:
+
+| Action | Process |
+|--------|---------|
+| `sysinit` | `mixos sysinit` — mounts, module loading, `mdev -s`, hostname, `/state` |
+| `wait` | `mount_data` — DATA partition → `/tmp/data` |
+| `respawn` | `fill-station`, `dropbear`, `watchdog`, `wpa_supplicant`, `udhcpc`, `syslogd`, `klogd`, `crond`, `mdev -d` |
+| `askfirst` | `/bin/sh` on `ttyS2` |
+
+---
+
 ### 4. SD Card Image Build (`nix/mixos-configurations/fill-station/sd-image/`)
 
 #### **SD Image Entry Point** (`sd-image/default.nix`)
@@ -318,11 +418,15 @@ Creates a bootable SD card with DOS partition table:
 │  - uEnv.txt         (U-Boot environment/config)       │
 │  - fitImage.itb     (Kernel + DTB + initrd)           │
 ├────────────────────────────────────────────────────────┤
-│  Partition 2: DATA (50 MiB, FAT32)                    │
-│  - User data / logs / configuration                   │
+│  Partition 2: DATA (1024 MiB, FAT32)                  │
+│  - Mounted at /tmp/data; CSV logs                     │
+│  - Ships with only a placeholder README.txt           │
 └────────────────────────────────────────────────────────┘
-Total: ~180 MiB
+Total: ~1.2 GiB
 ```
+
+> ⚠️ Flashing the image with `dd` overwrites the **whole card, including
+> DATA**. Copy any logs off `/tmp/data` before reflashing.
 
 **Build process:**
 
@@ -333,7 +437,7 @@ Total: ~180 MiB
      label-id: 0x2178694e
      
      start=2M, size=128M, type=c, bootable
-     start=130M, size=50M, type=c
+     start=130M, size=1024M, type=c
    EOF
    ```
 
@@ -367,12 +471,13 @@ Total: ~180 MiB
 ```
 boot_targets=mmc1 mmc0
 bootdelay=1
-uenvcmd=echo "Booting FIT from mmc 1:1..."; load mmc 1:1 ${addr_fit} fitImage.itb; bootm ${addr_fit}
+uenvcmd=echo "Booting FIT from mmc 1:1..."; load mmc 1:1 ${addr_fit} fitImage.itb; bootm ${addr_fit}#board-0
 ```
 
 - `mmc 1:1` = MMC device 1, partition 1 (the FIRMWARE partition)
 - `${addr_fit}` = U-Boot variable containing FIT load address (set by AM64x defaults)
 - `bootm` = U-Boot command to boot from a multi-image (FIT)
+- `#board-0` = explicitly select the FIT configuration (avoids a warning U-Boot prints when falling back to the default config)
 
 ---
 
@@ -423,20 +528,27 @@ uenvcmd=echo "Booting FIT from mmc 1:1..."; load mmc 1:1 ${addr_fit} fitImage.it
 7. Linux Kernel
    - Uncompresses itself if needed
    - Initializes hardware using DTB
-   - Mounts initrd as root filesystem
-   - Executes /init from initrd
+   - Unpacks the initrd (cpio) into a RAM filesystem
+   - Executes /init (mixos-rdinit)
    │
    ▼
-8. MixOS Init (from initrd)
-   - Minimal init system (not systemd)
-   - Spawns configured processes:
-     a. Shell on ttyS2 (askfirst)
-     b. Dropbear SSH daemon (respawn)
-     c. fill-station application (once)
+8. mixos-rdinit
+   - Loop-mounts the EROFS root image read-only at /sysroot
+   - Moves /dev, /sys, /proc into it and chroots
+   - Execs busybox /sbin/init
    │
    ▼
-9. System Running
-   - Fill station WebSocket server on port 9000
+9. Busybox init (/etc/inittab)
+   - sysinit: `mixos sysinit` — mounts tmpfs/cgroups/etc., runs
+     `mdev -s` (coldplug + module autoload), sets up /state (tmpfs)
+   - wait: mount DATA partition at /tmp/data
+   - respawn: fill-station, dropbear, watchdog, wpa_supplicant, udhcpc,
+     syslogd, klogd, crond, mdev -d
+   - askfirst: shell on ttyS2
+   │
+   ▼
+10. System Running
+   - Fill station WebSocket server on port 9000 (restarted if it exits)
    - SSH access via dropbear
    - Serial console on ttyS2
 ```
@@ -462,10 +574,10 @@ nix build .#mixosConfigurations.fill-station.config.system.build.sdImage
    - `ti-uboot-r5`, `ti-uboot-a53` (bootloaders)
    - `ti-arm-trusted-firmware`, `ti-optee` (secure firmware)
    - `fill-station` (application)
-4. MixOS builds the initrd containing:
-   - Minimal userspace (busybox-like utilities)
-   - Init system
-   - Required binaries (dropbear, libgpiod, tcpdump, fill-station)
+4. MixOS builds the root filesystem (EROFS) and wraps it in the initrd:
+   - busybox userspace + init, generated `/etc/inittab`
+   - `bin` packages (dropbear, libgpiod, tcpdump, fill-station, iw, wpa_supplicant, util-linux)
+   - all kernel modules in `/lib/modules`
 5. FIT image is built:
    - Kernel compressed to LZMA
    - DTB patched with boot parameters
@@ -551,7 +663,7 @@ Benefits:
 | `nix/mixos-configurations/fill-station/fit/default.nix` | FIT image build entry |
 | `nix/mixos-configurations/fill-station/fit/build-fit-image.nix` | FIT image build script |
 | `nix/mixos-configurations/fill-station/fit/fitImage.its` | FIT image tree source |
-| `nix/mixos-configurations/fill-station/fit/k3-am642-sk-fill-station.dtb` | Device tree blob |
+| `nix/overlays/by-name/crt/fillstation-dtbo/` | Device tree overlay merged into the stock SK DTB |
 | `nix/mixos-configurations/fill-station/sd-image/default.nix` | SD image build entry |
 | `nix/mixos-configurations/fill-station/sd-image/build-sd-image.nix` | SD image build script |
 | `nix/mixos-configurations/fill-station/sd-image/uEnv.txt` | U-Boot environment |
@@ -566,7 +678,6 @@ Benefits:
 
 ## Customization Guide
 
-### Change Kernel Config:
 ### Change Kernel Config:
 Edit `nix/overlays/by-name/crt/fill-station-linux/kernel.config`.
 Ensure Wi-Fi drivers are built-in for connectivity:
@@ -591,7 +702,8 @@ env = {
 ```
 
 ### Change Device Tree:
-Replace `nix/mixos-configurations/fill-station/fit/k3-am642-sk-fill-station.dtb`
+Edit the overlay in `nix/overlays/by-name/crt/fillstation-dtbo/src/` (see [DTBO_BUILDER.md](DTBO_BUILDER.md) / [PRU_HEADER.md](PRU_HEADER.md)).
+For properties an overlay can't delete, add an `fdtput -d` in `build-fit-image.nix`.
 
 ### Modify Init Processes:
 Edit `nix/mixos-configurations/fill-station/default.nix`:
@@ -617,8 +729,8 @@ bin = [
 Edit `nix/mixos-configurations/fill-station/sd-image/build-sd-image.nix`:
 ```nix
 gapMiB = 2;
-firmwareSizeMiB = 60;
-secondPartitionSizeMiB = 50;
+firmwareSizeMiB = 128;
+secondPartitionSizeMiB = 1024;
 ```
 
 ---
@@ -640,7 +752,8 @@ secondPartitionSizeMiB = 50;
 - Run `mkimage -l fitImage.itb` to inspect FIT image structure
 
 ### System boots but application doesn't start:
-- Check initrd contents: `zcat result/initrd | cpio -t`
+- Check init config: `cat /etc/inittab` on the board (or inspect `nix build .#mixosConfigurations.fill-station.config.system.build.root`)
+- The app runs with stdout/stderr on `/dev/null` (inittab `null::`); to see its output, run `fill-station` manually over SSH
 - Verify init configuration in `default.nix`
 - Check serial console for error messages
 

@@ -4,6 +4,10 @@
   pkgs,
   ...
 }:
+let
+  # Debug builds add tools that are too big for the production (OSPI) image.
+  debug = false;
+in
 {
   imports = [
     ./fit
@@ -33,7 +37,7 @@
     };
 
     fill-station = {
-      action = "once";
+      action = "respawn";
       process = lib.getExe pkgs.crt.fill-station;
     };
 
@@ -49,7 +53,8 @@
 
     mount_data = {
       action = "wait";
-      process = "sh -c 'mkdir -p /tmp/data && (mount -t vfat -L DATA /tmp/data || mount -t vfat /dev/mmcblk1p2 /tmp/data || mount -t vfat /dev/mmcblk0p2 /tmp/data)'";
+      # busybox mount has no -L; resolve the label with busybox findfs instead
+      process = "sh -c 'mkdir -p /tmp/data && (mount -t vfat \"$(findfs LABEL=DATA)\" /tmp/data || mount -t vfat /dev/mmcblk1p2 /tmp/data || mount -t vfat /dev/mmcblk0p2 /tmp/data)'";
     };
 
     dhcp = {
@@ -61,10 +66,12 @@
   bin = [
     pkgs.crt.dropbear-minimal
     pkgs.libgpiod
-    pkgs.tcpdump
-    pkgs.crt.fill-station
+    (pkgs.crt.fill-station.override { withHelpers = debug; }) # ADC CLI tools only in debug
     pkgs.iw
     pkgs.wpa_supplicant
+  ]
+  ++ lib.optionals debug [
+    pkgs.tcpdump
     pkgs.util-linux
   ];
 

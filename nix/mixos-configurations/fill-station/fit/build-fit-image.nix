@@ -30,6 +30,9 @@ stdenvNoCC.mkDerivation {
     # Assuming that the FIT image is loaded to ${addr_fit}, this variable should
     # be set equal to the UBoot $loadaddr env variable
     loadaddr = "0x82000000";
+
+    # OSPI flash slot for the FIT: 0x3fc0000 - 0x800000
+    maxFitSize = toString (66846720 - 8388608);
   };
 
   __structuredAttrs = true;
@@ -75,6 +78,16 @@ stdenvNoCC.mkDerivation {
     substituteInPlace fitImage.its --subst-var loadaddr
 
     mkimage -f fitImage.its fitImage.itb
+
+    # The FIT must fit in the OSPI NOR slot between U-Boot's env and the PHY
+    # tuning pattern (0x800000..0x3fc0000) so the board can boot from flash.
+    fitSize=$(stat -c %s fitImage.itb)
+    echo "FIT size: $fitSize bytes (limit $maxFitSize)"
+    if [ "$fitSize" -gt "$maxFitSize" ]; then
+      echo "FIT image is $fitSize bytes, exceeds the OSPI slot of $maxFitSize bytes" >&2
+      exit 1
+    fi
+
     install -Dm0644 -t $out fitImage.itb
   '';
 }
