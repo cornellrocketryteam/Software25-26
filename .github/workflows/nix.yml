@@ -18,3 +18,11 @@ jobs:
       - run: nix build .#mixosConfigurations.fill-station.config.boot.kernel
       - run: nix build .#mixosConfigurations.fill-station.config.system.build.initrd
       - run: nix build .#mixosConfigurations.fill-station.config.system.build.sdImage
+      # Publish the SD image as a GitHub artifact so it can be downloaded
+      # without FlakeHub auth: gh run download -n fill-station-sd-image
+      - run: cp -L result/fill-station.img fill-station.img
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fill-station-sd-image
+          path: fill-station.img
+          retention-days: 14
