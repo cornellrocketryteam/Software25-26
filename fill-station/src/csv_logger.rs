@@ -58,7 +58,8 @@ pub async fn start_logging(
 
     // Write Header
     let header = "Loop,Timestamp_ms,Igniter1_Active,Igniter2_Active,\
-SV1_Open,SV1_Cont,\
+SV1_Open,SV1_Cont,SV2_Open,SV2_Cont,SV3_Open,SV3_Cont,SV4_Open,SV4_Cont,SV5_Open,SV5_Cont,\
+MAV_Open,MAV_Pulse_US,\
 ADC1_0_Raw,ADC1_0_Scaled,ADC1_1_Raw,ADC1_1_Scaled,ADC1_2_Raw,ADC1_2_Scaled,ADC1_3_Raw,ADC1_3_Scaled,\
 ADC2_0_Raw,ADC2_0_Scaled,ADC2_1_Raw,ADC2_1_Scaled,ADC2_2_Raw,ADC2_2_Scaled,ADC2_3_Raw,ADC2_3_Scaled,\
 FSW_Connected,FSW_Mode,FSW_Pressure,FSW_Temp,FSW_Altitude,FSW_Lat,FSW_Lon,FSW_Sats,FSW_Timestamp,\
@@ -86,25 +87,30 @@ QD_Enabled,QD_Direction\n";
             (reading.timestamp_ms, reading.valid, reading.adc1, reading.adc2)
         };
 
-        // 2. Gather Hardware Data (SV, Igniters)
+        // 2. Gather Hardware Data (SV, MAV, Igniters)
         // We lock hardware briefly
-        let (ig1_active, ig2_active, sv_states) = {
+        let (ig1_active, ig2_active, sv_states, mav_open, mav_pulse) = {
+            let hw = _hardware.lock().await;
+            let mav_open = hw.mav.is_open();
+            let mav_pulse = hw.mav.pulse_width_us();
+
             #[cfg(any(target_os = "linux", target_os = "android"))]
             {
-                let hw = _hardware.lock().await;
-
                 // Igniters
                 let ig1 = hw.ig1.is_igniting().await;
                 let ig2 = hw.ig2.is_igniting().await;
 
-                // SV1 (Open, Continuity)
-                let sv1 = (hw.sv1.is_open().await.unwrap_or(false), hw.sv1.check_continuity().await.unwrap_or(false));
+                // SVs (Open, Continuity)
+                let mut sv_states = [(false, false); 5];
+                for (state, sv) in sv_states.iter_mut().zip([&hw.sv1, &hw.sv2, &hw.sv3, &hw.sv4, &hw.sv5]) {
+                    *state = (sv.is_open().await.unwrap_or(false), sv.check_continuity().await.unwrap_or(false));
+                }
 
-                (ig1, ig2, sv1)
+                (ig1, ig2, sv_states, mav_open, mav_pulse)
             }
             #[cfg(not(any(target_os = "linux", target_os = "android")))]
             {
-                (false, false, (false, false))
+                (false, false, [(false, false); 5], mav_open, mav_pulse)
             }
         };
 
@@ -112,8 +118,13 @@ QD_Enabled,QD_Direction\n";
         let mut line = format!("{},{},{},{},",
             loop_count, adc_timestamp, ig1_active, ig2_active);
 
-        // Append SV1
-        line.push_str(&format!("{},{},", sv_states.0, sv_states.1));
+        // Append SVs
+        for (open, cont) in sv_states {
+            line.push_str(&format!("{},{},", open, cont));
+        }
+
+        // Append MAV
+        line.push_str(&format!("{},{},", mav_open, mav_pulse));
 
         // Append ADCs
         if adc_valid {

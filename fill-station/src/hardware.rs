@@ -9,6 +9,7 @@ use crate::components::solenoid_valve::{SolenoidValve, LinePull};
 
 use crate::components::ads1015::Ads1015;
 use crate::components::ball_valve::BallValve;
+use crate::components::mav::Mav;
 use crate::components::qd_stepper::QdStepper;
 
 const GPIO_CHIP0: &str = "gpiochip1";
@@ -16,6 +17,9 @@ const GPIO_CHIP1: &str = "gpiochip2";
 const I2C_BUS: &str = "/dev/i2c-2";
 const ADC1_ADDRESS: u16 = 0x48;
 const ADC2_ADDRESS: u16 = 0x49;
+/// epwm4 platform device (EHRPWM4_B on pad T21 = channel 1)
+const MAV_PWM_DEVICE: &str = "23040000.pwm";
+const MAV_PWM_CHANNEL: u32 = 1;
 
 pub struct Hardware {
     #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -26,6 +30,15 @@ pub struct Hardware {
     pub adc2: Ads1015,
     #[cfg(any(target_os = "linux", target_os = "android"))]
     pub sv1: SolenoidValve,
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub sv2: SolenoidValve,
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub sv3: SolenoidValve,
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub sv4: SolenoidValve,
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub sv5: SolenoidValve,
+    pub mav: Mav,
     pub ball_valve: BallValve,
     pub qd_stepper: QdStepper,
 }
@@ -48,6 +61,37 @@ impl Hardware {
             LinePull::NormallyClosed
         ).await?;
 
+        // SV2 (Normally Closed)
+        let sv2 = SolenoidValve::new(
+            &chip0, 32, // GPIO0_32 (P16)
+            &chip0, 35, // GPIO0_35 (P17)
+            LinePull::NormallyClosed
+        ).await?;
+
+        // SV3 (Normally Closed)
+        let sv3 = SolenoidValve::new(
+            &chip1, 44, // GPIO1_44 (D13)
+            &chip0, 37, // GPIO0_37 (W19)
+            LinePull::NormallyClosed
+        ).await?;
+
+        // SV4 (Normally Closed)
+        let sv4 = SolenoidValve::new(
+            &chip0, 41, // GPIO0_41 (R19)
+            &chip0, 36, // GPIO0_36 (T19)
+            LinePull::NormallyClosed
+        ).await?;
+
+        // SV5 (Normally Closed)
+        let sv5 = SolenoidValve::new(
+            &chip1, 48, // GPIO1_48 (D14)
+            &chip1, 46, // GPIO1_46 (A14)
+            LinePull::NormallyClosed
+        ).await?;
+
+        // MAV servo (boots closed)
+        let mav = Mav::new(MAV_PWM_DEVICE, MAV_PWM_CHANNEL, "MAV").await?;
+
         // Ball Valve
         // Signal: Chip 1, Line 62
         // ON_OFF: Chip 1, Line 63
@@ -65,16 +109,17 @@ impl Hardware {
             "QD"
         ).await?;
 
-        Ok(Self { ig1, ig2, adc1, adc2, sv1, ball_valve, qd_stepper })
+        Ok(Self { ig1, ig2, adc1, adc2, sv1, sv2, sv3, sv4, sv5, mav, ball_valve, qd_stepper })
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
     pub async fn new() -> Result<Self> {
         let adc1 = Ads1015::new(I2C_BUS, ADC1_ADDRESS)?;
         let adc2 = Ads1015::new(I2C_BUS, ADC2_ADDRESS)?;
+        let mav = Mav::new(MAV_PWM_DEVICE, MAV_PWM_CHANNEL, "MAV").await?;
         let ball_valve = BallValve::new(&(), 0, &(), 0, "BallValve").await?;
         let qd_stepper = QdStepper::new(&(), 0, &(), 0, &(), 0, "QD").await?;
 
-        Ok(Self { adc1, adc2, ball_valve, qd_stepper })
+        Ok(Self { adc1, adc2, mav, ball_valve, qd_stepper })
     }
 }

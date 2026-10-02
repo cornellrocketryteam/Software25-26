@@ -13,10 +13,11 @@ This document provides a reference for all supported WebSocket commands for the 
 ### Connection Monitoring
 The server enforces a **15-second timeout** on idle connections to ensure safety. 
 - If no message is received from a connected client for 15 seconds, the server will:
-  1. **Close SV1**.
+  1. **Close SV1–SV5**.
   2. **Close the Ball Valve**.
-  3. **Send FSW Open SV command via umbilical**.
-  4. **Disconnect the client**.
+  3. **Close the fill-station MAV**.
+  4. **Send FSW Open SV command via umbilical**.
+  5. **Disconnect the client**.
 - After 20 seconds with no clients connected, the **QD will retract**.
 
 To prevent this, clients must send any valid JSON command at least once every 15 seconds. If no other command is needed, use the `heartbeat` command.
@@ -209,12 +210,64 @@ Opens or closes a specific solenoid valve. The server automatically handles the 
 ```json
 {"command": "actuate_valve", "valve": "SV1", "open": true}
 ```
-*   `valve`: Valve identifier ("SV1", case-insensitive).
+*   `valve`: Valve identifier ("SV1"–"SV5", case-insensitive).
 *   `open`: `true` to open the valve, `false` to close it.
 
 **Response:**
 ```json
 {"type": "success"}
+```
+
+---
+
+## Fill-Station MAV Commands
+Servo-driven MAV on the fill station (EHRPWM4_B). PWM settings mirror the FSW MAV
+(`fsw/src/actuator.rs`): 330 Hz, pulse clamped to 800–2200 µs, open = 1950 µs,
+close = 883 µs. Boots closed.
+
+### `mav_open`
+Opens the MAV. With `duration_ms`, it auto-closes after that long (a later
+`mav_open`/`mav_close` cancels the pending auto-close).
+
+**Format:**
+```json
+{"command": "mav_open"}
+{"command": "mav_open", "duration_ms": 6000}
+```
+
+**Response:**
+```json
+{"type": "success"}
+```
+
+---
+
+### `mav_close`
+Closes the MAV.
+
+**Format:**
+```json
+{"command": "mav_close"}
+```
+
+**Response:**
+```json
+{"type": "success"}
+```
+
+---
+
+### `get_mav_state`
+Query the last-commanded MAV state.
+
+**Format:**
+```json
+{"command": "get_mav_state"}
+```
+
+**Response:**
+```json
+{"type": "mav_state", "open": false, "pulse_width_us": 883}
 ```
 
 ---

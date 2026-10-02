@@ -7,12 +7,13 @@ import time
 # Mock State
 state = {
     "sv": {
-        "SV1": {"actuated": False, "continuity": True},
-        "SV2": {"actuated": False, "continuity": True},
-        "SV3": {"actuated": False, "continuity": True},
-        "SV4": {"actuated": False, "continuity": True},
-        "SV5": {"actuated": False, "continuity": True},
+        "SV1": {"open": False, "continuity": True},
+        "SV2": {"open": False, "continuity": True},
+        "SV3": {"open": False, "continuity": True},
+        "SV4": {"open": False, "continuity": True},
+        "SV5": {"open": False, "continuity": True},
     },
+    "mav": {"open": False, "pulse_width_us": 883},
     "bv": {"signal": "low", "on_off": "low"},
     "qd": {"steps": 0, "state": "closed"},
     "igniters": {
@@ -100,7 +101,7 @@ async def handler(websocket):
                     response = {
                         "type": "valve_state",
                         "valve": valve,
-                        "actuated": state["sv"][valve]["actuated"],
+                        "open": state["sv"][valve]["open"],
                         "continuity": state["sv"][valve]["continuity"]
                     }
                 else:
@@ -110,9 +111,20 @@ async def handler(websocket):
                 valve = data.get("valve")
                 val = data.get("open") # boolean
                 if valve in state["sv"] and val is not None:
-                    state["sv"][valve]["actuated"] = val
+                    state["sv"][valve]["open"] = val
                 else:
                     response = {"type": "error", "message": "Unknown valve or missing 'open'"}
+
+            # Fill-station MAV (pulse widths mirror FSW: open 1950 us, close 883 us)
+            elif command == "mav_open":
+                state["mav"] = {"open": True, "pulse_width_us": 1950}
+                duration_ms = data.get("duration_ms")
+                if duration_ms:
+                    asyncio.create_task(auto_close_mav(duration_ms))
+            elif command == "mav_close":
+                state["mav"] = {"open": False, "pulse_width_us": 883}
+            elif command == "get_mav_state":
+                response = {"type": "mav_state", **state["mav"]}
 
             elif command == "get_igniter_continuity":
                 ign_id = data.get("id")
@@ -224,6 +236,11 @@ async def handler(websocket):
         state["fsw_stream_active"] = False
 
 
+async def auto_close_mav(duration_ms):
+    await asyncio.sleep(duration_ms / 1000)
+    state["mav"] = {"open": False, "pulse_width_us": 883}
+
+
 async def stream_adc(websocket):
     start_time = time.time()
     try:
@@ -291,9 +308,10 @@ async def safety_monitor():
             print("SAFETY TIMEOUT (15s) - Executing Emergency Shutdown")
             # Close Ball Valve
             state["bv"]["signal"] = "low"
-            # Close SV1
-            if "SV1" in state["sv"]:
-                state["sv"]["SV1"]["actuated"] = False
+            # Close all SVs and MAV
+            for sv in state["sv"].values():
+                sv["open"] = False
+            state["mav"] = {"open": False, "pulse_width_us": 883}
             # FSW Open SV (<S>)
             state["fsw"]["sv_open"] = True
             safety_triggered = True

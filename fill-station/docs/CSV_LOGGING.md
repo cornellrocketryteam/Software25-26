@@ -20,9 +20,13 @@ The CSV file contains the following columns, exactly matching the order below. I
 - `Timestamp_ms`: Unix timestamp of the data point.
 - `Igniter1_Active`, `Igniter2_Active`: Boolean indicating if the igniter is currently fired.
 
-**Solenoid Valve:**
-- `SV1_Open`: Boolean indicating if SV1 is open.
-- `SV1_Cont`: Boolean continuity state.
+**Solenoid Valves:** (Columns repeat for SV1 through SV5)
+- `SV<N>_Open`: Boolean indicating if the valve is open.
+- `SV<N>_Cont`: Boolean continuity state.
+
+**Fill-Station MAV:**
+- `MAV_Open`: Boolean last-commanded open state.
+- `MAV_Pulse_US`: Last-commanded servo pulse width (µs).
 
 **Analog to Digital Converters (ADCs):** (Columns repeat for ADC1 and ADC2, Channels 0 through 3)
 - `ADC<NUM>_<CH>_Raw`: 12-bit raw integer reading.

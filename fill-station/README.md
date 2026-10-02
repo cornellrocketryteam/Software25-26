@@ -29,7 +29,8 @@ fill-station/
 │   ├── lib.rs               # Public API exports
 │   └── components/          # Individual hardware drivers
 │       ├── igniter.rs       # GPIO-based igniter control
-│       ├── solenoid_valve.rs # GPIO solenoid valve (SV1)
+│       ├── solenoid_valve.rs # GPIO solenoid valves (SV1–SV5)
+│       ├── mav.rs           # PWM servo MAV (mirrors FSW MAV)
 │       ├── ball_valve.rs    # Two-pin GPIO ball valve
 │       ├── qd_stepper.rs   # GPIO stepper motor (QD)
 │       ├── ads1015.rs       # I2C ADC driver (pressure sensors)
@@ -56,7 +57,8 @@ fill-station/
 
 ### ✅ Hardware Control
 - **Igniters**: GPIO-based control with continuity checking and concurrent firing
-- **Solenoid Valve**: SV1 GPIO control with NO/NC logic
+- **Solenoid Valves**: SV1–SV5 GPIO control with NO/NC logic
+- **MAV**: PWM servo (330 Hz, open 1950 µs / close 883 µs, same as FSW MAV) with optional timed auto-close
 - **ADC Monitoring**: Dual ADS1015 12-bit ADCs (8 channels total)
 - **Pressure Sensors**: Calibrated scaling for ADC channels
 - **Umbilical**: CDC-ACM Serial connection for FSW command/telemetry linking
@@ -87,6 +89,8 @@ fill-station/
 ```json
 {"command": "actuate_valve", "valve": "SV1", "open": true}
 {"command": "get_valve_state", "valve": "SV1"}
+{"command": "mav_open", "duration_ms": 6000}
+{"command": "mav_close"}
 ```
 
 ### ADC Streaming
@@ -117,6 +121,11 @@ See [`docs/ADC_STREAMING.md`](docs/ADC_STREAMING.md) for detailed protocol speci
 - **Igniter 1**: GPIO Chip 0, Pin 38 (signal), Pin 39 (continuity)
 - **Igniter 2**: GPIO Chip 0, Pin 40 (signal), GPIO Chip 1, Pin 42 (continuity)
 - **SV1**: Control (Chip 0, 42), Sense (Chip 1, 51) - NC
+- **SV2**: Control (Chip 0, 32), Sense (Chip 0, 35) - NC
+- **SV3**: Control (Chip 1, 44), Sense (Chip 0, 37) - NC
+- **SV4**: Control (Chip 0, 41), Sense (Chip 0, 36) - NC
+- **SV5**: Control (Chip 1, 48), Sense (Chip 1, 46) - NC
+- **MAV**: EHRPWM4_B (pad T21), `23040000.pwm` channel 1
 - **Ball Valve**:
   - **Signal**: Chip 1, Line 62
   - **ON_OFF**: Chip 1, Line 63
@@ -156,8 +165,9 @@ Easy to modify without diving into code logic.
 ### Connection Monitoring
 The system implements a **deadman switch** safety feature:
 - If a client is connected but sends no messages for **15 seconds** (connection timeout):
-  - SV1 is closed.
+  - SV1–SV5 are closed.
   - The Ball Valve is closed.
+  - The fill-station MAV is closed.
   - FSW Open SV command sent via umbilical.
   - The client is disconnected.
 - After **20 seconds** with no clients connected, the QD retracts.

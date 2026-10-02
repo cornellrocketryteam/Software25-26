@@ -38,12 +38,22 @@ pub enum Command {
     StopAdcStream,
     /// Open or close a solenoid valve
     ActuateValve {
-        /// Name of the valve (e.g. "SV1")
+        /// Name of the valve ("SV1".."SV5")
         valve: String,
         /// True to open the valve, False to close it.
         /// The server handles the correct GPIO level based on NO/NC configuration.
         open: bool,
     },
+    /// Open fill-station MAV. With `duration_ms`, auto-closes after that long.
+    MavOpen {
+        #[serde(default)]
+        duration_ms: Option<u64>,
+    },
+    /// Close fill-station MAV
+    MavClose,
+    /// Query fill-station MAV state
+    GetMavState,
+
     // Ball Valve Commands
     #[serde(rename = "bv_open")]
     BVOpen,
@@ -56,7 +66,7 @@ pub enum Command {
 
     /// Get state of a solenoid valve (actuation and continuity)
     GetValveState {
-        /// Name of the valve (e.g. "SV1")
+        /// Name of the valve ("SV1".."SV5")
         valve: String,
     },
     /// Move QD stepper a specific number of steps in a given direction
@@ -160,6 +170,8 @@ pub enum CommandResponse {
         flight_mode: String,
         telemetry: FswTelemetry,
     },
+    /// Fill-station MAV state (last commanded)
+    MavState { open: bool, pulse_width_us: u32 },
     /// Last-commanded ball valve state
     BallValveState { open: bool },
     /// Last-commanded QD state (-1 retracted, 0 unknown, 1 extended)

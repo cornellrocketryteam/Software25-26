@@ -11,6 +11,14 @@ st.set_page_config(
     layout="wide",
 )
 
+# Fill-station solenoid valves (wire names; shown as FS-SV1..FS-SV5)
+FS_VALVES = ["SV1", "SV2", "SV3", "SV4", "SV5"]
+
+# Fill-station MAV defaults, mirroring FSW (fsw/src/actuator.rs, fsw/src/constants.rs)
+MAV_OPEN_US = 1950
+MAV_CLOSE_US = 883
+MAV_OPEN_DURATION_S = 6.0
+
 # --- WebSocket Client ---
 class FillStationClient:
     def __init__(self):
@@ -22,9 +30,13 @@ class FillStationClient:
         self.poll_thread = None
         self.should_run = False
 
-        # SV1 state
-        self.sv1_open = False
-        self.sv1_continuity = False
+        # Fill-station SV1-SV5 state
+        self.valves = {
+            name: {"open": False, "continuity": False} for name in FS_VALVES
+        }
+
+        # Fill-station MAV state
+        self.mav = {"open": False, "pulse_width_us": 0}
 
         # Ball valve + QD last-commanded state
         self.bv_open = None   # None = unknown, True/False otherwise
@@ -79,7 +91,10 @@ class FillStationClient:
         while self.should_run:
             if self.connected:
                 try:
-                    self.send_command({"command": "get_valve_state", "valve": "SV1"})
+                    for valve in FS_VALVES:
+                        self.send_command({"command": "get_valve_state", "valve": valve})
+                        time.sleep(0.05)
+                    self.send_command({"command": "get_mav_state"})
                     time.sleep(0.05)
                     self.send_command({"command": "get_igniter_continuity", "id": 1})
                     time.sleep(0.05)
@@ -97,8 +112,10 @@ class FillStationClient:
             self.connected = True
             ws.send(json.dumps({"command": "start_adc_stream"}))
             ws.send(json.dumps({"command": "start_fsw_stream"}))
-            self.send_command({"command": "get_valve_state", "valve": "SV1"})
-            time.sleep(0.02)
+            for valve in FS_VALVES:
+                self.send_command({"command": "get_valve_state", "valve": valve})
+                time.sleep(0.02)
+            self.send_command({"command": "get_mav_state"})
             self.send_command({"command": "get_igniter_continuity", "id": 1})
             self.send_command({"command": "get_igniter_continuity", "id": 2})
             self.send_command({"command": "get_ball_valve_state"})
@@ -113,10 +130,14 @@ class FillStationClient:
                     self.latest_adc = data
 
                 elif msg_type == "valve_state":
-                    valve = data.get("valve")
-                    if valve == "SV1":
-                        self.sv1_open = data.get("open", False)
-                        self.sv1_continuity = data.get("continuity", False)
+                    valve = data.get("valve", "").upper()
+                    if valve in self.valves:
+                        self.valves[valve]["open"] = data.get("open", False)
+                        self.valves[valve]["continuity"] = data.get("continuity", False)
+
+                elif msg_type == "mav_state":
+                    self.mav["open"] = data.get("open", False)
+                    self.mav["pulse_width_us"] = data.get("pulse_width_us", 0)
 
                 elif msg_type == "igniter_continuity":
                     ign_id = data.get("id")
@@ -159,6 +180,15 @@ class FillStationClient:
                 self.connected = False
             except Exception as e:
                 print(f"Send failed: {e}")
+
+    def query_valves(self):
+        for valve in FS_VALVES:
+            self.send_command({"command": "get_valve_state", "valve": valve})
+
+    def close_all_valves(self):
+        for valve in FS_VALVES:
+            self.send_command({"command": "actuate_valve", "valve": valve, "open": False})
+        self.query_valves()
 
     # --- Sequences ---
     def run_sv2_timed_actuation(self, duration):
@@ -246,28 +276,64 @@ if client.launch_status:
 
 # ==========================================
 # MAIN LAYOUT: 3 columns
-# Left: SV1, Ball Valve, QD Stepper
+# Left: FS-SV1..5, Fill MAV, Ball Valve, QD Stepper
 # Middle: Igniters, SV2-Rocket, Launch
 # Right: Sensors
 # ==========================================
 col_left, col_mid, col_right = st.columns([1, 1, 1.5])
 
-# --- LEFT COLUMN: SV1 + Ball Valve + QD ---
+# --- LEFT COLUMN: FS-SVs + Fill MAV + Ball Valve + QD ---
 with col_left:
-    # --- SV1 ---
-    st.subheader("SV1 (Fill Station)")
-    sv1_color = "green" if client.sv1_open else "red"
-    sv1_label = "OPEN" if client.sv1_open else "CLOSED"
-    cont_txt = "YES" if client.sv1_continuity else "NO"
-    st.markdown(f"State: :{sv1_color}[**{sv1_label}**] | Continuity: **{cont_txt}**")
+    # --- FS-SV1..5 ---
+    st.subheader("Fill Station SVs")
+    for valve in FS_VALVES:
+        v = client.valves[valve]
+        v_color = "green" if v["open"] else "red"
+        v_label = "OPEN" if v["open"] else "CLOSED"
+        c_color = "green" if v["continuity"] else "red"
+        sv_c0, sv_c1, sv_c2 = st.columns([2, 1, 1])
+        sv_c0.markdown(
+            f"**FS-{valve}** :{v_color}[**{v_label}**] | Cont: :{c_color}[{'YES' if v['continuity'] else 'NO'}]"
+        )
+        if sv_c1.button("OPEN", type="primary", use_container_width=True, key=f"open_{valve}"):
+            client.send_command({"command": "actuate_valve", "valve": valve, "open": True})
+            client.send_command({"command": "get_valve_state", "valve": valve})
+        if sv_c2.button("CLOSE", use_container_width=True, key=f"close_{valve}"):
+            client.send_command({"command": "actuate_valve", "valve": valve, "open": False})
+            client.send_command({"command": "get_valve_state", "valve": valve})
 
-    sv1_c1, sv1_c2, sv1_c3 = st.columns(3)
-    if sv1_c1.button("OPEN SV1", type="primary", use_container_width=True):
-        client.send_command({"command": "actuate_valve", "valve": "SV1", "open": True})
-    if sv1_c2.button("CLOSE SV1", use_container_width=True):
-        client.send_command({"command": "actuate_valve", "valve": "SV1", "open": False})
-    if sv1_c3.button("Query SV1", use_container_width=True):
-        client.send_command({"command": "get_valve_state", "valve": "SV1"})
+    sv_a1, sv_a2 = st.columns(2)
+    if sv_a1.button("Query All FS-SVs", use_container_width=True):
+        client.query_valves()
+    if sv_a2.button("CLOSE ALL FS-SVs", use_container_width=True):
+        client.close_all_valves()
+
+    st.divider()
+
+    # --- Fill MAV ---
+    st.subheader("Fill MAV")
+    mav_f_color = "green" if client.mav["open"] else "red"
+    mav_f_label = "OPEN" if client.mav["open"] else "CLOSED"
+    st.markdown(
+        f"State: :{mav_f_color}[**{mav_f_label}**] | Pulse: **{client.mav['pulse_width_us']} us**"
+    )
+    st.caption(f"Matches FSW MAV: 330 Hz, open {MAV_OPEN_US} us / close {MAV_CLOSE_US} us")
+
+    fmav_c1, fmav_c2 = st.columns(2)
+    if fmav_c1.button("OPEN Fill MAV", type="primary", use_container_width=True):
+        client.send_command({"command": "mav_open"})
+        client.send_command({"command": "get_mav_state"})
+    if fmav_c2.button("CLOSE Fill MAV", use_container_width=True):
+        client.send_command({"command": "mav_close"})
+        client.send_command({"command": "get_mav_state"})
+
+    fmav_tc1, fmav_tc2 = st.columns([2, 1])
+    fmav_duration = fmav_tc1.number_input(
+        "Open Duration (s)", min_value=0.1, value=MAV_OPEN_DURATION_S, step=0.1, key="fill_mav_dur"
+    )
+    if fmav_tc2.button("Timed Open", use_container_width=True):
+        client.send_command({"command": "mav_open", "duration_ms": int(fmav_duration * 1000)})
+        client.send_command({"command": "get_mav_state"})
 
     st.divider()
 
@@ -564,13 +630,13 @@ st.caption("FSW Umbilical Commands")
 row1 = st.columns(8)
 if row1[0].button("FSW Launch", use_container_width=True):
     client.send_command({"command": "fsw_launch"})
-if row1[1].button("Open MAV", use_container_width=True):
+if row1[1].button("FSW Open MAV", use_container_width=True):
     client.send_command({"command": "fsw_open_mav"})
-if row1[2].button("Close MAV", use_container_width=True):
+if row1[2].button("FSW Close MAV", use_container_width=True):
     client.send_command({"command": "fsw_close_mav"})
-if row1[3].button("Open SV", use_container_width=True):
+if row1[3].button("FSW Open SV", use_container_width=True):
     client.send_command({"command": "fsw_open_sv"})
-if row1[4].button("Close SV", use_container_width=True):
+if row1[4].button("FSW Close SV", use_container_width=True):
     client.send_command({"command": "fsw_close_sv"})
 if row1[5].button("FSW Safe", use_container_width=True):
     client.send_command({"command": "fsw_safe"})

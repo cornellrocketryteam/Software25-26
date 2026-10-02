@@ -468,6 +468,10 @@ async fn execute_command(
                 let hw = hardware.lock().await;
                 let result = match valve.to_lowercase().as_str() {
                     "sv1" => hw.sv1.set_open(open).await,
+                    "sv2" => hw.sv2.set_open(open).await,
+                    "sv3" => hw.sv3.set_open(open).await,
+                    "sv4" => hw.sv4.set_open(open).await,
+                    "sv5" => hw.sv5.set_open(open).await,
                     _ => {
                         warn!("Unknown valve: {}", valve);
                         return CommandResponse::Error;
@@ -498,6 +502,10 @@ async fn execute_command(
                 let hw = hardware.lock().await;
                 let result = match valve.to_lowercase().as_str() {
                     "sv1" => Some((hw.sv1.is_open().await, hw.sv1.check_continuity().await)),
+                    "sv2" => Some((hw.sv2.is_open().await, hw.sv2.check_continuity().await)),
+                    "sv3" => Some((hw.sv3.is_open().await, hw.sv3.check_continuity().await)),
+                    "sv4" => Some((hw.sv4.is_open().await, hw.sv4.check_continuity().await)),
+                    "sv5" => Some((hw.sv5.is_open().await, hw.sv5.check_continuity().await)),
                     _ => None,
                 };
 
@@ -535,6 +543,45 @@ async fn execute_command(
             info!("Stopping ADC stream for client");
             *streaming_enabled = false;
             CommandResponse::Success
+        }
+        Command::MavOpen { duration_ms } => {
+            let hw = hardware.lock().await;
+            info!("Opening MAV{}", duration_ms.map(|d| format!(" for {} ms", d)).unwrap_or_default());
+            match hw.mav.open().await {
+                Ok(generation) => {
+                    if let Some(ms) = duration_ms.filter(|&ms| ms > 0) {
+                        let hw_bg = hardware.clone();
+                        smol::spawn(async move {
+                            Timer::after(Duration::from_millis(ms)).await;
+                            let hw = hw_bg.lock().await;
+                            match hw.mav.close_if_generation(generation).await {
+                                Ok(true) => info!("MAV auto-closed after {} ms", ms),
+                                Ok(false) => {} // superseded by a later open/close
+                                Err(e) => error!("Failed to auto-close MAV: {}", e),
+                            }
+                        }).detach();
+                    }
+                    CommandResponse::Success
+                }
+                Err(e) => {
+                    error!("Failed to open MAV: {}", e);
+                    CommandResponse::Error
+                }
+            }
+        }
+        Command::MavClose => {
+            let hw = hardware.lock().await;
+            info!("Closing MAV");
+            if let Err(e) = hw.mav.close().await {
+                error!("Failed to close MAV: {}", e);
+                CommandResponse::Error
+            } else {
+                CommandResponse::Success
+            }
+        }
+        Command::GetMavState => {
+            let hw = hardware.lock().await;
+            CommandResponse::MavState { open: hw.mav.is_open(), pulse_width_us: hw.mav.pulse_width_us() }
         }
         Command::BVOpen => {
             let hw = hardware.lock().await;
@@ -965,11 +1012,24 @@ async fn perform_emergency_shutdown(
         let hw = hardware.lock().await;
         info!("EMERGENCY SHUTDOWN: Closing all Valves");
 
-        // Close SV1
+        // Close SV1-SV5
         let _ = hw.sv1.set_open(false).await;
+        let _ = hw.sv2.set_open(false).await;
+        let _ = hw.sv3.set_open(false).await;
+        let _ = hw.sv4.set_open(false).await;
+        let _ = hw.sv5.set_open(false).await;
 
         // Close Ball Valve
         let _ = hw.ball_valve.close_sequence().await;
+    }
+
+    // Close MAV
+    {
+        let hw = hardware.lock().await;
+        info!("EMERGENCY SHUTDOWN: Closing MAV");
+        if let Err(e) = hw.mav.close().await {
+            error!("Failed to close MAV during emergency shutdown: {}", e);
+        }
     }
 
     // Send FSW Safe command via umbilical to close FSW SV
@@ -980,7 +1040,6 @@ async fn perform_emergency_shutdown(
 
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
     {
-        let _ = hardware;
         warn!("MOCK EMERGENCY SHUTDOWN triggered");
     }
 }

@@ -1,0 +1,180 @@
+2026-10-02T22:34:29.875550Z  INFO fill_station: Initializing fill station...
+2026-10-02T22:34:29.875663Z  INFO fill_station::components::mav: MAV 'MAV' mocked for non-Linux platform (23040000.pwm ch 1, Freq: 330 Hz)
+2026-10-02T22:34:29.875775Z  INFO fill_station::components::qd_stepper: QD 'QD' mocked for non-Linux platform (134Hz step rate)
+2026-10-02T22:34:29.875823Z  INFO fill_station: Starting Umbilical monitoring task...
+2026-10-02T22:34:29.876262Z  INFO fill_station: Starting Safety Monitor task...
+2026-10-02T22:34:29.876310Z  INFO fill_station: Starting ADC monitoring task at 100 Hz...
+2026-10-02T22:34:29.876354Z  INFO fill_station: Initializing web socket server...
+2026-10-02T22:34:29.876532Z  WARN fill_station: Umbilical not supported on this platform (no serial port)
+2026-10-02T22:34:29.876580Z  INFO fill_station: No active clients. Starting safety timer.
+2026-10-02T22:34:29.876642Z  WARN fill_station: ADC monitoring not supported on this platform
+2026-10-02T22:34:29.876683Z  INFO fill_station::csv_logger: Starting CSV Logger task...
+2026-10-02T22:34:29.876705Z  INFO fill_station: Server listening on ws://0.0.0.0:9000
+2026-10-02T22:34:29.876759Z  INFO fill_station::mqtt_publisher: Starting MQTT publisher task (192.168.1.206:1883, topic: rats/raw/0, rate: 10 Hz)
+2026-10-02T22:34:29.877369Z  INFO fill_station::mqtt_publisher: MQTT event loop started on background thread
+2026-10-02T22:34:29.877940Z  INFO fill_station::csv_logger: Created log file: logs/fill_station_log_1790980469.csv
+2026-10-02T22:34:30.296968Z ERROR fill_station: WebSocket handshake failed
+2026-10-02T22:34:30.496239Z DEBUG tungstenite::handshake::server: Server handshake done.
+2026-10-02T22:34:30.496338Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Client connected
+2026-10-02T22:34:30.496612Z DEBUG websocket{client_ip="127.0.0.1"}: fill_station: Received message: {"command": "actuate_valve", "valve": "SV1", "open": true}
+2026-10-02T22:34:30.496697Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Received command: ActuateValve { valve: "SV1", open: true }
+2026-10-02T22:34:30.496732Z  WARN websocket{client_ip="127.0.0.1"}: fill_station: ActuateValve command not supported on this platform: SV1 -> true
+2026-10-02T22:34:30.496983Z DEBUG websocket{client_ip="127.0.0.1"}: fill_station: Received message: {"command": "get_valve_state", "valve": "SV1"}
+2026-10-02T22:34:30.497003Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Received command: GetValveState { valve: "SV1" }
+2026-10-02T22:34:30.497019Z  WARN websocket{client_ip="127.0.0.1"}: fill_station: GetValveState command not supported on this platform: SV1
+2026-10-02T22:34:30.497268Z DEBUG websocket{client_ip="127.0.0.1"}: fill_station: Received message: {"command": "actuate_valve", "valve": "SV2", "open": true}
+2026-10-02T22:34:30.497288Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Received command: ActuateValve { valve: "SV2", open: true }
+2026-10-02T22:34:30.497303Z  WARN websocket{client_ip="127.0.0.1"}: fill_station: ActuateValve command not supported on this platform: SV2 -> true
+2026-10-02T22:34:30.497523Z DEBUG websocket{client_ip="127.0.0.1"}: fill_station: Received message: {"command": "get_valve_state", "valve": "SV2"}
+2026-10-02T22:34:30.497541Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Received command: GetValveState { valve: "SV2" }
+2026-10-02T22:34:30.497556Z  WARN websocket{client_ip="127.0.0.1"}: fill_station: GetValveState command not supported on this platform: SV2
+2026-10-02T22:34:30.497785Z DEBUG websocket{client_ip="127.0.0.1"}: fill_station: Received message: {"command": "actuate_valve", "valve": "SV3", "open": true}
+2026-10-02T22:34:30.497810Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Received command: ActuateValve { valve: "SV3", open: true }
+2026-10-02T22:34:30.497828Z  WARN websocket{client_ip="127.0.0.1"}: fill_station: ActuateValve command not supported on this platform: SV3 -> true
+2026-10-02T22:34:30.498031Z DEBUG websocket{client_ip="127.0.0.1"}: fill_station: Received message: {"command": "get_valve_state", "valve": "SV3"}
+2026-10-02T22:34:30.498053Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Received command: GetValveState { valve: "SV3" }
+2026-10-02T22:34:30.498073Z  WARN websocket{client_ip="127.0.0.1"}: fill_station: GetValveState command not supported on this platform: SV3
+2026-10-02T22:34:30.498289Z DEBUG websocket{client_ip="127.0.0.1"}: fill_station: Received message: {"command": "actuate_valve", "valve": "SV4", "open": true}
+2026-10-02T22:34:30.498306Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Received command: ActuateValve { valve: "SV4", open: true }
+2026-10-02T22:34:30.498321Z  WARN websocket{client_ip="127.0.0.1"}: fill_station: ActuateValve command not supported on this platform: SV4 -> true
+2026-10-02T22:34:30.498559Z DEBUG websocket{client_ip="127.0.0.1"}: fill_station: Received message: {"command": "get_valve_state", "valve": "SV4"}
+2026-10-02T22:34:30.498575Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Received command: GetValveState { valve: "SV4" }
+2026-10-02T22:34:30.498586Z  WARN websocket{client_ip="127.0.0.1"}: fill_station: GetValveState command not supported on this platform: SV4
+2026-10-02T22:34:30.498811Z DEBUG websocket{client_ip="127.0.0.1"}: fill_station: Received message: {"command": "actuate_valve", "valve": "SV5", "open": true}
+2026-10-02T22:34:30.498827Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Received command: ActuateValve { valve: "SV5", open: true }
+2026-10-02T22:34:30.498842Z  WARN websocket{client_ip="127.0.0.1"}: fill_station: ActuateValve command not supported on this platform: SV5 -> true
+2026-10-02T22:34:30.499042Z DEBUG websocket{client_ip="127.0.0.1"}: fill_station: Received message: {"command": "get_valve_state", "valve": "SV5"}
+2026-10-02T22:34:30.499058Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Received command: GetValveState { valve: "SV5" }
+2026-10-02T22:34:30.499069Z  WARN websocket{client_ip="127.0.0.1"}: fill_station: GetValveState command not supported on this platform: SV5
+2026-10-02T22:34:30.499280Z DEBUG websocket{client_ip="127.0.0.1"}: fill_station: Received message: {"command": "actuate_valve", "valve": "SV6", "open": true}
+2026-10-02T22:34:30.499297Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Received command: ActuateValve { valve: "SV6", open: true }
+2026-10-02T22:34:30.499312Z  WARN websocket{client_ip="127.0.0.1"}: fill_station: ActuateValve command not supported on this platform: SV6 -> true
+2026-10-02T22:34:30.499543Z DEBUG websocket{client_ip="127.0.0.1"}: fill_station: Received message: {"command": "get_valve_state", "valve": "SV6"}
+2026-10-02T22:34:30.499559Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Received command: GetValveState { valve: "SV6" }
+2026-10-02T22:34:30.499573Z  WARN websocket{client_ip="127.0.0.1"}: fill_station: GetValveState command not supported on this platform: SV6
+2026-10-02T22:34:30.499798Z DEBUG websocket{client_ip="127.0.0.1"}: fill_station: Received message: {"command": "get_mav_state"}
+2026-10-02T22:34:30.499822Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Received command: GetMavState
+2026-10-02T22:34:30.500058Z DEBUG websocket{client_ip="127.0.0.1"}: fill_station: Received message: {"command": "mav_open"}
+2026-10-02T22:34:30.500072Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Received command: MavOpen { duration_ms: None }
+2026-10-02T22:34:30.500086Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Opening MAV
+2026-10-02T22:34:30.500099Z  INFO websocket{client_ip="127.0.0.1"}: fill_station::components::mav: [Mock] MAV 'MAV' set to 1950 us
+2026-10-02T22:34:30.500291Z DEBUG websocket{client_ip="127.0.0.1"}: fill_station: Received message: {"command": "get_mav_state"}
+2026-10-02T22:34:30.500306Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Received command: GetMavState
+2026-10-02T22:34:30.500472Z DEBUG websocket{client_ip="127.0.0.1"}: fill_station: Received message: {"command": "mav_close"}
+2026-10-02T22:34:30.500486Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Received command: MavClose
+2026-10-02T22:34:30.500500Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Closing MAV
+2026-10-02T22:34:30.500511Z  INFO websocket{client_ip="127.0.0.1"}: fill_station::components::mav: [Mock] MAV 'MAV' set to 883 us
+2026-10-02T22:34:30.500679Z DEBUG websocket{client_ip="127.0.0.1"}: fill_station: Received message: {"command": "get_mav_state"}
+2026-10-02T22:34:30.500693Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Received command: GetMavState
+2026-10-02T22:34:30.500852Z DEBUG websocket{client_ip="127.0.0.1"}: fill_station: Received message: {"command": "mav_open", "duration_ms": 1000}
+2026-10-02T22:34:30.500869Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Received command: MavOpen { duration_ms: Some(1000) }
+2026-10-02T22:34:30.500885Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Opening MAV for 1000 ms
+2026-10-02T22:34:30.500897Z  INFO websocket{client_ip="127.0.0.1"}: fill_station::components::mav: [Mock] MAV 'MAV' set to 1950 us
+2026-10-02T22:34:30.501068Z DEBUG websocket{client_ip="127.0.0.1"}: fill_station: Received message: {"command": "get_mav_state"}
+2026-10-02T22:34:30.501083Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Received command: GetMavState
+2026-10-02T22:34:30.878404Z  INFO fill_station: Client connected. Safety timer cancelled.
+2026-10-02T22:34:30.881690Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:30.982279Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:31.083211Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:31.183241Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:31.283572Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:31.384186Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:31.485155Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:31.501358Z  INFO fill_station::components::mav: [Mock] MAV 'MAV' set to 883 us
+2026-10-02T22:34:31.501387Z  INFO fill_station: MAV auto-closed after 1000 ms
+2026-10-02T22:34:31.585255Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:31.685546Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:31.786224Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:31.886904Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:31.986978Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:32.006652Z DEBUG websocket{client_ip="127.0.0.1"}: fill_station: Received message: {"command": "get_mav_state"}
+2026-10-02T22:34:32.006800Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Received command: GetMavState
+2026-10-02T22:34:32.007470Z DEBUG websocket{client_ip="127.0.0.1"}: fill_station: Received message: {"command": "mav_open", "duration_ms": 1000}
+2026-10-02T22:34:32.007585Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Received command: MavOpen { duration_ms: Some(1000) }
+2026-10-02T22:34:32.007670Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Opening MAV for 1000 ms
+2026-10-02T22:34:32.007738Z  INFO websocket{client_ip="127.0.0.1"}: fill_station::components::mav: [Mock] MAV 'MAV' set to 1950 us
+2026-10-02T22:34:32.008225Z DEBUG websocket{client_ip="127.0.0.1"}: fill_station: Received message: {"command": "mav_open"}
+2026-10-02T22:34:32.008272Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Received command: MavOpen { duration_ms: None }
+2026-10-02T22:34:32.008313Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Opening MAV
+2026-10-02T22:34:32.008351Z  INFO websocket{client_ip="127.0.0.1"}: fill_station::components::mav: [Mock] MAV 'MAV' set to 1950 us
+2026-10-02T22:34:32.087371Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:32.187868Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:32.288846Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:32.389170Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:32.489439Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:32.590188Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:32.690419Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:32.790588Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:32.891337Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:32.992313Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:33.092516Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:33.192789Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:33.293380Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:33.394194Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:33.494191Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:33.513832Z DEBUG websocket{client_ip="127.0.0.1"}: fill_station: Received message: {"command": "get_mav_state"}
+2026-10-02T22:34:33.513908Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Received command: GetMavState
+2026-10-02T22:34:33.514162Z DEBUG websocket{client_ip="127.0.0.1"}: fill_station: Received message: {"command": "mav_close"}
+2026-10-02T22:34:33.514186Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Received command: MavClose
+2026-10-02T22:34:33.514204Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Closing MAV
+2026-10-02T22:34:33.514218Z  INFO websocket{client_ip="127.0.0.1"}: fill_station::components::mav: [Mock] MAV 'MAV' set to 883 us
+2026-10-02T22:34:33.516697Z ERROR websocket{client_ip="127.0.0.1"}: fill_station: Error receiving message: WebSocket protocol error: Connection reset without closing handshake
+2026-10-02T22:34:33.516721Z  INFO websocket{client_ip="127.0.0.1"}: fill_station: Client disconnected
+2026-10-02T22:34:33.594728Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:33.695557Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:33.796651Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:33.880272Z  INFO fill_station: No active clients. Starting safety timer.
+2026-10-02T22:34:33.896971Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:33.997533Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:34.098621Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:34.198805Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:34.299384Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:34.400400Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:34.501363Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:34.601504Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:34.701528Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:34.801804Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:34.880333Z ERROR fill_station::mqtt_publisher: MQTT connection error: Network timeout — will auto-reconnect
+2026-10-02T22:34:34.902456Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:35.003365Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:35.104395Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:35.204349Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:35.304588Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:35.404790Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:35.505213Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:35.605934Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:35.706182Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:35.807278Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:35.907564Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:36.008192Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:36.108727Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:36.209768Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:36.309700Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:36.410153Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:36.510729Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:36.611514Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:36.712543Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:36.812639Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:36.913015Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:37.013447Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:37.114324Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:37.215289Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:37.315520Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:37.415708Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:37.516379Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:37.617164Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:37.718238Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:37.818298Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:37.918731Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:38.019215Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:38.120089Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:38.220120Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:38.320644Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:38.420823Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:38.521817Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:38.622079Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:38.722162Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:38.822545Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:38.923099Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:39.024037Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
+2026-10-02T22:34:39.125078Z  WARN fill_station::mqtt_publisher: MQTT publish failed (broker may be offline): Failed to send mqtt requests to eventloop
