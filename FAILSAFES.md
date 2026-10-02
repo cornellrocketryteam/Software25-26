@@ -1,7 +1,7 @@
 # Failsafe & Safety Mechanism Reference
 
 > Living document — update whenever thresholds, timeouts, or safety logic changes.
-> Last updated: 2026-04-27
+> Last updated: 2026-10-02
 
 ---
 
@@ -125,6 +125,38 @@
 | GPS coordinate validation | lat ∈ [-90,90], lon ∈ [-180,180] | `fsw_set_blims_target` command | Rejects out-of-range coordinates | `main.rs:758–763` |
 | Igniter ID validation | Only 1 or 2 accepted | `get_igniter_continuity` command | Returns error on invalid ID | `main.rs:393–408` |
 | JSON parse guard | — | Malformed WebSocket message | Returns `CommandResponse::Error`, does not crash | `main.rs:323–335` |
+
+### System / OS (MixOS image)
+
+| Failsafe | Threshold | Trigger | Action | File |
+|---|---|---|---|---|
+| Process respawn | Immediate | `fill-station` process exits or crashes | busybox init restarts it (`action = "respawn"`). Actuator state on restart follows the default-safe init above | `nix/mixos-configurations/fill-station/default.nix` |
+| Kernel panic reboot | Immediate | Kernel panic | Board reboots (`panic=-1` in bootargs) | `nix/mixos-configurations/fill-station/fit/build-fit-image.nix` |
+| ~~Hardware watchdog (RTI)~~ | — | — | **NOT ENABLED — deferred decision, see below** | — |
+
+> **Deferred: hardware watchdog (decided 2026-10-02).**
+> The image used to run a `watchdog` service (`/bin/watchdog -F /dev/watchdog`),
+> but it **never actually worked**: the AM64x RTI watchdog driver
+> (`CONFIG_K3_RTI_WATCHDOG`) was a kernel module that nothing loaded, so
+> `/dev/watchdog` didn't exist and the service just respawned in a loop.
+> When modules were removed from the kernel (to fit the OSPI flash), the driver
+> became built-in, which would have made the watchdog live for the first time.
+> We chose to **remove the service** rather than enable a board reset that could
+> fire mid-fill without being evaluated first.
+>
+> Current state: the driver is still built in (`kernel.config`) but idle. The RTI
+> timer only starts once something opens `/dev/watchdog`, so nothing resets the
+> board.
+>
+> **To revisit:**
+> - Should a userspace hang reset the board during a fill?
+> - What do valves/igniters do across a reset?
+> - Should the app itself pet the watchdog (so a hung `fill-station` resets the
+>   board), rather than a separate daemon (which only catches a fully hung
+>   system)?
+> - The RTI is windowed and **cannot be stopped once started**.
+>
+> Re-enable by adding the `watchdog` init entry back in `default.nix`.
 
 ---
 

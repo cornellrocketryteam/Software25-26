@@ -34,9 +34,8 @@ it before wiring.
    — recipes below. A pin group that nothing references is **never applied**.
 5. **Kernel config** — only if the driver isn't built in (see each recipe).
    Change it in `nix/overlays/by-name/crt/fill-station-linux/kernel.config`.
-   Use `=y`, not `=m`. `=m` modules *are* shipped in the image, but they only
-   load via mdev modalias autoloading (nothing loads them explicitly), so a
-   built-in driver is the only way to guarantee it's there at boot.
+   Use `=y`. The kernel is built with `CONFIG_MODULES` disabled, so `=m`
+   drivers simply don't exist on the board.
 6. **Build check** — add an assertion in
    `nix/mixos-configurations/fill-station/fit/build-fit-image.nix` next to the
    existing ones, e.g.

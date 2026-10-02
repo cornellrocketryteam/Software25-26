@@ -41,6 +41,13 @@
     status = "disabled";
 };
 
+/* I2C0_SCL (pad 0x260) is muxed as GPIO1_64 (QD stepper ENA), so main_i2c0
+ * can't get its pins. It only hosts the board-ID EEPROM, which U-Boot reads
+ * before Linux. /dev/i2c-2 is unaffected: aliases only pin i2c0/i2c1. */
+&main_i2c0 {
+    status = "disabled";
+};
+
 /* Enable USB0 in host mode for Pico 2 umbilical (CDC-ACM).
  * The SerDes phys/phy-names inherited from the base k3-am642-sk DTB are
  * removed with fdtput in build-fit-image.nix — overlays can't delete

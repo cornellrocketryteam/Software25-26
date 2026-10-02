@@ -41,11 +41,6 @@ in
       process = lib.getExe pkgs.crt.fill-station;
     };
 
-    watchdog = {
-      action = "respawn";
-      process = "/bin/watchdog -F /dev/watchdog";
-    };
-
     wpa_supplicant = {
       action = "respawn";
       process = "${lib.getExe' pkgs.wpa_supplicant "wpa_supplicant"} -i wlan0 -c /etc/wpa_supplicant.conf";

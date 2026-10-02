@@ -159,10 +159,6 @@ Defines the system configuration:
       action = "respawn";  # restarted by init if it exits/crashes
       process = lib.getExe pkgs.crt.fill-station;
     };
-    watchdog = {
-      action = "respawn";
-      process = "/bin/watchdog -F /dev/watchdog";
-    };
     wpa_supplicant = {
       action = "respawn";
       process = "${lib.getExe' pkgs.wpa_supplicant "wpa_supplicant"} -i wlan0 -c /etc/wpa_supplicant.conf";
@@ -385,7 +381,7 @@ Generated from `init` in `default.nix` plus MixOS defaults:
 |--------|---------|
 | `sysinit` | `mixos sysinit` — mounts, module loading, `mdev -s`, hostname, `/state` |
 | `wait` | `mount_data` — DATA partition → `/tmp/data` |
-| `respawn` | `fill-station`, `dropbear`, `watchdog`, `wpa_supplicant`, `udhcpc`, `syslogd`, `klogd`, `crond`, `mdev -d` |
+| `respawn` | `fill-station`, `dropbear`, `wpa_supplicant`, `udhcpc`, `syslogd`, `klogd`, `crond`, `mdev -d` |
 | `askfirst` | `/bin/sh` on `ttyS2` |
 
 ---
@@ -542,7 +538,7 @@ uenvcmd=echo "Booting FIT from mmc 1:1..."; load mmc 1:1 ${addr_fit} fitImage.it
    - sysinit: `mixos sysinit` — mounts tmpfs/cgroups/etc., runs
      `mdev -s` (coldplug + module autoload), sets up /state (tmpfs)
    - wait: mount DATA partition at /tmp/data
-   - respawn: fill-station, dropbear, watchdog, wpa_supplicant, udhcpc,
+   - respawn: fill-station, dropbear, wpa_supplicant, udhcpc,
      syslogd, klogd, crond, mdev -d
    - askfirst: shell on ttyS2
    │
