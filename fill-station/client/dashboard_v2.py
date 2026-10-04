@@ -14,6 +14,16 @@ st.set_page_config(
 # Fill-station solenoid valves (wire names; shown as FS-SV1..FS-SV5)
 FS_VALVES = ["SV1", "SV2", "SV3", "SV4", "SV5"]
 
+# Fill-station ADC sensors: (label, ADC, channel). Scaling is done by the server.
+FS_SENSORS = [
+    ("FS-PT1 (PSI)", "adc1", 0),
+    ("FS-PT2 (PSI)", "adc1", 1),
+    ("FS-PT3 (PSI)", "adc1", 2),
+    ("FS-PT4 (PSI)", "adc1", 3),
+    ("FS-PT5 (PSI)", "adc2", 0),
+    ("Load Cell", "adc2", 1),
+]
+
 # Fill-station MAV defaults, mirroring FSW (fsw/src/actuator.rs, fsw/src/constants.rs)
 MAV_OPEN_US = 1950
 MAV_CLOSE_US = 883
@@ -437,25 +447,17 @@ with col_mid:
 with col_right:
     st.subheader("Sensor Data (Fill Station ADC)")
     if client.latest_adc:
-        adc1 = client.latest_adc.get("adc1", [])
-        adc2 = client.latest_adc.get("adc2", [])
+        adc_channels = {
+            "adc1": client.latest_adc.get("adc1", []),
+            "adc2": client.latest_adc.get("adc2", []),
+        }
 
         rows = []
-        # PT1: ADC1 Ch0
-        if len(adc1) > 0:
-            ch = adc1[0]
-            scaled = ch.get("scaled")
-            rows.append({"Sensor": "PT1 (0-1500 PSI)", "Raw": ch["raw"], "Voltage": f"{ch['voltage']:.3f}", "Scaled": f"{scaled:.2f}" if scaled is not None else "N/A"})
-        # PT2: ADC1 Ch2
-        if len(adc1) > 2:
-            ch = adc1[2]
-            scaled = ch.get("scaled")
-            rows.append({"Sensor": "PT2 (0-1000 PSI)", "Raw": ch["raw"], "Voltage": f"{ch['voltage']:.3f}", "Scaled": f"{scaled:.2f}" if scaled is not None else "N/A"})
-        # Load Cell: ADC2 Ch1
-        if len(adc2) > 1:
-            ch = adc2[1]
-            scaled = ch.get("scaled")
-            rows.append({"Sensor": "Load Cell", "Raw": ch["raw"], "Voltage": f"{ch['voltage']:.3f}", "Scaled": f"{scaled:.2f}" if scaled is not None else "N/A"})
+        for label, adc, idx in FS_SENSORS:
+            if len(adc_channels[adc]) > idx:
+                ch = adc_channels[adc][idx]
+                scaled = ch.get("scaled")
+                rows.append({"Sensor": label, "Raw": ch["raw"], "Voltage": f"{ch['voltage']:.3f}", "Scaled": f"{scaled:.2f}" if scaled is not None else "N/A"})
 
         if rows:
             st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)

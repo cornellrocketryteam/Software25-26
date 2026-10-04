@@ -241,6 +241,17 @@ async def auto_close_mav(duration_ms):
     state["mav"] = {"open": False, "pulse_width_us": 883}
 
 
+def mock_pt(base_raw):
+    """Fake PT channel using the server's 0-1500 PSI scaling and 2 mV/count."""
+    raw = base_raw + random.randint(-5, 5)
+    return {"raw": raw, "voltage": raw * 0.002, "scaled": raw * 0.909754 + 5.08926}
+
+
+def mock_load_cell():
+    raw = 300 + random.randint(-5, 5)
+    return {"raw": raw, "voltage": raw * 0.002, "scaled": raw * 0.264 - 14.9}
+
+
 async def stream_adc(websocket):
     start_time = time.time()
     try:
@@ -249,15 +260,11 @@ async def stream_adc(websocket):
                 "type": "adc_data",
                 "timestamp_ms": int(time.time() * 1000),
                 "valid": True,
-                "adc1": [
-                    {"raw": random.randint(1000, 1050), "voltage": 2.5, "scaled": 500.0 + random.uniform(-1, 1)},
-                    {"raw": random.randint(0, 50), "voltage": 0.1, "scaled": 10.0},
-                    {"raw": 0, "voltage": 0.0, "scaled": None},
-                    {"raw": 0, "voltage": 0.0, "scaled": None},
-                ],
+                # ADC1 Ch0-3 = PT1-PT4, ADC2 Ch0 = PT5, ADC2 Ch1 = Load Cell
+                "adc1": [mock_pt(base) for base in (550, 440, 330, 220)],
                 "adc2": [
-                    {"raw": random.randint(2000, 2047), "voltage": 3.3, "scaled": None},
-                    {"raw": 0, "voltage": 0.0, "scaled": None},
+                    mock_pt(110),
+                    mock_load_cell(),
                     {"raw": 0, "voltage": 0.0, "scaled": None},
                     {"raw": 0, "voltage": 0.0, "scaled": None},
                 ]

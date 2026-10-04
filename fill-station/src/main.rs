@@ -52,20 +52,32 @@ const ADC_MAX_RETRIES: u32 = 5;
 /// Delay between retry attempts (milliseconds)
 const ADC_RETRY_DELAY_MS: u64 = 10;
 
-/// PT1 scaling (ADC1 Ch0) — 0-1500 PSI range
+/// PT scaling — 0-1500 PSI range
 /// Formula: scaled = raw * SCALE + OFFSET
 const PT1500_SCALE: f32 = 0.909754;
 const PT1500_OFFSET: f32 = 5.08926;
 
-/// PT2 scaling (ADC1 Ch2) — 0-1000 PSI range
-/// Formula: scaled = raw * SCALE + OFFSET
-const PT1000_SCALE: f32 = 0.6125;
-const PT1000_OFFSET: f32 = 5.0;
-
-/// Load Cell scaling (ADC2 Ch1)
+/// Load Cell scaling
 /// Formula: scaled = raw * SCALE + OFFSET
 const LOADCELL_SCALE: f32 = 0.264;
 const LOADCELL_OFFSET: f32 = -14.9;
+
+/// Per-channel (scale, offset) for ADC1: PT1-PT4 on Ch0-Ch3.
+/// `None` leaves the channel unscaled. Give a PT its own calibration here.
+const ADC1_SCALING: [Option<(f32, f32)>; 4] = [
+    Some((PT1500_SCALE, PT1500_OFFSET)), // Ch0: PT1
+    Some((PT1500_SCALE, PT1500_OFFSET)), // Ch1: PT2
+    Some((PT1500_SCALE, PT1500_OFFSET)), // Ch2: PT3
+    Some((PT1500_SCALE, PT1500_OFFSET)), // Ch3: PT4
+];
+
+/// Per-channel (scale, offset) for ADC2: PT5 on Ch0, Load Cell on Ch1.
+const ADC2_SCALING: [Option<(f32, f32)>; 4] = [
+    Some((PT1500_SCALE, PT1500_OFFSET)),     // Ch0: PT5
+    Some((LOADCELL_SCALE, LOADCELL_OFFSET)), // Ch1: Load Cell
+    None,                                    // Ch2: unused
+    None,                                    // Ch3: unused
+];
 
 // ============================================================================
 // UMBILICAL CONFIGURATION
@@ -1145,12 +1157,7 @@ async fn try_read_all_adcs(
         let raw = hw.adc1.read_raw(channel, ADC_GAIN, ADC_DATA_RATE)?;
         let voltage = (raw as f32) * ADC_GAIN.lsb_size();
         
-        // PT1 (Ch0): PT1500 scaling, PT2 (Ch2): PT1000 scaling, others: no scaling
-        let scaled = match i {
-            0 => Some(raw as f32 * PT1500_SCALE + PT1500_OFFSET),
-            2 => Some(raw as f32 * PT1000_SCALE + PT1000_OFFSET),
-            _ => None,
-        };
+        let scaled = ADC1_SCALING[i].map(|(scale, offset)| raw as f32 * scale + offset);
         
         adc1_readings[i] = ChannelReading { raw, voltage, scaled };
     }
@@ -1160,12 +1167,7 @@ async fn try_read_all_adcs(
         let raw = hw.adc2.read_raw(channel, ADC_GAIN, ADC_DATA_RATE)?;
         let voltage = (raw as f32) * ADC_GAIN.lsb_size();
         
-        // Load Cell (Ch1): LOADCELL scaling, others: no scaling
-        let scaled = if i == 1 {
-            Some(raw as f32 * LOADCELL_SCALE + LOADCELL_OFFSET)
-        } else {
-            None
-        };
+        let scaled = ADC2_SCALING[i].map(|(scale, offset)| raw as f32 * scale + offset);
         
         adc2_readings[i] = ChannelReading { raw, voltage, scaled };
     }

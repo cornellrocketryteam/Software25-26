@@ -35,24 +35,36 @@ const ADC_DATA_RATE: DataRate = DataRate::Sps3300;  // Maximum speed
 const ADC_MAX_RETRIES: u32 = 5;
 const ADC_RETRY_DELAY_MS: u64 = 10;
 
-// PT1 scaling (ADC1 Ch0) — 0-1500 PSI
+// PT scaling — 0-1500 PSI
 const PT1500_SCALE: f32 = 0.909754;
 const PT1500_OFFSET: f32 = 5.08926;
 
-// PT2 scaling (ADC1 Ch2) — 0-1000 PSI
-const PT1000_SCALE: f32 = 0.6125;
-const PT1000_OFFSET: f32 = 5.0;
-
-// Load Cell scaling (ADC2 Ch1)
+// Load Cell scaling
 const LOADCELL_SCALE: f32 = 0.264;
 const LOADCELL_OFFSET: f32 = -14.9;
+
+// Per-channel (scale, offset): PT1-PT4 on ADC1 Ch0-Ch3
+const ADC1_SCALING: [Option<(f32, f32)>; 4] = [
+    Some((PT1500_SCALE, PT1500_OFFSET)), // Ch0: PT1
+    Some((PT1500_SCALE, PT1500_OFFSET)), // Ch1: PT2
+    Some((PT1500_SCALE, PT1500_OFFSET)), // Ch2: PT3
+    Some((PT1500_SCALE, PT1500_OFFSET)), // Ch3: PT4
+];
+
+// Per-channel (scale, offset): PT5 on ADC2 Ch0, Load Cell on ADC2 Ch1
+const ADC2_SCALING: [Option<(f32, f32)>; 4] = [
+    Some((PT1500_SCALE, PT1500_OFFSET)),     // Ch0: PT5
+    Some((LOADCELL_SCALE, LOADCELL_OFFSET)), // Ch1: Load Cell
+    None,                                    // Ch2: unused
+    None,                                    // Ch3: unused
+];
 ```
 
 ### To Change Sampling Rate:
 Just modify `ADC_SAMPLE_RATE_HZ`. Example: `const ADC_SAMPLE_RATE_HZ: u64 = 200;` for 200 Hz.
 
 ### To Update Pressure Sensor Calibration:
-Modify the `PT1500_*`, `PT1000_*`, and `LOADCELL_*` constants with your new calibration values.
+Modify the `PT1500_*` and `LOADCELL_*` constants with your new calibration values. To give one sensor its own calibration, change that channel's `(scale, offset)` entry in `ADC1_SCALING` / `ADC2_SCALING`.
 
 ## WebSocket Protocol
 
@@ -120,7 +132,7 @@ When streaming is enabled, the server continuously sends:
 - `valid`: `true` if readings are fresh, `false` if ADC read failed
 - `raw`: Raw 12-bit ADC value (-2048 to 2047)
 - `voltage`: Calculated voltage based on gain setting
-- `scaled`: Scaled sensor value — PT1 (ADC1 Ch0), PT2 (ADC1 Ch2), Load Cell (ADC2 Ch1). `null` for all other channels
+- `scaled`: Scaled sensor value — PT1–PT4 (ADC1 Ch0–Ch3), PT5 (ADC2 Ch0), Load Cell (ADC2 Ch1). `null` for all other channels
 
 ## Testing
 
@@ -130,22 +142,13 @@ cd fill-station
 cargo run --release
 ```
 
-### Test ADC Streaming (Python)
+### View ADC Readings (Dashboard)
 ```bash
-cd fill-station
-./test_adc_stream.py
+cd fill-station/client
+streamlit run dashboard_v2.py
 ```
 
-Or:
-```bash
-python3 test_adc_stream.py
-```
-
-The test script will:
-1. Connect to `ws://localhost:9000`
-2. Send `start_adc_stream` command
-3. Display formatted ADC readings in real-time
-4. Press Ctrl+C to stop
+The "Sensor Data (Fill Station ADC)" table shows FS-PT1–FS-PT5 and the Load Cell.
 
 ### Manual Testing (websocat)
 ```bash

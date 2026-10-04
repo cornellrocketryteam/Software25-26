@@ -44,7 +44,9 @@ fill-station/
 │   ├── QD_STEPPER.md        # QD stepper motor documentation
 │   ├── TROUBLESHOOTING.md   # Common issues & solutions
 │   └── UMBILICAL.md         # FSW Umbilical connection details
-└── test_adc_stream.py       # WebSocket client test script
+└── client/
+    ├── dashboard_v2.py      # Streamlit dashboard
+    └── mock_server.py       # Mock WebSocket server for dashboard testing
 ```
 
 ## Features
@@ -144,18 +146,14 @@ All configuration constants are at the top of `src/main.rs`:
 // ADC sampling rate
 const ADC_SAMPLE_RATE_HZ: u64 = 100;
 
-// Pressure sensor calibration
-// Pressure sensor scaling for PT1500
+// Pressure sensor calibration (0-1500 PSI), used for PT1-PT5
+// PT1-PT4 = ADC1 Ch0-Ch3, PT5 = ADC2 Ch0
 const PT1500_SCALE: f32 = 0.909754;
 const PT1500_OFFSET: f32 = 5.08926;
 
-// Pressure sensor scaling for PT1000 (PT2 on ADC1 Ch2)
-const PT1000_SCALE: f32 = 0.6125;
-const PT1000_OFFSET: f32 = 5.0;
-
-// Load Cell scaling
-const LOADCELL_SCALE: f32 = 1.69661;
-const LOADCELL_OFFSET: f32 = 75.37882;
+// Load Cell scaling (ADC2 Ch1)
+const LOADCELL_SCALE: f32 = 0.264;
+const LOADCELL_OFFSET: f32 = -14.9;
 ```
 
 Easy to modify without diving into code logic.
@@ -177,11 +175,7 @@ The system implements a **deadman switch** safety feature:
 ## Testing
 
 ### Test ADC Streaming
-```bash
-./test_adc_stream.py
-```
-
-Or use `websocat`:
+Run the dashboard (`cd client && streamlit run dashboard_v2.py`), or use `websocat`:
 ```bash
 websocat ws://localhost:9000
 # Then type commands:

@@ -111,7 +111,9 @@ fill-station/
 │       ├── qd_stepper.rs
 │       ├── ads1015.rs
 │       └── umbilical.rs
-└── test_adc_stream.py           # Test client
+└── client/
+    ├── dashboard_v2.py          # Streamlit dashboard
+    └── mock_server.py           # Mock WebSocket server
 ```
 
 ## Component Examples
@@ -242,14 +244,14 @@ const ADC_RETRY_DELAY_MS: u64 = 10;           // Retry delay
 
 ### Pressure Sensor Calibration (`src/main.rs`)
 ```rust
-const PT1500_SCALE: f32 = 0.909754;      // PT1 Scale (ADC1 Ch0)
-const PT1500_OFFSET: f32 = 5.08926;      // PT1 Offset
-
-const PT1000_SCALE: f32 = 0.6125;        // PT2 Scale (ADC1 Ch2)
-const PT1000_OFFSET: f32 = 5.0;          // PT2 Offset
+const PT1500_SCALE: f32 = 0.909754;      // PT1-PT5 Scale (0-1500 PSI)
+const PT1500_OFFSET: f32 = 5.08926;      // PT1-PT5 Offset
 
 const LOADCELL_SCALE: f32 = 0.264;       // Load Cell Scale (ADC2 Ch1)
 const LOADCELL_OFFSET: f32 = -14.9;      // Load Cell Offset
+
+// Channel map: PT1-PT4 = ADC1 Ch0-Ch3, PT5 = ADC2 Ch0, Load Cell = ADC2 Ch1.
+// Per-channel calibration lives in ADC1_SCALING / ADC2_SCALING.
 ```
 
 ### Hardware Pins (`src/hardware.rs`)
@@ -266,9 +268,11 @@ const ADC2_ADDRESS: u16 = 0x49;
 
 ## Testing Tools
 
-### Python WebSocket Client
+### Dashboard and Mock Server
 ```bash
-./test_adc_stream.py
+cd client
+python mock_server.py             # optional: mock server on ws://localhost:9000
+streamlit run dashboard_v2.py
 ```
 
 ### Rust Test Binaries
